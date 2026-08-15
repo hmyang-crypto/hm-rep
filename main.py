@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.6"
+CURRENT_VERSION = "1.0.7"
 
 
 def check_and_apply_update():
@@ -743,8 +743,10 @@ class NameEntryScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         layout = BoxLayout(
-            orientation="vertical", padding=dp(30), spacing=dp(20)
+            orientation="vertical", padding=dp(30), spacing=dp(15)
         )
+
+        # 타이틀
         layout.add_widget(
             Label(
                 text="보충 업무 자동화",
@@ -752,7 +754,18 @@ class NameEntryScreen(Screen):
                 font_size=dp(28),
                 bold=True,
                 color=PRIMARY_BLUE,
-                size_hint_y=0.3,
+                size_hint_y=0.2,
+            )
+        )
+
+        # 💡 [신규] 버전 표시
+        layout.add_widget(
+            Label(
+                text=f"App Version: v{CURRENT_VERSION}",
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                color=TEXT_MUTED,
+                size_hint_y=0.1,
             )
         )
 
@@ -1153,7 +1166,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
     is_claimed = BooleanProperty(False)
     is_checked = BooleanProperty(False)
     card_screen = ObjectProperty(None)
-    card_bg_color = ListProperty([1, 1, 1, 1])  # 💡 카드 배경색 속성 추가 (기본 흰색)
+    card_bg_color = ListProperty([1, 1, 1, 1])  # 💡 카드 배경색 속성
 
     def refresh_view_attrs(self, rv, index, data):
         super().refresh_view_attrs(rv, index, data)
@@ -1168,13 +1181,13 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
         # 💡 [카드 배경색 설정] 긴급: 옅은 빨간색 / 선반랙: 옅은 파란색 / 일반: 흰색
         if is_urgent:
-            self.card_bg_color = get_color_from_hex("#FFEBEE")  # 옅은 빨간색
+            self.card_bg_color = get_color_from_hex("#FFEBEE")
         elif is_shelf_rack:
-            self.card_bg_color = get_color_from_hex("#E3F2FD")  # 옅은 파란색
+            self.card_bg_color = get_color_from_hex("#E3F2FD")
         else:
-            self.card_bg_color = [1, 1, 1, 1]  # 흰색
+            self.card_bg_color = [1, 1, 1, 1]
 
-        # 장비 표시 (카드 왼쪽 최상단)
+        # 💡 장비 표시 (카드 왼쪽 최상단 노란색 영역 위치)
         raw_equip = str(t(self.task_data, "장비", ""))
         if raw_equip == "리치":
             display_tag = "[color=0000FF][리치][/color]"
@@ -1184,7 +1197,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             display_tag = ""
         self.ids.lbl_equip.text = f"[b]{display_tag}[/b]"
 
-        # 상품명 앞 태그
+        # 💡 상품명 앞 태그
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
@@ -1231,6 +1244,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             self.ids.btn_action_box.height = 0
             self.ids.btn_action_box.opacity = 0
             self.ids.btn_action_box.disabled = True
+
     def on_checkbox_active(self, checkbox, value):
         if self.card_screen and not self.is_claimed:
             self.card_screen.toggle_card_check(self.task_data, value)
@@ -1787,11 +1801,14 @@ class UnifiedReplenishScreen(Screen):
             from_loc = str(t(task, "기존로케이션")).strip().upper()
             to_loc = str(t(task, "보충로케이션")).strip().upper()
 
-            # 스피너에서 선택된 텍스트(예: "Q존 (1건)")에서 알파벳(Q)만 추출
-            clean_from_sel = self.selected_from_zone.replace("보관:", "").strip()
-            clean_to_sel = self.selected_to_zone.replace("이동:", "").strip()
+            clean_from_sel = (
+                self.selected_from_zone.replace("보관:", "").strip()
+            )
+            clean_to_sel = (
+                self.selected_to_zone.replace("이동:", "").strip()
+            )
 
-            # "전체"가 아닐 때 선택된 존 알파벳(예: 'Q')으로 시작하는지 정밀 체크
+            # "전체"가 아닐 때 선택된 존 알파벳(예: 'Q')으로 정밀 시작 검사
             if "전체" not in clean_from_sel:
                 target_zone = clean_from_sel[0] if clean_from_sel else ""
                 if not from_loc.startswith(target_zone):
@@ -1879,15 +1896,16 @@ class UnifiedReplenishScreen(Screen):
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
 
-            # 💡 [핵심] 할당 성공 시 로컬 데이터(raw_all_tasks)의 상태 및 담당자를 즉시 변경!
-            user_name_lower = str(app.user_real_name).strip()
+            # 💡 [핵심 1] 메모리(raw_all_tasks) 데이터의 상태/담당자를 즉시 갱신
+            user_name_raw = str(app.user_real_name).strip()
             for task in self.raw_all_tasks:
                 if t(task, "작업ID") in self.checked_task_ids:
                     task["상태"] = "작업중"
-                    task["작업 담당자"] = user_name_lower
+                    task["작업 담당자"] = user_name_raw
 
             invalidate_cache(TASK_SHEET_NAME)
             self.checked_task_ids.clear()
+
             Clock.schedule_once(lambda dt: self.on_claim_success())
         except Exception as e:
             Clock.schedule_once(
@@ -1905,7 +1923,10 @@ class UnifiedReplenishScreen(Screen):
             "성공", "선택한 작업이 '내 작업'으로 할당되었습니다."
         )
         self.btn_claim_action.text = "+ 선택 항목 할당받기 (0)"
+
+        # 💡 [핵심 2] 탭 변경과 동시에 화면 강제 리렌더링을 확실하게 명시 실행!
         self.switch_main_tab("MY")
+        self.apply_filters_and_render()
 
     def handle_my_task_action(self, action_name, task_data):
         task_list_screen = self.manager.get_screen("task_list")
@@ -2778,11 +2799,12 @@ Builder.load_string(
     spacing: dp(4)
     canvas.before:
         Color:
-            rgba: root.card_bg_color   # 💡 고정 흰색(1,1,1,1)에서 동적 배경색(root.card_bg_color)으로 변경!
+            rgba: root.card_bg_color
         RoundedRectangle:
             pos: self.pos
             size: self.size
             radius: [dp(12),]
+
     # 💡 카드 최상단: [오더피커] / [리치] 태그 영역 (노란색 위치)
     BoxLayout:
         size_hint_y: None
