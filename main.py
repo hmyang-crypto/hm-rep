@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.1.5"
+CURRENT_VERSION = "1.1.6"
 
 
 def check_and_apply_update():
@@ -716,65 +716,86 @@ class InspectionPopup(Popup):
         self.task_data = card.task_data
         self.task_list_screen = task_list_screen
         self.current_remarks = str(t(self.task_data, "비고", ""))
-        self.box_size_change_remark = ""
-
-        product_name = str(t(self.task_data, "상품명", ""))
-        qty_per_box = safe_int(t(self.task_data, "박스입수량", 0))
-
-        self.is_invoice_only = qty_per_box == 1 or "송장" in product_name
 
         self.title = "검수 및 최종 처리"
         self.title_font = FONT_NAME
         self.size_hint = (0.95, None)
-        self.height = dp(560)
+        self.height = dp(520)
         self.auto_dismiss = False
 
         main_layout = BoxLayout(
             orientation="vertical", padding=dp(15), spacing=dp(10)
         )
 
-        qty_grid = GridLayout(
-            cols=2, spacing=dp(10), size_hint_y=None, height=dp(120)
-        )
+        # 기존 지시 수량 및 입수량 정보
         total_qty = safe_int(t(self.task_data, "지시수량", 0))
-        confirmed_qty_str = str(t(self.task_data, "확인수량", ""))
-        confirmed_qty_display = (
-            confirmed_qty_str
-            if confirmed_qty_str.isdigit() and confirmed_qty_str
-            else str(total_qty)
+        default_box_size = safe_int(
+            t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 1))
+        )
+        if default_box_size <= 0:
+            default_box_size = 1
+
+        info_label = Label(
+            text=f"지시수량: [b]{total_qty}[/b] / 기본입수량: [b]{default_box_size}[/b]",
+            font_name=FONT_NAME,
+            font_size=dp(15),
+            markup=True,
+            size_hint_y=None,
+            height=dp(25),
+        )
+        main_layout.add_widget(info_label)
+
+        # 수량 입력 그리드 (박스 입수량 / 박스 수량 / 낱개 수량)
+        input_grid = GridLayout(
+            cols=2, spacing=dp(8), size_hint_y=None, height=dp(150)
         )
 
-        qty_grid.add_widget(Label(text="총 지시수량:", font_name=FONT_NAME))
-        qty_grid.add_widget(
-            Label(text=f"{total_qty}", font_name=FONT_NAME, bold=True)
-        )
-
-        qty_grid.add_widget(
-            Label(text="보충 확인수량:", font_name=FONT_NAME)
-        )
-        qty_grid.add_widget(
+        input_grid.add_widget(
             Label(
-                text=f"{confirmed_qty_display}",
+                text=f"박스 입수량 (기존 {default_box_size}):",
                 font_name=FONT_NAME,
-                bold=True,
-                color=PRIMARY_BLUE,
+                font_size=dp(14),
             )
         )
-
-        qty_grid.add_widget(
-            Label(text="최종 로케이션 수량:", font_name=FONT_NAME)
-        )
-        self.final_qty_button = StyledButton(
-            text=str(confirmed_qty_display),
+        self.box_size_input = TextInput(
+            text=str(default_box_size),
+            multiline=False,
+            input_type="number",
             font_name=FONT_NAME,
-            bg_color=(0.9, 0.9, 0.9, 1),
-            color=(0, 0, 0, 1),
+            font_size=dp(16),
+            halign="center",
         )
-        self.final_qty_button.bind(on_press=self.open_box_calculator)
-        qty_grid.add_widget(self.final_qty_button)
+        input_grid.add_widget(self.box_size_input)
 
-        main_layout.add_widget(qty_grid)
+        input_grid.add_widget(
+            Label(text="박스 수량:", font_name=FONT_NAME, font_size=dp(14))
+        )
+        self.box_count_input = TextInput(
+            hint_text="0",
+            multiline=False,
+            input_type="number",
+            font_name=FONT_NAME,
+            font_size=dp(16),
+            halign="center",
+        )
+        input_grid.add_widget(self.box_count_input)
 
+        input_grid.add_widget(
+            Label(text="낱개 수량:", font_name=FONT_NAME, font_size=dp(14))
+        )
+        self.rem_qty_input = TextInput(
+            text="0",
+            multiline=False,
+            input_type="number",
+            font_name=FONT_NAME,
+            font_size=dp(16),
+            halign="center",
+        )
+        input_grid.add_widget(self.rem_qty_input)
+
+        main_layout.add_widget(input_grid)
+
+        # 최종 적치위치 입력
         hint_txt = "최종 적치위치 입력"
         self.final_location_input = TextInput(
             text=str(t(self.task_data, "보충로케이션", "")),
@@ -786,8 +807,9 @@ class InspectionPopup(Popup):
         )
         main_layout.add_widget(self.final_location_input)
 
+        # 하단 버튼
         top_button_grid = GridLayout(
-            cols=2, size_hint_y=None, height=dp(90), spacing=dp(10)
+            cols=2, size_hint_y=None, height=dp(50), spacing=dp(10)
         )
         cancel_button = StyledButton(text="취소", bg_color=(0.6, 0.6, 0.6, 1))
         cancel_button.bind(on_press=self.dismiss)
@@ -802,28 +824,40 @@ class InspectionPopup(Popup):
 
         self.content = main_layout
 
-    def open_box_calculator(self, instance):
-        initial_box_size = safe_int(t(self.task_data, "박스입수량", 1))
-        popup = BoxCalculatorPopup(
-            on_confirm=self.update_final_qty,
-            initial_box_size=initial_box_size,
-        )
-        popup.open()
-
-    def update_final_qty(self, total_quantity, new_box_size):
-        self.final_qty_button.text = str(total_quantity)
-
     def confirm_inspection(self, instance):
         app = App.get_running_app()
+
+        box_size_str = self.box_size_input.text.strip()
+        box_count_str = self.box_count_input.text.strip()
+        rem_qty_str = self.rem_qty_input.text.strip()
         final_location = self.final_location_input.text.strip()
+
+        # 3가지 수량 필수 입력 검증
+        if not box_size_str.isdigit() or not box_count_str.isdigit() or not rem_qty_str.isdigit():
+            app.show_info_popup(
+                "입력 오류", "박스 입수량, 박스 수량, 낱개 수량을 모두 숫자 항목으로 입력해야 합니다."
+            )
+            return
+
+        box_size = int(box_size_str)
+        box_count = int(box_count_str)
+        rem_qty = int(rem_qty_str)
+
+        # 총 수량 계산
+        calculated_total_qty = (box_size * box_count) + rem_qty
+
+        if calculated_total_qty <= 0:
+            app.show_info_popup("입력 오류", "최종 수량이 0개 이상이어야 합니다.")
+            return
+
         if not final_location:
             app.show_info_popup("오류", "최종 적치위치를 입력해야 합니다.")
             return
 
-        conf_q = safe_int(self.final_qty_button.text)
+        # 검수 확정 처리
         self.task_list_screen._finalize_task_processing(
             card=self.card,
-            final_qty=conf_q,
+            final_qty=calculated_total_qty,
             split_qty=0,
             final_location=final_location,
             updated_remarks=self.current_remarks,
