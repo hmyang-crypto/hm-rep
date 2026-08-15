@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소 (자동 업데이트 엔진)
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.3"
+CURRENT_VERSION = "1.0.2"
 
 def check_and_apply_update():
     try:
