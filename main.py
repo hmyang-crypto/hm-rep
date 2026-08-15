@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.3"
+CURRENT_VERSION = "1.0.4"
 
 
 def check_and_apply_update():
@@ -1778,23 +1778,20 @@ class UnifiedReplenishScreen(Screen):
             from_loc = str(t(task, "기존로케이션")).strip().upper()
             to_loc = str(t(task, "보충로케이션")).strip().upper()
 
-            clean_from_sel = (
-                self.selected_from_zone.split("존")[0]
-                .replace("보관:", "")
-                .strip()
-            )
-            clean_to_sel = (
-                self.selected_to_zone.split("존")[0]
-                .replace("이동:", "")
-                .strip()
-            )
+            # 스피너에서 선택된 텍스트(예: "Q존 (1건)")에서 알파벳(Q)만 추출
+            clean_from_sel = self.selected_from_zone.replace("보관:", "").strip()
+            clean_to_sel = self.selected_to_zone.replace("이동:", "").strip()
 
-            if "전체" not in clean_from_sel and not from_loc.startswith(
-                clean_from_sel
-            ):
-                continue
-            if "전체" not in clean_to_sel and not to_loc.startswith(clean_to_sel):
-                continue
+            # "전체"가 아닐 때 선택된 존 알파벳(예: 'Q')으로 시작하는지 정밀 체크
+            if "전체" not in clean_from_sel:
+                target_zone = clean_from_sel[0] if clean_from_sel else ""
+                if not from_loc.startswith(target_zone):
+                    continue
+
+            if "전체" not in clean_to_sel:
+                target_to_zone = clean_to_sel[0] if clean_to_sel else ""
+                if not to_loc.startswith(target_to_zone):
+                    continue
 
             if self.only_urgent and t(task, "긴급여부") != "Y":
                 continue
