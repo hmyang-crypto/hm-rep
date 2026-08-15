@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.2.1"
+CURRENT_VERSION = "1.2.2"
 
 
 def check_and_apply_update():
@@ -1334,8 +1334,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             tag_prefix += "[color=D32F2F][긴급][/color] "
         if is_shelf_rack:
             tag_prefix += "[color=1565C0][선반랙][/color] "
-        if is_invoice_only:
-            tag_prefix += "[color=D32F2F](송장만부착)[/color] "
+
 
         self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
         self.ids.lbl_barcode.text = f"바코드: {t(self.task_data, '상품바코드', t(self.task_data, '바코드', 'N/A'))}"
