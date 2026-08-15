@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import ssl  # 👈 SSL 모듈 추가
 import sys
 import threading
 import time
@@ -13,20 +14,30 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.0"  # 앱 내부에 기록된 현재 버전
+CURRENT_VERSION = "1.0.0"  # 앱 설치 직후 기본 버전
 
 
 def check_and_apply_update():
     try:
         print("🔍 서버에서 최신 업데이트 확인 중...")
+
+        # 💡 안드로이드 SSL 인증서 검증 우회 설정 (핵심 해결책!)
+        ssl_context = ssl._create_unverified_context()
+
         req = urllib.request.Request(
             UPDATE_CHECK_URL, headers={"User-Agent": "Mozilla/5.0"}
         )
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with urllib.request.urlopen(
+            req, timeout=5, context=ssl_context
+        ) as response:
             if response.status == 200:
                 server_version = response.read().decode("utf-8").strip()
+                print(
+                    f"📌 현재 버전: {CURRENT_VERSION} / 서버 버전: {server_version}"
+                )
 
-                if server_version > CURRENT_VERSION:
+                # 버전이 다르면 무조건 다운로드 실행
+                if server_version != CURRENT_VERSION:
                     print(
                         f"🚀 새 버전 발견 ({server_version})! 코드를 다운로드합니다."
                     )
@@ -34,7 +45,7 @@ def check_and_apply_update():
                         UPDATE_CODE_URL, headers={"User-Agent": "Mozilla/5.0"}
                     )
                     with urllib.request.urlopen(
-                        code_req, timeout=5
+                        code_req, timeout=10, context=ssl_context
                     ) as new_code_response:
                         if new_code_response.status == 200:
                             current_file_path = os.path.abspath(__file__)
