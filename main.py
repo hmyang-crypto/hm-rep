@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.1.6"
+CURRENT_VERSION = "1.1.8"
 
 
 def check_and_apply_update():
@@ -720,14 +720,14 @@ class InspectionPopup(Popup):
         self.title = "검수 및 최종 처리"
         self.title_font = FONT_NAME
         self.size_hint = (0.95, None)
-        self.height = dp(520)
+        # 💡 [레이아웃 수정] 팝업 높이를 520 -> 560으로 확대하여 로케이션 입력창 여유 공간 확보
+        self.height = dp(560)
         self.auto_dismiss = False
 
         main_layout = BoxLayout(
-            orientation="vertical", padding=dp(15), spacing=dp(10)
+            orientation="vertical", padding=dp(15), spacing=dp(12)
         )
 
-        # 기존 지시 수량 및 입수량 정보
         total_qty = safe_int(t(self.task_data, "지시수량", 0))
         default_box_size = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 1))
@@ -745,9 +745,9 @@ class InspectionPopup(Popup):
         )
         main_layout.add_widget(info_label)
 
-        # 수량 입력 그리드 (박스 입수량 / 박스 수량 / 낱개 수량)
+        # 수량 입력 영역
         input_grid = GridLayout(
-            cols=2, spacing=dp(8), size_hint_y=None, height=dp(150)
+            cols=2, spacing=dp(10), size_hint_y=None, height=dp(160)
         )
 
         input_grid.add_widget(
@@ -757,12 +757,13 @@ class InspectionPopup(Popup):
                 font_size=dp(14),
             )
         )
+        # 💡 [입력 개선] text 대신 hint_text 사용 및 focus 시 지워지도록 구성
         self.box_size_input = TextInput(
             text=str(default_box_size),
             multiline=False,
             input_type="number",
             font_name=FONT_NAME,
-            font_size=dp(16),
+            font_size=dp(18),
             halign="center",
         )
         input_grid.add_widget(self.box_size_input)
@@ -770,12 +771,13 @@ class InspectionPopup(Popup):
         input_grid.add_widget(
             Label(text="박스 수량:", font_name=FONT_NAME, font_size=dp(14))
         )
+        # 💡 [입력 개선] 기본 text="0" 대신 hint_text="0" 설정 -> 입력 시 기존 0 자동 소멸
         self.box_count_input = TextInput(
             hint_text="0",
             multiline=False,
             input_type="number",
             font_name=FONT_NAME,
-            font_size=dp(16),
+            font_size=dp(18),
             halign="center",
         )
         input_grid.add_widget(self.box_count_input)
@@ -783,29 +785,44 @@ class InspectionPopup(Popup):
         input_grid.add_widget(
             Label(text="낱개 수량:", font_name=FONT_NAME, font_size=dp(14))
         )
+        # 💡 [입력 개선] 기본 text="0" 대신 hint_text="0" 설정 -> 입력 시 기존 0 자동 소멸
         self.rem_qty_input = TextInput(
-            text="0",
+            hint_text="0",
             multiline=False,
             input_type="number",
             font_name=FONT_NAME,
-            font_size=dp(16),
+            font_size=dp(18),
             halign="center",
         )
         input_grid.add_widget(self.rem_qty_input)
 
         main_layout.add_widget(input_grid)
 
-        # 최종 적치위치 입력
-        hint_txt = "최종 적치위치 입력"
+        # 💡 [위치 조정] 로케이션 라벨 및 입력창 레이아웃 수정
+        loc_box = BoxLayout(
+            orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(70)
+        )
+        loc_box.add_widget(
+            Label(
+                text="최종 적치위치",
+                font_name=FONT_NAME,
+                font_size=dp(14),
+                size_hint_y=None,
+                height=dp(20),
+                halign="left",
+            )
+        )
         self.final_location_input = TextInput(
             text=str(t(self.task_data, "보충로케이션", "")),
-            hint_text=hint_txt,
+            hint_text="적치위치 입력",
             multiline=False,
             font_name=FONT_NAME,
+            font_size=dp(16),
             size_hint_y=None,
             height=dp(45),
         )
-        main_layout.add_widget(self.final_location_input)
+        loc_box.add_widget(self.final_location_input)
+        main_layout.add_widget(loc_box)
 
         # 하단 버튼
         top_button_grid = GridLayout(
@@ -828,14 +845,13 @@ class InspectionPopup(Popup):
         app = App.get_running_app()
 
         box_size_str = self.box_size_input.text.strip()
-        box_count_str = self.box_count_input.text.strip()
-        rem_qty_str = self.rem_qty_input.text.strip()
+        box_count_str = self.box_count_input.text.strip() or "0"
+        rem_qty_str = self.rem_qty_input.text.strip() or "0"
         final_location = self.final_location_input.text.strip()
 
-        # 3가지 수량 필수 입력 검증
         if not box_size_str.isdigit() or not box_count_str.isdigit() or not rem_qty_str.isdigit():
             app.show_info_popup(
-                "입력 오류", "박스 입수량, 박스 수량, 낱개 수량을 모두 숫자 항목으로 입력해야 합니다."
+                "입력 오류", "박스 입수량, 박스 수량, 낱개 수량을 숫자로 입력해야 합니다."
             )
             return
 
@@ -843,7 +859,6 @@ class InspectionPopup(Popup):
         box_count = int(box_count_str)
         rem_qty = int(rem_qty_str)
 
-        # 총 수량 계산
         calculated_total_qty = (box_size * box_count) + rem_qty
 
         if calculated_total_qty <= 0:
@@ -854,7 +869,6 @@ class InspectionPopup(Popup):
             app.show_info_popup("오류", "최종 적치위치를 입력해야 합니다.")
             return
 
-        # 검수 확정 처리
         self.task_list_screen._finalize_task_processing(
             card=self.card,
             final_qty=calculated_total_qty,
@@ -2470,7 +2484,25 @@ class TaskListScreen(Screen):
     ):
         app = App.get_running_app()
 
-        # 💡 구버전 검수 어플 사용자를 위한 시트 '확인수량' 컬럼 명시적 업데이트
+        # 💡 [핵심] 검수인원이 처리할 때는 인쇄 팝업 없이 바로 '최종완료' 처리!
+        if app.current_list_type == "검수인원":
+            updates = {
+                "상태": "최종완료",
+                "검수담당자": app.user_real_name,
+                "최종완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "확인수량": str(final_qty),
+                "비고": updated_remarks,
+                "최종적치위치": final_location,
+            }
+            app.show_loading_popup()
+            threading.Thread(
+                target=self._perform_update,
+                args=(card, updates, "검수 작업이 '최종완료' 처리 되었습니다."),
+                daemon=True,
+            ).start()
+            return
+
+        # 💡 보충인원이 처리할 때만 기존 라벨 인쇄 팝업 및 '보충완료' 처리
         updates = {
             "상태": "보충완료",
             "보충담당자": app.user_real_name,
