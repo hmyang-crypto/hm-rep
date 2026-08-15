@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.7"
+CURRENT_VERSION = "1.0.8"
 
 
 def check_and_apply_update():
@@ -670,12 +670,12 @@ class InspectionPopup(Popup):
         confirmed_qty_display = (
             confirmed_qty_str
             if confirmed_qty_str.isdigit() and confirmed_qty_str
-            else "미입력"
+            else str(total_qty)
         )
 
         qty_grid.add_widget(Label(text="총 지시수량:", font_name=FONT_NAME))
         qty_grid.add_widget(
-            Label(text=str(total_qty), font_name=FONT_NAME, bold=True)
+            Label(text=f"{total_qty} EA", font_name=FONT_NAME, bold=True)
         )
 
         qty_grid.add_widget(
@@ -683,9 +683,11 @@ class InspectionPopup(Popup):
         )
         qty_grid.add_widget(
             Label(
-                text=f"{total_qty} / [b]{confirmed_qty_display}[/b]",
+                text=f"{confirmed_qty_display} EA",
                 font_name=FONT_NAME,
                 markup=True,
+                bold=True,
+                color=PRIMARY_BLUE,
             )
         )
 
@@ -725,11 +727,12 @@ class InspectionPopup(Popup):
             app.show_info_popup("오류", "최종 적치위치를 입력해야 합니다.")
             return
 
+        conf_q = safe_int(
+            t(self.task_data, "확인수량", t(self.task_data, "지시수량", 0))
+        )
         self.task_list_screen._finalize_task_processing(
             card=self.card,
-            final_qty=safe_int(
-                t(self.task_data, "확인수량", t(self.task_data, "지시수량", 0))
-            ),
+            final_qty=conf_q,
             split_qty=0,
             final_location=final_location,
             updated_remarks=self.current_remarks,
@@ -746,7 +749,6 @@ class NameEntryScreen(Screen):
             orientation="vertical", padding=dp(30), spacing=dp(15)
         )
 
-        # 타이틀
         layout.add_widget(
             Label(
                 text="보충 업무 자동화",
@@ -758,7 +760,6 @@ class NameEntryScreen(Screen):
             )
         )
 
-        # 💡 [신규] 버전 표시
         layout.add_widget(
             Label(
                 text=f"App Version: v{CURRENT_VERSION}",
@@ -1166,7 +1167,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
     is_claimed = BooleanProperty(False)
     is_checked = BooleanProperty(False)
     card_screen = ObjectProperty(None)
-    card_bg_color = ListProperty([1, 1, 1, 1])  # 💡 카드 배경색 속성
+    card_bg_color = ListProperty([1, 1, 1, 1])
 
     def refresh_view_attrs(self, rv, index, data):
         super().refresh_view_attrs(rv, index, data)
@@ -1179,7 +1180,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         is_urgent = self.task_data.get("긴급여부") == "Y"
         is_shelf_rack = t(self.task_data, "선반랙 여부", "").upper() == "Y"
 
-        # 💡 [카드 배경색 설정] 긴급: 옅은 빨간색 / 선반랙: 옅은 파란색 / 일반: 흰색
         if is_urgent:
             self.card_bg_color = get_color_from_hex("#FFEBEE")
         elif is_shelf_rack:
@@ -1187,7 +1187,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.card_bg_color = [1, 1, 1, 1]
 
-        # 💡 장비 표시 (카드 왼쪽 최상단 노란색 영역 위치)
         raw_equip = str(t(self.task_data, "장비", ""))
         if raw_equip == "리치":
             display_tag = "[color=0000FF][리치][/color]"
@@ -1197,7 +1196,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             display_tag = ""
         self.ids.lbl_equip.text = f"[b]{display_tag}[/b]"
 
-        # 💡 상품명 앞 태그
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
@@ -1221,37 +1219,48 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
         )
 
-        req_qty = str(t(self.task_data, "지시수량", "0"))
-        total_qty = safe_int(req_qty)
-        box_ea_str = (
-            f"({total_qty // qty_per_box}B/{total_qty % qty_per_box}E)"
-            if qty_per_box > 0
-            else f"({total_qty}E)"
-        )
+        req_qty = safe_int(t(self.task_data, "지시수량", 0))
+        conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
+        conf_str = f" / [{conf_qty_val}EA]" if str(conf_qty_val).isdigit() and str(conf_qty_val) != "" else " / [-]"
 
-        self.ids.lbl_qty.text = f"지시: [b]{req_qty}[/b] / 박스: [b]{qty_per_box}[/b] [color=1E88E5]{box_ea_str}[/color]"
+        self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}EA[/b][color=D32F2F]{conf_str}[/color]"
+
+        box_ea_str = (
+            f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
+            if qty_per_box > 0
+            else f"({req_qty}E)"
+        )
+        self.ids.lbl_box_info.text = f"박스입수: {qty_per_box}EA [color=1E88E5]{box_ea_str}[/color]"
+
+        self.ids.box_check.opacity = 1
+        self.ids.box_check.disabled = False
+        self.ids.box_check.active = self.is_checked
 
         if self.is_claimed:
-            self.ids.box_check.opacity = 0
-            self.ids.box_check.disabled = True
             self.ids.btn_action_box.height = dp(40)
             self.ids.btn_action_box.opacity = 1
             self.ids.btn_action_box.disabled = False
         else:
-            self.ids.box_check.opacity = 1
-            self.ids.box_check.disabled = False
-            self.ids.box_check.active = self.is_checked
             self.ids.btn_action_box.height = 0
             self.ids.btn_action_box.opacity = 0
             self.ids.btn_action_box.disabled = True
 
     def on_checkbox_active(self, checkbox, value):
-        if self.card_screen and not self.is_claimed:
+        if self.card_screen:
             self.card_screen.toggle_card_check(self.task_data, value)
 
     def handle_card_btn(self, action_name):
         if self.card_screen:
             self.card_screen.handle_my_task_action(action_name, self.task_data)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            app = App.get_running_app()
+            if app and app.root and app.root.current == "task_list":
+                task_list_screen = app.root.get_screen("task_list")
+                task_list_screen.open_task_from_scan({"task_data": self.task_data})
+                return True
+        return super().on_touch_down(touch)
 
 
 # --- 올인원 통합 보충 작업 화면 ---
@@ -1264,6 +1273,7 @@ class UnifiedReplenishScreen(Screen):
         self.only_urgent = False
         self.selected_from_zone = "전체"
         self.selected_to_zone = "전체"
+        self.sort_asc = True
         self.is_filter_expanded = True
 
         self.raw_all_tasks = []
@@ -1380,9 +1390,9 @@ class UnifiedReplenishScreen(Screen):
         equip_filter_box.add_widget(self.btn_eq_reach)
         self.filter_panel.add_widget(equip_filter_box)
 
-        # 3-3. 로케이션 & 긴급 필터
+        # 3-3. 로케이션 & 정렬 & 긴급 필터
         opt_toolbar = BoxLayout(
-            size_hint_y=None, height=dp(32), spacing=dp(5)
+            size_hint_y=None, height=dp(32), spacing=dp(4)
         )
         from_zone_list = [
             "보관: 전체",
@@ -1400,8 +1410,8 @@ class UnifiedReplenishScreen(Screen):
         self.sp_from = StyledSpinner(
             text="보관: 전체",
             values=from_zone_list,
-            font_size=dp(12),
-            size_hint_x=0.36,
+            font_size=dp(11),
+            size_hint_x=0.32,
             option_cls=KoreanSpinnerOption,
         )
         self.sp_from.bind(text=self.on_from_spinner_change)
@@ -1409,31 +1419,30 @@ class UnifiedReplenishScreen(Screen):
         self.sp_to = StyledSpinner(
             text="이동: 전체",
             values=["이동: 전체", "A존", "B존", "C존", "D존", "I존", "O존"],
-            font_size=dp(12),
-            size_hint_x=0.36,
+            font_size=dp(11),
+            size_hint_x=0.32,
             option_cls=KoreanSpinnerOption,
         )
         self.sp_to.bind(text=self.on_to_spinner_change)
 
-        chk_box = BoxLayout(size_hint_x=0.28, spacing=dp(2))
+        self.btn_sort = StyledButton(
+            text="로케이션 ⬆",
+            size_hint_x=0.22,
+            font_size=dp(11),
+            bg_color=get_color_from_hex("#546E7A"),
+        )
+        self.btn_sort.bind(on_press=self.toggle_sort_order)
+
+        chk_box = BoxLayout(size_hint_x=0.14, spacing=dp(1))
         self.chk_urgent = CheckBox(
-            active=False, size_hint_x=None, width=dp(22), color=PRIMARY_BLUE
+            active=False, size_hint_x=None, width=dp(20), color=PRIMARY_BLUE
         )
         self.chk_urgent.bind(active=self.on_urgent_check_change)
-        lbl_urg = Label(
-            text="긴급만",
-            font_name=FONT_NAME,
-            font_size=dp(12),
-            color=TEXT_DARK,
-            halign="left",
-            valign="middle",
-        )
-        lbl_urg.bind(size=lambda i, s: setattr(i, "text_size", s))
 
         chk_box.add_widget(self.chk_urgent)
-        chk_box.add_widget(lbl_urg)
         opt_toolbar.add_widget(self.sp_from)
         opt_toolbar.add_widget(self.sp_to)
+        opt_toolbar.add_widget(self.btn_sort)
         opt_toolbar.add_widget(chk_box)
         self.filter_panel.add_widget(opt_toolbar)
 
@@ -1486,13 +1495,13 @@ class UnifiedReplenishScreen(Screen):
         self.rv.viewclass = "UnifiedTaskCard"
         self.layout.add_widget(self.rv)
 
-        # 6. 하단 할당 액션 바
+        # 6. 하단 할당 / 일괄 반납 액션 바
         self.action_bar = BoxLayout(
             size_hint_y=None, height=dp(42), padding=(dp(5), 0)
         )
         self.action_bar.add_widget(Widget())
 
-        self.btn_claim_action = StyledButton(
+        self.btn_main_action = StyledButton(
             text="+ 선택 항목 할당받기 (0)",
             size_hint_x=None,
             width=dp(210),
@@ -1500,11 +1509,16 @@ class UnifiedReplenishScreen(Screen):
             bold=True,
             font_size=dp(13),
         )
-        self.btn_claim_action.bind(on_press=self.claim_checked_tasks)
-        self.action_bar.add_widget(self.btn_claim_action)
+        self.btn_main_action.bind(on_press=self.handle_main_action)
+        self.action_bar.add_widget(self.btn_main_action)
         self.layout.add_widget(self.action_bar)
 
         self.add_widget(self.layout)
+
+    def toggle_sort_order(self, instance):
+        self.sort_asc = not self.sort_asc
+        self.btn_sort.text = "로케이션 ⬆" if self.sort_asc else "로케이션 ⬇"
+        self.apply_filters_and_render()
 
     def toggle_filter_panel(self, instance=None):
         self.is_filter_expanded = not self.is_filter_expanded
@@ -1548,12 +1562,6 @@ class UnifiedReplenishScreen(Screen):
             self.layout.add_widget(self.filter_panel, index=target_idx)
         self._update_filter_button_text("닫기 ▲")
 
-        self.action_bar.height = dp(42)
-        self.action_bar.opacity = 1
-        self.action_bar.disabled = False
-        self.chk_all.opacity = 1
-        self.lbl_chk_all.opacity = 1
-        self.chk_all.disabled = False
         self.fetch_data()
 
     def handle_barcode_scan(self, barcode):
@@ -1629,21 +1637,15 @@ class UnifiedReplenishScreen(Screen):
         self.active_main_tab = tab_mode
         self.btn_tab_pending.set_active_visual(tab_mode == "PENDING")
         self.btn_tab_my.set_active_visual(tab_mode == "MY")
+        self.checked_task_ids.clear()
+        self.chk_all.active = False
 
         if tab_mode == "MY":
-            self.action_bar.height = 0
-            self.action_bar.opacity = 0
-            self.action_bar.disabled = True
-            self.chk_all.opacity = 0
-            self.lbl_chk_all.opacity = 0
-            self.chk_all.disabled = True
+            self.btn_main_action.text = "↩ 선택 항목 일괄 반납 (0)"
+            self.btn_main_action.set_bg_color(get_color_from_hex("#FF7043"))
         else:
-            self.action_bar.height = dp(42)
-            self.action_bar.opacity = 1
-            self.action_bar.disabled = False
-            self.chk_all.opacity = 1
-            self.lbl_chk_all.opacity = 1
-            self.chk_all.disabled = False
+            self.btn_main_action.text = "+ 선택 항목 할당받기 (0)"
+            self.btn_main_action.set_bg_color(PRIMARY_BLUE)
 
         self._update_filter_button_text(
             "닫기 ▲" if self.is_filter_expanded else "열기 ▼"
@@ -1682,13 +1684,17 @@ class UnifiedReplenishScreen(Screen):
             self.checked_task_ids.add(task_id)
         else:
             self.checked_task_ids.discard(task_id)
-        self.btn_claim_action.text = (
-            f"+ 선택 항목 할당받기 ({len(self.checked_task_ids)})"
+
+        action_prefix = (
+            "↩ 선택 항목 일괄 반납"
+            if self.active_main_tab == "MY"
+            else "+ 선택 항목 할당받기"
+        )
+        self.btn_main_action.text = (
+            f"{action_prefix} ({len(self.checked_task_ids)})"
         )
 
     def on_check_all_change(self, checkbox, value):
-        if self.active_main_tab == "MY":
-            return
         self.rv.data = [{**item, "is_checked": value} for item in self.rv.data]
         self.rv.refresh_from_data()
         if value:
@@ -1696,15 +1702,20 @@ class UnifiedReplenishScreen(Screen):
                 self.checked_task_ids.add(t(item["task_data"], "작업ID"))
         else:
             self.checked_task_ids.clear()
-        self.btn_claim_action.text = (
-            f"+ 선택 항목 할당받기 ({len(self.checked_task_ids)})"
+
+        action_prefix = (
+            "↩ 선택 항목 일괄 반납"
+            if self.active_main_tab == "MY"
+            else "+ 선택 항목 할당받기"
+        )
+        self.btn_main_action.text = (
+            f"{action_prefix} ({len(self.checked_task_ids)})"
         )
 
     def apply_filters_and_render(self):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
-        # 💡 1. 메뉴바 & 필터용 실시간 건수 및 긴급 건수 집계
         eq_all_tot, eq_all_urg = 0, 0
         eq_op_tot, eq_op_urg = 0, 0
         eq_reach_tot, eq_reach_urg = 0, 0
@@ -1751,7 +1762,6 @@ class UnifiedReplenishScreen(Screen):
                 if t_zone in to_counts:
                     to_counts[t_zone] += 1
 
-        # 💡 2. 상단 장비 메뉴바 버튼 텍스트 업데이트 (총수량 / 긴급건수)
         self.btn_eq_all.markup = True
         self.btn_eq_all.text = f"전체 ({eq_all_tot} / [color=D32F2F]{eq_all_urg}[/color])"
 
@@ -1761,7 +1771,6 @@ class UnifiedReplenishScreen(Screen):
         self.btn_eq_reach.markup = True
         self.btn_eq_reach.text = f"리치 ({eq_reach_tot} / [color=D32F2F]{eq_reach_urg}[/color])"
 
-        # 💡 3. 스피너 필터 목록 갱신 (예: I존 (5건))
         tot_from = sum(from_counts.values())
         new_from_values = [f"보관: 전체 ({tot_from}건)"]
         for z in sorted(from_counts.keys()):
@@ -1776,7 +1785,6 @@ class UnifiedReplenishScreen(Screen):
         self.sp_from.values = new_from_values
         self.sp_to.values = new_to_values
 
-        # 💡 4. 필터링 및 카드 리렌더링
         filtered_list = []
         for task in self.raw_all_tasks:
             status = str(t(task, "상태")).strip()
@@ -1808,7 +1816,6 @@ class UnifiedReplenishScreen(Screen):
                 self.selected_to_zone.replace("이동:", "").strip()
             )
 
-            # "전체"가 아닐 때 선택된 존 알파벳(예: 'Q')으로 정밀 시작 검사
             if "전체" not in clean_from_sel:
                 target_zone = clean_from_sel[0] if clean_from_sel else ""
                 if not from_loc.startswith(target_zone):
@@ -1825,7 +1832,11 @@ class UnifiedReplenishScreen(Screen):
             filtered_list.append(task)
 
         filtered_list.sort(
-            key=lambda x: (t(x, "긴급여부") != "Y", t(x, "기존로케이션", ""))
+            key=lambda x: (
+                t(x, "긴급여부") != "Y",
+                t(x, "기존로케이션", ""),
+            ),
+            reverse=not self.sort_asc,
         )
 
         rv_items = []
@@ -1857,6 +1868,12 @@ class UnifiedReplenishScreen(Screen):
         self.lbl_status_count.text = (
             f"{tab_name} ({eq_name}) : {len(filtered_list)}건"
         )
+
+    def handle_main_action(self, instance):
+        if self.active_main_tab == "PENDING":
+            self.claim_checked_tasks(instance)
+        else:
+            self.batch_return_checked_tasks(instance)
 
     def claim_checked_tasks(self, instance):
         if not self.checked_task_ids:
@@ -1896,7 +1913,6 @@ class UnifiedReplenishScreen(Screen):
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
 
-            # 💡 [핵심 1] 메모리(raw_all_tasks) 데이터의 상태/담당자를 즉시 갱신
             user_name_raw = str(app.user_real_name).strip()
             for task in self.raw_all_tasks:
                 if t(task, "작업ID") in self.checked_task_ids:
@@ -1922,11 +1938,78 @@ class UnifiedReplenishScreen(Screen):
         App.get_running_app().show_info_popup(
             "성공", "선택한 작업이 '내 작업'으로 할당되었습니다."
         )
-        self.btn_claim_action.text = "+ 선택 항목 할당받기 (0)"
-
-        # 💡 [핵심 2] 탭 변경과 동시에 화면 강제 리렌더링을 확실하게 명시 실행!
         self.switch_main_tab("MY")
-        self.apply_filters_and_render()
+
+    def batch_return_checked_tasks(self, instance):
+        if not self.checked_task_ids:
+            App.get_running_app().show_info_popup(
+                "알림", "반납할 작업을 선택해주세요."
+            )
+            return
+        App.get_running_app().show_confirmation_popup(
+            "일괄 반납 확인",
+            f"선택한 {len(self.checked_task_ids)}건의 작업을 반납하시겠습니까?",
+            lambda: self._start_async_batch_return(),
+        )
+
+    def _start_async_batch_return(self):
+        App.get_running_app().show_loading_popup()
+        threading.Thread(
+            target=self._async_batch_return, daemon=True
+        ).start()
+
+    def _async_batch_return(self):
+        try:
+            sheet = get_worksheet(TASK_SHEET_NAME)
+            all_rows = execute_with_retry(sheet.get, "A:AA")
+            if not all_rows or len(all_rows) < 2:
+                raise Exception("시트 데이터를 불러올 수 없습니다.")
+
+            headers = [str(h).strip() for h in all_rows[0]]
+            assignee_col = headers.index("작업 담당자") + 1
+            status_col = headers.index("상태") + 1
+            task_id_col = headers.index("작업ID") + 1
+
+            all_ids = sheet.col_values(task_id_col)
+            cells_to_update = []
+
+            for task_id in self.checked_task_ids:
+                if task_id in all_ids:
+                    row_idx = all_ids.index(task_id) + 1
+                    cells_to_update.append(
+                        gspread.Cell(row_idx, assignee_col, "")
+                    )
+                    cells_to_update.append(
+                        gspread.Cell(row_idx, status_col, "대기")
+                    )
+
+            if cells_to_update:
+                sheet.update_cells(cells_to_update)
+
+            for task in self.raw_all_tasks:
+                if t(task, "작업ID") in self.checked_task_ids:
+                    task["상태"] = "대기"
+                    task["작업 담당자"] = ""
+
+            invalidate_cache(TASK_SHEET_NAME)
+            self.checked_task_ids.clear()
+
+            Clock.schedule_once(
+                lambda dt: App.get_running_app().show_info_popup(
+                    "성공", "선택한 작업이 일괄 반납되었습니다."
+                )
+            )
+            Clock.schedule_once(lambda dt: self.apply_filters_and_render())
+        except Exception as e:
+            Clock.schedule_once(
+                lambda dt, err=str(e): App.get_running_app().show_info_popup(
+                    "오류", str(err)
+                )
+            )
+        finally:
+            Clock.schedule_once(
+                lambda dt: App.get_running_app().dismiss_loading_popup()
+            )
 
     def handle_my_task_action(self, action_name, task_data):
         task_list_screen = self.manager.get_screen("task_list")
@@ -2048,10 +2131,7 @@ class TaskListScreen(Screen):
         dummy_card = type(
             "DummyCard", (), {"task_data": item_data["task_data"]}
         )()
-        if App.get_running_app().current_list_type == "보충인원":
-            self.open_quantity_popup(dummy_card)
-        else:
-            InspectionPopup(card=dummy_card, task_list_screen=self).open()
+        InspectionPopup(card=dummy_card, task_list_screen=self).open()
 
     def return_task(self, card):
         App.get_running_app().show_confirmation_popup(
@@ -2099,11 +2179,7 @@ class TaskListScreen(Screen):
 
     def open_quantity_popup(self, card):
         ordered_qty = str(t(card.task_data, "지시수량", "0")).strip()
-        existing_conf_qty = (
-            str(card.task_data.get("confirmed_quantity", ""))
-            .split("/")[0]
-            .strip()
-        )
+        existing_conf_qty = str(card.task_data.get("confirmed_quantity", "")).strip()
         initial_val = (
             existing_conf_qty if existing_conf_qty.isdigit() else ordered_qty
         )
@@ -2176,23 +2252,21 @@ class TaskListScreen(Screen):
 
     def process_task(self, card):
         app = App.get_running_app()
-        if app.current_list_type == "검수인원":
-            InspectionPopup(card=card, task_list_screen=self).open()
-            return
-        qty_str = (
-            str(card.task_data.get("confirmed_quantity", ""))
-            .split("/")[0]
-            .strip()
-        )
-        if not qty_str.isdigit() or int(qty_str) == 0:
+
+        qty_val = str(card.task_data.get("confirmed_quantity", "")).strip()
+        if not qty_val.isdigit() or int(qty_val) == 0:
             app.show_info_popup(
                 "입력 오류",
                 "수량입력 버튼을 눌러 확인 수량을 먼저 입력해주세요.",
             )
             return
+
+        conf_q = int(qty_val)
+        card.task_data["확인수량"] = conf_q
+
         self._finalize_task_processing(
             card,
-            int(qty_str),
+            conf_q,
             0,
             None,
             card.task_data.get("remarks_text", t(card.task_data, "비고", "")),
@@ -2805,10 +2879,10 @@ Builder.load_string(
             size: self.size
             radius: [dp(12),]
 
-    # 💡 카드 최상단: [오더피커] / [리치] 태그 영역 (노란색 위치)
+    # 💡 카드 상단 헤더: 장비 태그 / 지시수량 및 확인수량 / 체크박스
     BoxLayout:
         size_hint_y: None
-        height: dp(22)
+        height: dp(26)
         spacing: dp(5)
         Label:
             id: lbl_equip
@@ -2817,11 +2891,23 @@ Builder.load_string(
             halign: 'left'
             valign: 'middle'
             markup: True
+            size_hint_x: 0.25
+            text_size: self.width, None
+        Label:
+            id: lbl_main_qty
+            font_name: app.FONT_NAME
+            font_size: dp(16)
+            bold: True
+            halign: 'right'
+            valign: 'middle'
+            markup: True
+            size_hint_x: 0.65
+            color: (0.12, 0.53, 0.9, 1)
             text_size: self.width, None
         CheckBox:
             id: box_check
             size_hint_x: None
-            width: dp(35)
+            width: dp(30)
             color: (0.12, 0.53, 0.9, 1)
             on_active: root.on_checkbox_active(self, self.active)
 
@@ -2837,15 +2923,26 @@ Builder.load_string(
         size_hint_y: None
         height: self.texture_size[1]
 
-    Label:
-        id: lbl_barcode
-        font_name: app.FONT_NAME
-        font_size: dp(12)
-        color: (0.4, 0.4, 0.4, 1)
-        halign: 'left'
-        text_size: self.width, None
+    BoxLayout:
         size_hint_y: None
-        height: dp(18)
+        height: dp(20)
+        Label:
+            id: lbl_barcode
+            font_name: app.FONT_NAME
+            font_size: dp(12)
+            color: (0.4, 0.4, 0.4, 1)
+            halign: 'left'
+            text_size: self.width, None
+            size_hint_x: 0.55
+        Label:
+            id: lbl_box_info
+            font_name: app.FONT_NAME
+            font_size: dp(12)
+            color: (0.3, 0.3, 0.3, 1)
+            markup: True
+            halign: 'right'
+            text_size: self.width, None
+            size_hint_x: 0.45
 
     BoxLayout:
         size_hint_y: None
@@ -2858,17 +2955,6 @@ Builder.load_string(
             markup: True
             halign: 'left'
             text_size: self.width, None
-
-    Label:
-        id: lbl_qty
-        font_name: app.FONT_NAME
-        font_size: dp(13)
-        color: (0.2, 0.2, 0.2, 1)
-        markup: True
-        halign: 'left'
-        text_size: self.width, None
-        size_hint_y: None
-        height: dp(20)
 
     GridLayout:
         id: btn_action_box
@@ -2976,9 +3062,10 @@ class MainApp(App):
 
     def process_global_scan(self, barcode):
         clean_barcode = re.sub(r"[^\x20-\x7E]", "", barcode).strip().upper()
-        curr_screen = self.root.current_screen
-        if hasattr(curr_screen, "handle_barcode_scan"):
-            curr_screen.handle_barcode_scan(clean_barcode)
+        if self.root:
+            curr_screen = self.root.current_screen
+            if hasattr(curr_screen, "handle_barcode_scan"):
+                curr_screen.handle_barcode_scan(clean_barcode)
 
     def get_config_path(self):
         return "user_config.json"
