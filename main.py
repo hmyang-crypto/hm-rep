@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.9"
+CURRENT_VERSION = "1.1.0"
 
 
 def check_and_apply_update():
@@ -61,9 +61,6 @@ def check_and_apply_update():
         print(f"⚠️ 업데이트 확인 중 오류 (무시하고 앱 실행): {e}")
 
 
-# -------------------------------------------------------------
-# 💡 [무한 루프 방지] updated_main.py 실행 중일 때는 업데이트 감지를 스킵
-# -------------------------------------------------------------
 if "updated_main.py" not in os.path.basename(__file__):
     check_and_apply_update()
 
@@ -84,7 +81,6 @@ if "updated_main.py" not in os.path.basename(__file__):
             print(
                 f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}"
             )
-# -------------------------------------------------------------
 
 from kivy.animation import Animation
 from kivy.app import App
@@ -123,7 +119,6 @@ from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.widget import Widget
 from kivy.utils import get_color_from_hex, platform
 
-# --- Kivy 환경 변수 설정 ---
 if platform == "android":
     try:
         from jnius import autoclass
@@ -140,19 +135,16 @@ if platform == "android":
     except Exception as e:
         print(f"🚨 KIVY_HOME 설정 오류: {e}")
 
-# Android 플랫폼 관련 임포트
 if platform == "android":
     Window.softinput_mode = "below_target"
     from android.permissions import Permission, request_permissions
     from android.runnable import run_on_ui_thread
     from jnius import JavaException, PythonJavaClass, autoclass, java_method
 
-# --- 라이브러리 임포트 ---
 import gspread
 from gspread.exceptions import APIError
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- 시트 설정 ---
 SERVICE_ACCOUNT_FILE = "replacement-463907-07ae6e152f37.json"
 SPREADSHEET_NAME = "보충시트"
 USER_SHEET_NAME = "사용자_목록"
@@ -169,7 +161,6 @@ SHEET_RANGES = {
     LOCATION_CAPA_SHEET_NAME: "A:AA",
 }
 
-# --- 폰트 및 테마 색상 정의 ---
 try:
     LabelBase.register(name="Nanum", fn_regular="NanumSquareRoundEB.ttf")
     FONT_NAME = "Nanum"
@@ -316,7 +307,6 @@ class TouchableBox(ButtonBehavior, BoxLayout):
     pass
 
 
-# --- 구글 시트 통신 모듈 ---
 g_sheet_client = None
 g_spreadsheet = None
 g_worksheet_objects = {}
@@ -442,7 +432,6 @@ def t(d, k, default=""):
     return d.get(k, default)
 
 
-# --- 팝업 모듈 ---
 class LoadingPopup(Popup):
 
     def __init__(self, **kwargs):
@@ -576,7 +565,6 @@ class SingleInputPopup(Popup):
         self.dismiss()
 
 
-# --- 구버전 수량 계산기 팝업 복원 ---
 class BoxCalculatorPopup(Popup):
 
     def __init__(self, on_confirm, initial_box_size, **kwargs):
@@ -703,7 +691,7 @@ class MultipleSkuSelectPopup(Popup):
             loc = t(task, "기존로케이션", t(task, "보충로케이션", "N/A"))
             qty = t(task, "지시수량", "0")
             btn = StyledButton(
-                text=f"보관위치: {loc} | 지시수량: {qty}EA",
+                text=f"보관위치: {loc} | 지시수량: {qty}",
                 size_hint_y=None,
                 height=dp(55),
             )
@@ -720,7 +708,6 @@ class MultipleSkuSelectPopup(Popup):
         self.content = layout
 
 
-# --- 구버전 수기 검수 로직 완전 복원 팝업 ---
 class InspectionPopup(Popup):
 
     def __init__(self, card, task_list_screen, **kwargs):
@@ -759,7 +746,7 @@ class InspectionPopup(Popup):
 
         qty_grid.add_widget(Label(text="총 지시수량:", font_name=FONT_NAME))
         qty_grid.add_widget(
-            Label(text=f"{total_qty} EA", font_name=FONT_NAME, bold=True)
+            Label(text=f"{total_qty}", font_name=FONT_NAME, bold=True)
         )
 
         qty_grid.add_widget(
@@ -767,7 +754,7 @@ class InspectionPopup(Popup):
         )
         qty_grid.add_widget(
             Label(
-                text=f"{confirmed_qty_display} EA",
+                text=f"{confirmed_qty_display}",
                 font_name=FONT_NAME,
                 bold=True,
                 color=PRIMARY_BLUE,
@@ -844,7 +831,6 @@ class InspectionPopup(Popup):
         self.dismiss()
 
 
-# --- 담당자 이름 입력 화면 ---
 class NameEntryScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -925,7 +911,6 @@ class NameEntryScreen(Screen):
         self.manager.current = "main_menu"
 
 
-# --- 메인 메뉴 화면 ---
 class MainMenuScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -1325,16 +1310,19 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
         req_qty = safe_int(t(self.task_data, "지시수량", 0))
         conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
-        conf_str = f" / [{conf_qty_val}EA]" if str(conf_qty_val).isdigit() and str(conf_qty_val) != "" else " / [0EA]"
 
-        self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}EA[/b][color=D32F2F]{conf_str}[/color]"
+        if self.is_claimed:
+            conf_str = f" / {conf_qty_val}" if str(conf_qty_val).isdigit() and str(conf_qty_val) != "" else ""
+            self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b][color=D32F2F]{conf_str}[/color]"
+        else:
+            self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b]"
 
         box_ea_str = (
             f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
             if qty_per_box > 0
             else f"({req_qty}E)"
         )
-        self.ids.lbl_box_info.text = f"박스입수: {qty_per_box}EA [color=1E88E5]{box_ea_str}[/color]"
+        self.ids.lbl_box_info.text = f"박스입수: {qty_per_box} [color=1E88E5]{box_ea_str}[/color]"
 
         self.ids.box_check.opacity = 1
         self.ids.box_check.disabled = False
@@ -1387,7 +1375,6 @@ class UnifiedReplenishScreen(Screen):
             orientation="vertical", padding=dp(8), spacing=dp(4)
         )
 
-        # 1. 헤더
         header = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(8))
         btn_back = StyledButton(
             text="< 뒤로",
@@ -1414,7 +1401,6 @@ class UnifiedReplenishScreen(Screen):
         header.add_widget(btn_refresh)
         self.layout.add_widget(header)
 
-        # 2. 필터 토글 버튼
         self.btn_toggle_filter = StyledButton(
             text="🔍 필터 설정 닫기 ▲ (대기작업 / 전체)",
             size_hint_y=None,
@@ -1425,7 +1411,6 @@ class UnifiedReplenishScreen(Screen):
         self.btn_toggle_filter.bind(on_press=self.toggle_filter_panel)
         self.layout.add_widget(self.btn_toggle_filter)
 
-        # 3. 📦 필터 종합 컨테이너 패널 구성
         self.filter_panel = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
@@ -1433,7 +1418,6 @@ class UnifiedReplenishScreen(Screen):
             spacing=dp(4),
         )
 
-        # 3-1. 탭 선택
         main_tab_box = BoxLayout(
             size_hint_y=None, height=dp(36), spacing=dp(5)
         )
@@ -1461,7 +1445,6 @@ class UnifiedReplenishScreen(Screen):
         main_tab_box.add_widget(self.btn_tab_my)
         self.filter_panel.add_widget(main_tab_box)
 
-        # 3-2. 장비 선택
         equip_filter_box = BoxLayout(
             size_hint_y=None, height=dp(32), spacing=dp(5)
         )
@@ -1494,7 +1477,6 @@ class UnifiedReplenishScreen(Screen):
         equip_filter_box.add_widget(self.btn_eq_reach)
         self.filter_panel.add_widget(equip_filter_box)
 
-        # 3-3. 로케이션 & 정렬 & 긴급 필터
         opt_toolbar = BoxLayout(
             size_hint_y=None, height=dp(32), spacing=dp(3)
         )
@@ -1562,7 +1544,6 @@ class UnifiedReplenishScreen(Screen):
 
         self.layout.add_widget(self.filter_panel)
 
-        # 4. 리스트 상태 헤더
         list_header = BoxLayout(
             size_hint_y=None, height=dp(26), padding=(dp(5), 0)
         )
@@ -1595,10 +1576,9 @@ class UnifiedReplenishScreen(Screen):
         list_header.add_widget(self.lbl_chk_all)
         self.layout.add_widget(list_header)
 
-        # 5. 메인 리스트뷰
         self.rv = RecycleView()
         self.rv_layout = RecycleBoxLayout(
-            default_size=(None, dp(170)),
+            default_size=(None, dp(205)),
             default_size_hint=(1, None),
             size_hint_y=None,
             orientation="vertical",
@@ -1609,7 +1589,6 @@ class UnifiedReplenishScreen(Screen):
         self.rv.viewclass = "UnifiedTaskCard"
         self.layout.add_widget(self.rv)
 
-        # 6. 하단 할당 / 일괄 반납 액션 바
         self.action_bar = BoxLayout(
             size_hint_y=None, height=dp(42), padding=(dp(5), 0)
         )
@@ -2132,7 +2111,7 @@ class UnifiedReplenishScreen(Screen):
         if action_name == "return":
             task_list_screen.return_task(dummy_card)
         elif action_name == "qty":
-            task_list_screen.open_quantity_popup(dummy_card)
+            task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
         elif action_name == "fail":
             task_list_screen.process_failure(dummy_card)
         elif action_name == "remarks":
@@ -2149,6 +2128,14 @@ class TaskListScreen(Screen):
         self.all_tasks_data = []
 
     def on_enter(self, *args):
+        app = App.get_running_app()
+        if not app.user_real_name:
+            saved_name = app.load_saved_user_name()
+            if saved_name:
+                app.user_real_name = saved_name
+            else:
+                self.manager.current = "name_entry"
+                return
         self.refresh_list(force_refresh=True)
 
     def refresh_list(self, force_refresh=True):
@@ -2291,7 +2278,7 @@ class TaskListScreen(Screen):
                 lambda dt: App.get_running_app().dismiss_loading_popup()
             )
 
-    def open_quantity_popup(self, card):
+    def open_quantity_popup(self, card, card_ref=None):
         ordered_qty = str(t(card.task_data, "지시수량", "0")).strip()
         existing_conf_qty = str(card.task_data.get("confirmed_quantity", "")).strip()
         initial_val = (
@@ -2299,10 +2286,13 @@ class TaskListScreen(Screen):
         )
 
         def on_confirm_qty(text):
-            if text.strip().isdigit():
-                card.task_data["confirmed_quantity"] = text.strip()
+            val = text.strip()
+            if val.isdigit():
+                card.task_data["confirmed_quantity"] = val
+                if card_ref:
+                    card_ref.apply_filters_and_render()
                 App.get_running_app().show_info_popup(
-                    "알림", f"수량 '{text}'(이)가 임시 저장되었습니다."
+                    "알림", f"수량 '{val}'(이)가 임시 저장되었습니다."
                 )
             else:
                 App.get_running_app().show_info_popup(
@@ -2716,7 +2706,7 @@ class AdminDashboardScreen(Screen):
             t(task, "보충담당자", t(task, "작업 담당자", "미할당")),
         )
         lbl_sub = Label(
-            text=f"담당: {assignee} / 수량: {t(task, '확인수량', t(task, '지시수량', 0))}EA{time_str}",
+            text=f"담당: {assignee} / 수량: {t(task, '확인수량', t(task, '지시수량', 0))}{time_str}",
             font_name=FONT_NAME,
             font_size=dp(12),
             color=TEXT_MUTED,
@@ -2922,7 +2912,6 @@ class BluetoothPrinter:
         return True
 
 
-# --- Builder 뷰 템플릿 선언 ---
 Builder.load_string(
     """
 <TaskListScreen>:
@@ -2972,7 +2961,7 @@ Builder.load_string(
             id: task_list_rv
             viewclass: 'UnifiedTaskCard'
             RecycleBoxLayout:
-                default_size: None, dp(180)
+                default_size: None, dp(205)
                 default_size_hint: 1, None
                 size_hint_y: None
                 height: self.minimum_height
@@ -2993,7 +2982,6 @@ Builder.load_string(
             size: self.size
             radius: [dp(12),]
 
-    # 💡 카드 상단 헤더: 장비 태그 및 체크박스
     BoxLayout:
         size_hint_y: None
         height: dp(22)
@@ -3036,7 +3024,6 @@ Builder.load_string(
             halign: 'left'
             text_size: self.width, None
 
-    # 💡 로케이션 표시
     BoxLayout:
         size_hint_y: None
         height: dp(25)
@@ -3049,10 +3036,9 @@ Builder.load_string(
             halign: 'left'
             text_size: self.width, None
 
-    # 💡 로케이션 바로 아래 전면 배치된 수량 정보
     BoxLayout:
         size_hint_y: None
-        height: dp(24)
+        height: dp(26)
         Label:
             id: lbl_main_qty
             font_name: app.FONT_NAME
@@ -3111,11 +3097,9 @@ Builder.load_string(
 """
 )
 
-# --- Factory 팝업 사전 등록 ---
 Factory.register("PrinterSettingsPopup", cls=PrinterSettingsPopup)
 
 
-# --- 메인 앱 클래스 ---
 class MainApp(App):
     FONT_NAME = FONT_NAME
 
@@ -3282,6 +3266,5 @@ class MainApp(App):
         popup.open()
 
 
-# --- 앱 실행 ---
 if __name__ == "__main__":
     MainApp().run()
