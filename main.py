@@ -8,13 +8,14 @@ import threading
 import time
 import traceback
 import urllib.request
+from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import partial
 
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.1.8"
+CURRENT_VERSION = "1.2.1"
 
 
 def check_and_apply_update():
@@ -307,6 +308,80 @@ class TouchableBox(ButtonBehavior, BoxLayout):
     pass
 
 
+class NotificationBanner(ButtonBehavior, BoxLayout):
+
+    def __init__(self, text, on_press_callback, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        self.size_hint = (0.95, None)
+        self.height = dp(50)
+        self.pos_hint = {"center_x": 0.5, "top": 1.2}
+        self.padding = (dp(15), dp(5))
+        self.spacing = dp(10)
+        self.on_press_callback = on_press_callback
+
+        with self.canvas.before:
+            Color(0.1, 0.1, 0.1, 0.95)
+            self.bg_rect = RoundedRectangle(
+                size=self.size, pos=self.pos, radius=[dp(10)]
+            )
+
+        self.bind(pos=self._update_rect, size=self._update_rect)
+
+        icon_label = Label(
+            text="🔔",
+            font_name=FONT_NAME,
+            font_size=dp(20),
+            size_hint_x=None,
+            width=dp(30),
+        )
+        self.add_widget(icon_label)
+
+        self.message_label = Label(
+            text=text,
+            font_name=FONT_NAME,
+            font_size=dp(14),
+            halign="left",
+            valign="middle",
+            markup=True,
+            color=(1, 1, 1, 1),
+        )
+        self.message_label.bind(size=self.message_label.setter("text_size"))
+        self.add_widget(self.message_label)
+
+    def _update_rect(self, instance, value):
+        self.bg_rect.pos = instance.pos
+        self.bg_rect.size = instance.size
+
+    def on_press(self):
+        if self.on_press_callback:
+            self.on_press_callback()
+        self.dismiss()
+
+    def show(self, target_widget):
+        target_widget.add_widget(self)
+        anim = Animation(
+            pos_hint={"center_x": 0.5, "top": 0.98}, duration=0.4, t="out_quad"
+        )
+        anim.start(self)
+        Clock.schedule_once(self.dismiss, 6)
+
+    def dismiss(self, *args):
+        Clock.unschedule(self.dismiss)
+        if not self.parent:
+            return
+
+        anim = Animation(
+            pos_hint={"center_x": 0.5, "top": 1.2}, duration=0.4, t="in_quad"
+        )
+        anim.bind(on_complete=self._remove_widget)
+        anim.start(self)
+
+    def _remove_widget(self, *args):
+        if self.parent:
+            self.parent.remove_widget(self)
+
+
 g_sheet_client = None
 g_spreadsheet = None
 g_worksheet_objects = {}
@@ -565,105 +640,6 @@ class SingleInputPopup(Popup):
         self.dismiss()
 
 
-class BoxCalculatorPopup(Popup):
-
-    def __init__(self, on_confirm, initial_box_size, **kwargs):
-        super().__init__(**kwargs)
-        self.title = "수량 계산기"
-        self.title_font = FONT_NAME
-        self.size_hint = (0.9, None)
-        self.height = dp(320)
-        self.auto_dismiss = False
-        self.on_confirm = on_confirm
-        self.initial_box_size = initial_box_size
-
-        main_layout = BoxLayout(
-            orientation="vertical", spacing=dp(10), padding=dp(15)
-        )
-        grid = GridLayout(
-            cols=2, spacing=dp(10), size_hint_y=None, height=dp(150)
-        )
-
-        grid.add_widget(
-            Label(text="박스 입수량:", font_name=FONT_NAME, font_size=dp(16))
-        )
-        self.box_size_input = TextInput(
-            text=str(initial_box_size),
-            multiline=False,
-            input_type="number",
-            font_name=FONT_NAME,
-            font_size=dp(18),
-        )
-        grid.add_widget(self.box_size_input)
-
-        grid.add_widget(
-            Label(text="박스 수량:", font_name=FONT_NAME, font_size=dp(16))
-        )
-        self.box_count_input = TextInput(
-            hint_text="0",
-            multiline=False,
-            input_type="number",
-            font_name=FONT_NAME,
-            font_size=dp(18),
-        )
-        grid.add_widget(self.box_count_input)
-
-        grid.add_widget(
-            Label(text="잔량(낱개):", font_name=FONT_NAME, font_size=dp(16))
-        )
-        self.rem_qty_input = TextInput(
-            text="0",
-            multiline=False,
-            input_type="number",
-            font_name=FONT_NAME,
-            font_size=dp(18),
-        )
-        grid.add_widget(self.rem_qty_input)
-
-        main_layout.add_widget(grid)
-
-        button_layout = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(50),
-            spacing=dp(10),
-        )
-        cancel_button = StyledButton(
-            text="취소", bg_color=(0.6, 0.6, 0.6, 1)
-        )
-        cancel_button.bind(on_press=self.dismiss)
-        ok_button = StyledButton(text="확인")
-        ok_button.bind(on_press=self._on_ok_press)
-        button_layout.add_widget(cancel_button)
-        button_layout.add_widget(ok_button)
-
-        main_layout.add_widget(button_layout)
-        self.content = main_layout
-        self.bind(on_open=lambda *a: setattr(self.box_count_input, "focus", True))
-
-    def _on_ok_press(self, instance):
-        try:
-            box_size = (
-                int(self.box_size_input.text) if self.box_size_input.text else 0
-            )
-            box_count = (
-                int(self.box_count_input.text)
-                if self.box_count_input.text
-                else 0
-            )
-            rem_qty = (
-                int(self.rem_qty_input.text) if self.rem_qty_input.text else 0
-            )
-
-            total_quantity = (box_size * box_count) + rem_qty
-            self.on_confirm(total_quantity, box_size)
-            self.dismiss()
-        except ValueError:
-            App.get_running_app().show_info_popup(
-                "오류", "입력값은 모두 숫자로 입력해야 합니다."
-            )
-
-
 class MultipleSkuSelectPopup(Popup):
 
     def __init__(self, matches, on_select, **kwargs):
@@ -720,12 +696,11 @@ class InspectionPopup(Popup):
         self.title = "검수 및 최종 처리"
         self.title_font = FONT_NAME
         self.size_hint = (0.95, None)
-        # 💡 [레이아웃 수정] 팝업 높이를 520 -> 560으로 확대하여 로케이션 입력창 여유 공간 확보
-        self.height = dp(560)
+        self.height = dp(580)
         self.auto_dismiss = False
 
         main_layout = BoxLayout(
-            orientation="vertical", padding=dp(15), spacing=dp(12)
+            orientation="vertical", padding=dp(15), spacing=dp(10)
         )
 
         total_qty = safe_int(t(self.task_data, "지시수량", 0))
@@ -734,6 +709,9 @@ class InspectionPopup(Popup):
         )
         if default_box_size <= 0:
             default_box_size = 1
+
+        product_name = str(t(self.task_data, "상품명", ""))
+        is_invoice_only = default_box_size == 1 or "송장" in product_name
 
         info_label = Label(
             text=f"지시수량: [b]{total_qty}[/b] / 기본입수량: [b]{default_box_size}[/b]",
@@ -745,9 +723,20 @@ class InspectionPopup(Popup):
         )
         main_layout.add_widget(info_label)
 
-        # 수량 입력 영역
+        # 💡 [핵심 복원] 송장 전용 / 입수량 1인 경우 안내문 구
+        if is_invoice_only:
+            warn_lbl = Label(
+                text="[color=D32F2F][b]⚠️ [송장만 부착 항목] - 로케이션을 적지 마세요![/b][/color]",
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                markup=True,
+                size_hint_y=None,
+                height=dp(22),
+            )
+            main_layout.add_widget(warn_lbl)
+
         input_grid = GridLayout(
-            cols=2, spacing=dp(10), size_hint_y=None, height=dp(160)
+            cols=2, spacing=dp(10), size_hint_y=None, height=dp(150)
         )
 
         input_grid.add_widget(
@@ -757,7 +746,6 @@ class InspectionPopup(Popup):
                 font_size=dp(14),
             )
         )
-        # 💡 [입력 개선] text 대신 hint_text 사용 및 focus 시 지워지도록 구성
         self.box_size_input = TextInput(
             text=str(default_box_size),
             multiline=False,
@@ -771,7 +759,6 @@ class InspectionPopup(Popup):
         input_grid.add_widget(
             Label(text="박스 수량:", font_name=FONT_NAME, font_size=dp(14))
         )
-        # 💡 [입력 개선] 기본 text="0" 대신 hint_text="0" 설정 -> 입력 시 기존 0 자동 소멸
         self.box_count_input = TextInput(
             hint_text="0",
             multiline=False,
@@ -785,7 +772,6 @@ class InspectionPopup(Popup):
         input_grid.add_widget(
             Label(text="낱개 수량:", font_name=FONT_NAME, font_size=dp(14))
         )
-        # 💡 [입력 개선] 기본 text="0" 대신 hint_text="0" 설정 -> 입력 시 기존 0 자동 소멸
         self.rem_qty_input = TextInput(
             hint_text="0",
             multiline=False,
@@ -798,7 +784,6 @@ class InspectionPopup(Popup):
 
         main_layout.add_widget(input_grid)
 
-        # 💡 [위치 조정] 로케이션 라벨 및 입력창 레이아웃 수정
         loc_box = BoxLayout(
             orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(70)
         )
@@ -824,7 +809,6 @@ class InspectionPopup(Popup):
         loc_box.add_widget(self.final_location_input)
         main_layout.add_widget(loc_box)
 
-        # 하단 버튼
         top_button_grid = GridLayout(
             cols=2, size_hint_y=None, height=dp(50), spacing=dp(10)
         )
@@ -1343,6 +1327,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         )
         product_name = t(self.task_data, "상품명", "N/A")
         is_invoice_only = qty_per_box == 1 or "송장" in product_name
+        is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
 
         tag_prefix = ""
         if is_urgent:
@@ -1361,8 +1346,8 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
         )
 
-        conf_qty_val = str(self.task_data.get("confirmed_quantity", self.task_data.get("확인수량", ""))).strip()
-        active_count = safe_int(conf_qty_val, 0) if conf_qty_val.isdigit() else 0
+        conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
+        active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
 
         target_box_ea_calc = (
             f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
@@ -1375,7 +1360,14 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
-        self.ids.lbl_box_info.text = f"박스입수: {qty_per_box}"
+        # 💡 [핵심 복원] 인박스 확인 및 송장전용/입수량 1 적치 경고 문구
+        box_notice_str = f"박스입수: {qty_per_box}"
+        if is_inbox:
+            box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
+        if is_invoice_only:
+            box_notice_str += "  [color=D32F2F][b][송장만 부착 - 로케이션 적지 말 것][/b][/color]"
+            
+        self.ids.lbl_box_info.text = box_notice_str
 
         self.ids.box_check.opacity = 1
         self.ids.box_check.disabled = False
@@ -2170,6 +2162,7 @@ class UnifiedReplenishScreen(Screen):
         elif action_name == "remarks":
             task_list_screen.prompt_for_remarks(dummy_card)
         elif action_name == "complete":
+            App.get_running_app().current_list_type = "보충인원"
             task_list_screen.process_task(dummy_card)
 
 
@@ -2330,7 +2323,7 @@ class TaskListScreen(Screen):
 
     def open_quantity_popup(self, card, card_ref=None):
         ordered_qty = str(t(card.task_data, "지시수량", "0")).strip()
-        existing_conf_qty = str(card.task_data.get("confirmed_quantity", t(card.task_data, "확인수량", ""))).strip()
+        existing_conf_qty = str(card.task_data.get("confirmed_quantity", "")).strip()
         initial_val = (
             existing_conf_qty if existing_conf_qty.isdigit() else ordered_qty
         )
@@ -2340,7 +2333,6 @@ class TaskListScreen(Screen):
             if val.isdigit():
                 task_id = t(card.task_data, "작업ID")
                 
-                # 1. 💡 [핵심] 원본 메모리 데이터(raw_all_tasks)에서 해당 작업을 찾아 수량 고침
                 if card_ref and hasattr(card_ref, "raw_all_tasks"):
                     for task in card_ref.raw_all_tasks:
                         if t(task, "작업ID") == task_id:
@@ -2348,16 +2340,14 @@ class TaskListScreen(Screen):
                             task["확인수량"] = val
                             break
 
-                # 2. 현재 카드 데이터도 즉시 갱신
                 card.task_data["confirmed_quantity"] = val
                 card.task_data["확인수량"] = val
 
-                # 3. 💡 화면 전체 다시 렌더링 호출
                 if card_ref and hasattr(card_ref, "apply_filters_and_render"):
                     card_ref.apply_filters_and_render()
 
                 App.get_running_app().show_info_popup(
-                    "알림", f"확인 수량이 '{val}'(으)로 임시 저장되었습니다."
+                    "알림", f"수량 '{val}'(이)가 임시 저장되었습니다."
                 )
             else:
                 App.get_running_app().show_info_popup(
@@ -2422,7 +2412,13 @@ class TaskListScreen(Screen):
     def process_task(self, card):
         app = App.get_running_app()
 
-        qty_val = str(card.task_data.get("confirmed_quantity", t(card.task_data, "확인수량", ""))).strip()
+        if app.current_list_type == "검수인원":
+            InspectionPopup(card=card, task_list_screen=self).open()
+            return
+
+        qty_val = str(
+            card.task_data.get("confirmed_quantity", t(card.task_data, "확인수량", ""))
+        ).strip()
         if not qty_val.isdigit() or int(qty_val) == 0:
             app.show_info_popup(
                 "입력 오류",
@@ -2448,12 +2444,12 @@ class TaskListScreen(Screen):
             if not default_printer:
                 return
 
-            qty_per_box = safe_int(t(card_data, "박스입수량", 0))
+            qty_per_box = safe_int(t(card_data, "박스입수량", t(card_data, "박스 입수량", 0)))
             prod_name = str(t(card_data, "상품명", ""))
             is_invoice_only = qty_per_box == 1 or "송장" in prod_name
 
             label_info = {
-                "바코드": str(t(card_data, "상품바코드", "N/A")),
+                "바코드": str(t(card_data, "상품바코드", t(card_data, "바코드", "N/A"))),
                 "출고 로케이션": str(t(card_data, "보충로케이션", "N/A")),
                 "긴급여부": (t(card_data, "긴급여부") == "Y"),
                 "송장전용": is_invoice_only,
@@ -2484,7 +2480,6 @@ class TaskListScreen(Screen):
     ):
         app = App.get_running_app()
 
-        # 💡 [핵심] 검수인원이 처리할 때는 인쇄 팝업 없이 바로 '최종완료' 처리!
         if app.current_list_type == "검수인원":
             updates = {
                 "상태": "최종완료",
@@ -2502,7 +2497,6 @@ class TaskListScreen(Screen):
             ).start()
             return
 
-        # 💡 보충인원이 처리할 때만 기존 라벨 인쇄 팝업 및 '보충완료' 처리
         updates = {
             "상태": "보충완료",
             "보충담당자": app.user_real_name,
@@ -2999,7 +2993,23 @@ class BluetoothPrinter:
         loc1 = loc_raw.split("-", 1)[0] if "-" in loc_raw else loc_raw
         loc2 = loc_raw.split("-", 1)[1] if "-" in loc_raw else ""
 
-        cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 20 50 {barcode_suffix}\r\nLINE 20 150 556 150 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 220 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 410 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+        is_urgent = label_info.get("긴급여부", False)
+        is_invoice_only = label_info.get("송장전용", False)
+
+        # 💡 [핵심 검증] 라벨 우측 상단 태그 문자열 처리
+        tag_str = ""
+        if is_urgent:
+            tag_str += "[긴급건] "
+        if is_invoice_only:
+            tag_str += "[송장만]"
+
+        cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 20 50 {barcode_suffix}\r\n"
+        
+        if tag_str:
+            cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 50 {tag_str}\r\nLEFT\r\n"
+
+        cmd += f"LINE 20 150 556 150 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 220 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 410 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+        
         self.stream.write(cmd.encode("cp949"))
         self.stream.flush()
         return True
@@ -3213,6 +3223,7 @@ class MainApp(App):
         self.loading_popup = LoadingPopup()
         self._scan_buffer = ""
         self._last_keystroke_time = 0
+        self.last_known_pending_task_ids = set()
 
         Window.bind(on_key_down=self._on_keyboard_down)
 
@@ -3254,6 +3265,8 @@ class MainApp(App):
 
     def on_start(self):
         threading.Thread(target=initialize_gspread, daemon=True).start()
+        Clock.schedule_interval(self.check_for_new_tasks, 30)
+
         if platform == "android":
             try:
                 request_permissions(
@@ -3267,6 +3280,99 @@ class MainApp(App):
                 )
             except Exception as e:
                 print(f"🔴 권한 요청 오류: {e}")
+
+    def check_for_new_tasks(self, *args):
+        if self.root and any(
+            isinstance(w, NotificationBanner) for w in Window.children
+        ):
+            return
+        threading.Thread(target=self._perform_task_check, daemon=True).start()
+
+    def _perform_task_check(self):
+        try:
+            all_tasks = get_sheet_data(TASK_SHEET_NAME, force_refresh=True)
+
+            pending_tasks = [
+                task
+                for task in all_tasks
+                if str(t(task, "상태")).strip() == "대기"
+            ]
+            current_pending_task_ids = {
+                str(t(task, "작업ID")) for task in pending_tasks
+            }
+
+            if not self.last_known_pending_task_ids:
+                if self.root and self.root.current != "name_entry":
+                    self.last_known_pending_task_ids = current_pending_task_ids
+                return
+
+            new_task_ids = (
+                current_pending_task_ids - self.last_known_pending_task_ids
+            )
+
+            if new_task_ids:
+                new_tasks = [
+                    task
+                    for task in pending_tasks
+                    if str(t(task, "작업ID")) in new_task_ids
+                ]
+                if new_tasks:
+                    Clock.schedule_once(
+                        lambda dt: self.show_notification_banner(new_tasks)
+                    )
+
+            self.last_known_pending_task_ids = current_pending_task_ids
+        except Exception as e:
+            print(f"⚠️ 신규 작업 알림 확인 중 에러 (무시): {e}")
+
+    def play_notification_sound(self):
+        if platform != "android":
+            return
+        try:
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            RingtoneManager = autoclass("android.media.RingtoneManager")
+            context = PythonActivity.mActivity.getApplicationContext()
+            notification_uri = RingtoneManager.getDefaultUri(
+                RingtoneManager.TYPE_NOTIFICATION
+            )
+            if notification_uri:
+                ringtone = RingtoneManager.getRingtone(
+                    context, notification_uri
+                )
+                ringtone.play()
+        except Exception as e:
+            print(f"🔴 시스템 소리 재생 예외: {e}")
+
+    def show_notification_banner(self, new_tasks):
+        if not self.root or self.root.current == "name_entry":
+            return
+
+        self.play_notification_sound()
+
+        has_urgent = any(t(task, "긴급여부") == "Y" for task in new_tasks)
+        equipment_counts = defaultdict(int)
+        for task in new_tasks:
+            equip = t(task, "장비", "기타")
+            equipment_counts[equip] += 1
+
+        summary_parts = [
+            f"{eq} {num}건" for eq, num in equipment_counts.items()
+        ]
+        summary_text = ", ".join(summary_parts)
+
+        message = "새로운 "
+        if has_urgent:
+            message += "[color=FF3333][긴급][/color] "
+        message += f"작업 발생: {summary_text}"
+
+        def go_to_replenish_screen():
+            if self.root:
+                self.root.current = "unified_replenish"
+
+        banner = NotificationBanner(
+            text=message, on_press_callback=go_to_replenish_screen
+        )
+        banner.show(Window)
 
     def process_global_scan(self, barcode):
         clean_barcode = re.sub(r"[^\x20-\x7E]", "", barcode).strip().upper()
