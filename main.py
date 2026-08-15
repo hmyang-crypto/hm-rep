@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.1.2"
+CURRENT_VERSION = "1.1.3"
 
 
 def check_and_apply_update():
@@ -1316,7 +1316,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
         active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
 
-        # 💡 [핵심 수치] 지시수량 목표 기준 Box/Ea 고정 계산 및 확인 수량 동적 반영
         target_box_ea_calc = (
             f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
             if qty_per_box > 0
@@ -2139,9 +2138,6 @@ class TaskListScreen(Screen):
             saved_name = app.load_saved_user_name()
             if saved_name:
                 app.user_real_name = saved_name
-            else:
-                self.manager.current = "name_entry"
-                return
         self.refresh_list(force_refresh=True)
 
     def refresh_list(self, force_refresh=True):
@@ -2295,6 +2291,7 @@ class TaskListScreen(Screen):
             val = text.strip()
             if val.isdigit():
                 card.task_data["confirmed_quantity"] = val
+                card.task_data["확인수량"] = val
                 if card_ref:
                     card_ref.apply_filters_and_render()
                 App.get_running_app().show_info_popup(
@@ -2363,7 +2360,7 @@ class TaskListScreen(Screen):
     def process_task(self, card):
         app = App.get_running_app()
 
-        qty_val = str(card.task_data.get("confirmed_quantity", "")).strip()
+        qty_val = str(card.task_data.get("confirmed_quantity", t(card.task_data, "확인수량", ""))).strip()
         if not qty_val.isdigit() or int(qty_val) == 0:
             app.show_info_popup(
                 "입력 오류",
@@ -2424,11 +2421,13 @@ class TaskListScreen(Screen):
         self, card, final_qty, split_qty, final_location, updated_remarks
     ):
         app = App.get_running_app()
+
+        # 💡 구버전 검수 어플 사용자를 위한 시트 '확인수량' 컬럼 명시적 업데이트
         updates = {
             "상태": "보충완료",
             "보충담당자": app.user_real_name,
             "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "확인수량": final_qty,
+            "확인수량": str(final_qty),
             "비고": updated_remarks,
         }
 
@@ -2457,18 +2456,26 @@ class TaskListScreen(Screen):
     def _perform_update(self, card, updates, msg):
         try:
             sheet = get_worksheet(TASK_SHEET_NAME)
-            headers = sheet.row_values(1)
+            headers = [str(h).strip() for h in sheet.row_values(1)]
             task_id = str(t(card.task_data, "작업ID"))
-            row_idx = (
-                sheet.col_values(headers.index("작업ID") + 1).index(task_id) + 1
-            )
-            cells = [
-                gspread.Cell(row_idx, headers.index(k) + 1, str(v))
-                for k, v in updates.items()
-                if k in headers
-            ]
+
+            task_id_col_idx = headers.index("작업ID") + 1
+            all_task_ids = sheet.col_values(task_id_col_idx)
+
+            if task_id not in all_task_ids:
+                raise Exception(f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다.")
+
+            row_idx = all_task_ids.index(task_id) + 1
+            cells = []
+
+            for key, val in updates.items():
+                if key in headers:
+                    col_idx = headers.index(key) + 1
+                    cells.append(gspread.Cell(row_idx, col_idx, str(val)))
+
             if cells:
                 sheet.update_cells(cells)
+
             invalidate_cache(TASK_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
         except Exception as e:
