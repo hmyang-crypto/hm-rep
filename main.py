@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.1.0"
+CURRENT_VERSION = "1.1.2"
 
 
 def check_and_apply_update():
@@ -1285,6 +1285,11 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             display_tag = ""
         self.ids.lbl_equip.text = f"[b]{display_tag}[/b]"
 
+        existing_qty = safe_int(t(self.task_data, "기존수량", 0))
+        req_qty = safe_int(t(self.task_data, "지시수량", 0))
+        remaining_qty = existing_qty - req_qty
+        self.ids.lbl_stock_info.text = f"기존: [b]{existing_qty}[/b]\n보충후: [b][color=1E88E5]{remaining_qty}[/color][/b]"
+
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
@@ -1308,21 +1313,22 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
         )
 
-        req_qty = safe_int(t(self.task_data, "지시수량", 0))
         conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
+        active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
 
-        if self.is_claimed:
-            conf_str = f" / {conf_qty_val}" if str(conf_qty_val).isdigit() and str(conf_qty_val) != "" else ""
-            self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b][color=D32F2F]{conf_str}[/color]"
-        else:
-            self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b]"
-
-        box_ea_str = (
+        # 💡 [핵심 수치] 지시수량 목표 기준 Box/Ea 고정 계산 및 확인 수량 동적 반영
+        target_box_ea_calc = (
             f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
             if qty_per_box > 0
             else f"({req_qty}E)"
         )
-        self.ids.lbl_box_info.text = f"박스입수: {qty_per_box} [color=1E88E5]{box_ea_str}[/color]"
+
+        if self.is_claimed:
+            self.ids.lbl_main_qty.text = f"지시: {req_qty} / [color=D32F2F]{active_count}[/color] [color=1E88E5]{target_box_ea_calc}[/color]"
+        else:
+            self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
+
+        self.ids.lbl_box_info.text = f"박스입수: {qty_per_box}"
 
         self.ids.box_check.opacity = 1
         self.ids.box_check.disabled = False
@@ -1681,7 +1687,7 @@ class UnifiedReplenishScreen(Screen):
             dummy_card = type(
                 "DummyCard", (), {"task_data": target_task}
             )()
-            task_list_screen.open_quantity_popup(dummy_card)
+            task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
         else:
             pending_matches = [
                 t_item
@@ -2984,7 +2990,7 @@ Builder.load_string(
 
     BoxLayout:
         size_hint_y: None
-        height: dp(22)
+        height: dp(26)
         spacing: dp(5)
         Label:
             id: lbl_equip
@@ -2993,6 +2999,17 @@ Builder.load_string(
             halign: 'left'
             valign: 'middle'
             markup: True
+            size_hint_x: 0.35
+            text_size: self.width, None
+        Label:
+            id: lbl_stock_info
+            font_name: app.FONT_NAME
+            font_size: dp(12)
+            color: (0.3, 0.3, 0.3, 1)
+            halign: 'right'
+            valign: 'middle'
+            markup: True
+            size_hint_x: 0.55
             text_size: self.width, None
         CheckBox:
             id: box_check
