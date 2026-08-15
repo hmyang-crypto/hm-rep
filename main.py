@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.1.3"
+CURRENT_VERSION = "1.1.4"
 
 
 def check_and_apply_update():
@@ -1313,8 +1313,8 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
         )
 
-        conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
-        active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
+        conf_qty_val = str(self.task_data.get("confirmed_quantity", self.task_data.get("확인수량", ""))).strip()
+        active_count = safe_int(conf_qty_val, 0) if conf_qty_val.isdigit() else 0
 
         target_box_ea_calc = (
             f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
@@ -2282,7 +2282,7 @@ class TaskListScreen(Screen):
 
     def open_quantity_popup(self, card, card_ref=None):
         ordered_qty = str(t(card.task_data, "지시수량", "0")).strip()
-        existing_conf_qty = str(card.task_data.get("confirmed_quantity", "")).strip()
+        existing_conf_qty = str(card.task_data.get("confirmed_quantity", t(card.task_data, "확인수량", ""))).strip()
         initial_val = (
             existing_conf_qty if existing_conf_qty.isdigit() else ordered_qty
         )
@@ -2290,12 +2290,16 @@ class TaskListScreen(Screen):
         def on_confirm_qty(text):
             val = text.strip()
             if val.isdigit():
+                # 💡 [핵심] 로컬 딕셔너리 두 키에 모두 즉시 갱신
                 card.task_data["confirmed_quantity"] = val
                 card.task_data["확인수량"] = val
+                
+                # 💡 화면 강제 리렌더링 호출
                 if card_ref:
                     card_ref.apply_filters_and_render()
+                    
                 App.get_running_app().show_info_popup(
-                    "알림", f"수량 '{val}'(이)가 임시 저장되었습니다."
+                    "알림", f"확인 수량이 '{val}'(으)로 임시 저장되었습니다."
                 )
             else:
                 App.get_running_app().show_info_popup(
