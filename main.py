@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+import glob
 import json
 import os
 import re
-import ssl  # 👈 SSL 모듈 추가
+import shutil  # 👈 캐시 폴더 삭제용 모듈 추가
+import ssl
 import sys
 import threading
 import time
@@ -14,30 +16,25 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.1"  # 앱 설치 직후 기본 버전
+CURRENT_VERSION = "1.0.1"
 
 
 def check_and_apply_update():
     try:
         print("🔍 서버에서 최신 업데이트 확인 중...")
 
-        # 💡 안드로이드 SSL 인증서 검증 우회 설정 (핵심 해결책!)
         ssl_context = ssl._create_unverified_context()
-
         req = urllib.request.Request(
             UPDATE_CHECK_URL, headers={"User-Agent": "Mozilla/5.0"}
         )
+
         with urllib.request.urlopen(
             req, timeout=5, context=ssl_context
         ) as response:
             if response.status == 200:
                 server_version = response.read().decode("utf-8").strip()
-                print(
-                    f"📌 현재 버전: {CURRENT_VERSION} / 서버 버전: {server_version}"
-                )
 
-                # 버전이 다르면 무조건 다운로드 실행
-                if server_version != CURRENT_VERSION:
+                if server_version > CURRENT_VERSION:
                     print(
                         f"🚀 새 버전 발견 ({server_version})! 코드를 다운로드합니다."
                     )
@@ -49,19 +46,38 @@ def check_and_apply_update():
                     ) as new_code_response:
                         if new_code_response.status == 200:
                             current_file_path = os.path.abspath(__file__)
+                            app_dir = os.path.dirname(current_file_path)
+
+                            # 1. 새 main.py 소스코드 저장
                             with open(
                                 current_file_path, "w", encoding="utf-8"
                             ) as f:
                                 f.write(
                                     new_code_response.read().decode("utf-8")
                                 )
-                            print("✅ main.py 최신화 완료!")
+
+                            # 2. 💡 [핵심] 기존 .pyc 캐시 파일 및 __pycache__ 전면 삭제 (Bad magic number 방지)
+                            try:
+                                # main.pyc 파일 삭제
+                                pyc_file = current_file_path + "c"
+                                if os.path.exists(pyc_file):
+                                    os.remove(pyc_file)
+
+                                # __pycache__ 디렉터리 삭제
+                                pycache_dir = os.path.join(
+                                    app_dir, "__pycache__"
+                                )
+                                if os.path.exists(pycache_dir):
+                                    shutil.rmtree(pycache_dir)
+                            except Exception as cache_err:
+                                print(f"⚠️ 캐시 삭제 중 경고: {cache_err}")
+
+                            print("✅ main.py 최신화 및 캐시 정리가 완료되었습니다!")
     except Exception as e:
         print(f"⚠️ 업데이트 확인 중 오류 (무시하고 앱 실행): {e}")
 
 
 check_and_apply_update()
-
 from kivy.animation import Animation
 from kivy.app import App
 from kivy.clock import Clock
