@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.1.4"
+CURRENT_VERSION = "1.1.5"
 
 
 def check_and_apply_update():
@@ -2290,14 +2290,24 @@ class TaskListScreen(Screen):
         def on_confirm_qty(text):
             val = text.strip()
             if val.isdigit():
-                # 💡 [핵심] 로컬 딕셔너리 두 키에 모두 즉시 갱신
+                task_id = t(card.task_data, "작업ID")
+                
+                # 1. 💡 [핵심] 원본 메모리 데이터(raw_all_tasks)에서 해당 작업을 찾아 수량 고침
+                if card_ref and hasattr(card_ref, "raw_all_tasks"):
+                    for task in card_ref.raw_all_tasks:
+                        if t(task, "작업ID") == task_id:
+                            task["confirmed_quantity"] = val
+                            task["확인수량"] = val
+                            break
+
+                # 2. 현재 카드 데이터도 즉시 갱신
                 card.task_data["confirmed_quantity"] = val
                 card.task_data["확인수량"] = val
-                
-                # 💡 화면 강제 리렌더링 호출
-                if card_ref:
+
+                # 3. 💡 화면 전체 다시 렌더링 호출
+                if card_ref and hasattr(card_ref, "apply_filters_and_render"):
                     card_ref.apply_filters_and_render()
-                    
+
                 App.get_running_app().show_info_popup(
                     "알림", f"확인 수량이 '{val}'(으)로 임시 저장되었습니다."
                 )
