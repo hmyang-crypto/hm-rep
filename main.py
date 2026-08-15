@@ -634,10 +634,13 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.is_checked = data.get('is_checked', False)
         self.card_screen = data.get('card_screen', None)
 
-        raw_equip = str(t(self.task_data, '장비', ''))
-        display_tag = "[color=0000FF](전량출)[/color] " if raw_equip == '리치' else ""
-        is_urgent = self.task_data.get('긴급여부') == 'Y'
-        is_shelf_rack = t(self.task_data, '선반랙 여부', '').upper() == 'Y'
+        raw_equip = str(t(self.task_data, "장비", ""))
+        if raw_equip == "리치":
+            display_tag = "[color=0000FF][리치][/color] "
+        elif raw_equip == "오더피커":
+            display_tag = "[color=1E88E5][오더피커][/color] "
+        else:
+            display_tag = ""
         
         tag_prefix = ""
         if is_urgent: tag_prefix += "[color=D32F2F][긴급][/color] "
