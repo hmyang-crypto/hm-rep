@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.4"
+CURRENT_VERSION = "1.0.5"
 
 
 def check_and_apply_update():
@@ -1153,6 +1153,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
     is_claimed = BooleanProperty(False)
     is_checked = BooleanProperty(False)
     card_screen = ObjectProperty(None)
+    card_bg_color = ListProperty([1, 1, 1, 1])  # 💡 카드 배경색 속성 추가 (기본 흰색)
 
     def refresh_view_attrs(self, rv, index, data):
         super().refresh_view_attrs(rv, index, data)
@@ -1162,7 +1163,18 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.is_checked = data.get("is_checked", False)
         self.card_screen = data.get("card_screen", None)
 
-        # 💡 장비 표시 (카드 왼쪽 최상단 노란색 영역 위치)
+        is_urgent = self.task_data.get("긴급여부") == "Y"
+        is_shelf_rack = t(self.task_data, "선반랙 여부", "").upper() == "Y"
+
+        # 💡 [카드 배경색 설정] 긴급: 옅은 빨간색 / 선반랙: 옅은 파란색 / 일반: 흰색
+        if is_urgent:
+            self.card_bg_color = get_color_from_hex("#FFEBEE")  # 옅은 빨간색
+        elif is_shelf_rack:
+            self.card_bg_color = get_color_from_hex("#E3F2FD")  # 옅은 파란색
+        else:
+            self.card_bg_color = [1, 1, 1, 1]  # 흰색
+
+        # 장비 표시 (카드 왼쪽 최상단)
         raw_equip = str(t(self.task_data, "장비", ""))
         if raw_equip == "리치":
             display_tag = "[color=0000FF][리치][/color]"
@@ -1172,9 +1184,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             display_tag = ""
         self.ids.lbl_equip.text = f"[b]{display_tag}[/b]"
 
-        # 💡 상품명 앞 태그 (긴급, 선반랙, 송장전용)
-        is_urgent = self.task_data.get("긴급여부") == "Y"
-        is_shelf_rack = t(self.task_data, "선반랙 여부", "").upper() == "Y"
+        # 상품명 앞 태그
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
@@ -1221,7 +1231,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             self.ids.btn_action_box.height = 0
             self.ids.btn_action_box.opacity = 0
             self.ids.btn_action_box.disabled = True
-
     def on_checkbox_active(self, checkbox, value):
         if self.card_screen and not self.is_claimed:
             self.card_screen.toggle_card_check(self.task_data, value)
@@ -2762,12 +2771,11 @@ Builder.load_string(
     spacing: dp(4)
     canvas.before:
         Color:
-            rgba: (1, 1, 1, 1)
+            rgba: root.card_bg_color   # 💡 고정 흰색(1,1,1,1)에서 동적 배경색(root.card_bg_color)으로 변경!
         RoundedRectangle:
             pos: self.pos
             size: self.size
             radius: [dp(12),]
-
     # 💡 카드 최상단: [오더피커] / [리치] 태그 영역 (노란색 위치)
     BoxLayout:
         size_hint_y: None
