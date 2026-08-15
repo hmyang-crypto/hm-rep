@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.8"
+CURRENT_VERSION = "1.0.9"
 
 
 def check_and_apply_update():
@@ -176,12 +176,12 @@ try:
 except Exception as e:
     FONT_NAME = "Roboto"
 
-PRIMARY_BLUE = get_color_from_hex("#1E88E5")  # 진한 파랑
-LIGHT_BLUE = get_color_from_hex("#E3F2FD")  # 연한 하늘색
-FILTER_BG_GRAY = get_color_from_hex("#CFD8DC")  # 회색 필터 배경
-BG_GRAY = get_color_from_hex("#F4F7FA")  # 바탕 맑은 회색
-TEXT_DARK = get_color_from_hex("#212121")  # 짙은 글자
-TEXT_MUTED = get_color_from_hex("#757575")  # 보조 글자
+PRIMARY_BLUE = get_color_from_hex("#1E88E5")
+LIGHT_BLUE = get_color_from_hex("#E3F2FD")
+FILTER_BG_GRAY = get_color_from_hex("#CFD8DC")
+BG_GRAY = get_color_from_hex("#F4F7FA")
+TEXT_DARK = get_color_from_hex("#212121")
+TEXT_MUTED = get_color_from_hex("#757575")
 
 DEFAULT_FONT_STYLE = {
     "font_name": FONT_NAME,
@@ -201,7 +201,6 @@ def safe_int(val, default=0):
         return default
 
 
-# --- 라운드(알약) 일반 버튼 ---
 class StyledButton(Button):
 
     def __init__(self, **kwargs):
@@ -229,7 +228,6 @@ class StyledButton(Button):
         self.bg_color_inst.rgba = color
 
 
-# --- 라운드 토글 버튼 ---
 class StyledToggleButton(ToggleButton):
 
     def __init__(self, **kwargs):
@@ -318,7 +316,7 @@ class TouchableBox(ButtonBehavior, BoxLayout):
     pass
 
 
-# --- 구글 시트 통신 캐시 모듈 ---
+# --- 구글 시트 통신 모듈 ---
 g_sheet_client = None
 g_spreadsheet = None
 g_worksheet_objects = {}
@@ -360,9 +358,7 @@ def initialize_gspread():
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         GSPREAD_LOADED = False
         GSPREAD_ERROR_MSG = f"인증 키 파일 '{SERVICE_ACCOUNT_FILE}'을(를) 찾을 수 없습니다."
-        print(
-            f"\n🚨 [구글 키 파일 누락 오류] '{SERVICE_ACCOUNT_FILE}' 파일이 없습니다!\n"
-        )
+        print(f"\n🚨 '{SERVICE_ACCOUNT_FILE}' 파일이 없습니다!\n")
         return
 
     try:
@@ -388,9 +384,7 @@ def get_worksheet(worksheet_name):
     if not GSPREAD_LOADED:
         initialize_gspread()
         if not GSPREAD_LOADED or not g_spreadsheet:
-            raise Exception(
-                f"구글 키 파일('{SERVICE_ACCOUNT_FILE}')이 없거나 연결 실패했습니다.\n{GSPREAD_ERROR_MSG}"
-            )
+            raise Exception(f"구글 연결 실패: {GSPREAD_ERROR_MSG}")
 
     if worksheet_name in g_worksheet_objects:
         return g_worksheet_objects[worksheet_name]
@@ -399,7 +393,7 @@ def get_worksheet(worksheet_name):
         ws = execute_with_retry(g_spreadsheet.worksheet, worksheet_name)
         g_worksheet_objects[worksheet_name] = ws
         return ws
-    except Exception as e:
+    except Exception:
         scope = [
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive",
@@ -582,18 +576,118 @@ class SingleInputPopup(Popup):
         self.dismiss()
 
 
+# --- 구버전 수량 계산기 팝업 복원 ---
+class BoxCalculatorPopup(Popup):
+
+    def __init__(self, on_confirm, initial_box_size, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "수량 계산기"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.9, None)
+        self.height = dp(320)
+        self.auto_dismiss = False
+        self.on_confirm = on_confirm
+        self.initial_box_size = initial_box_size
+
+        main_layout = BoxLayout(
+            orientation="vertical", spacing=dp(10), padding=dp(15)
+        )
+        grid = GridLayout(
+            cols=2, spacing=dp(10), size_hint_y=None, height=dp(150)
+        )
+
+        grid.add_widget(
+            Label(text="박스 입수량:", font_name=FONT_NAME, font_size=dp(16))
+        )
+        self.box_size_input = TextInput(
+            text=str(initial_box_size),
+            multiline=False,
+            input_type="number",
+            font_name=FONT_NAME,
+            font_size=dp(18),
+        )
+        grid.add_widget(self.box_size_input)
+
+        grid.add_widget(
+            Label(text="박스 수량:", font_name=FONT_NAME, font_size=dp(16))
+        )
+        self.box_count_input = TextInput(
+            hint_text="0",
+            multiline=False,
+            input_type="number",
+            font_name=FONT_NAME,
+            font_size=dp(18),
+        )
+        grid.add_widget(self.box_count_input)
+
+        grid.add_widget(
+            Label(text="잔량(낱개):", font_name=FONT_NAME, font_size=dp(16))
+        )
+        self.rem_qty_input = TextInput(
+            text="0",
+            multiline=False,
+            input_type="number",
+            font_name=FONT_NAME,
+            font_size=dp(18),
+        )
+        grid.add_widget(self.rem_qty_input)
+
+        main_layout.add_widget(grid)
+
+        button_layout = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(50),
+            spacing=dp(10),
+        )
+        cancel_button = StyledButton(
+            text="취소", bg_color=(0.6, 0.6, 0.6, 1)
+        )
+        cancel_button.bind(on_press=self.dismiss)
+        ok_button = StyledButton(text="확인")
+        ok_button.bind(on_press=self._on_ok_press)
+        button_layout.add_widget(cancel_button)
+        button_layout.add_widget(ok_button)
+
+        main_layout.add_widget(button_layout)
+        self.content = main_layout
+        self.bind(on_open=lambda *a: setattr(self.box_count_input, "focus", True))
+
+    def _on_ok_press(self, instance):
+        try:
+            box_size = (
+                int(self.box_size_input.text) if self.box_size_input.text else 0
+            )
+            box_count = (
+                int(self.box_count_input.text)
+                if self.box_count_input.text
+                else 0
+            )
+            rem_qty = (
+                int(self.rem_qty_input.text) if self.rem_qty_input.text else 0
+            )
+
+            total_quantity = (box_size * box_count) + rem_qty
+            self.on_confirm(total_quantity, box_size)
+            self.dismiss()
+        except ValueError:
+            App.get_running_app().show_info_popup(
+                "오류", "입력값은 모두 숫자로 입력해야 합니다."
+            )
+
+
 class MultipleSkuSelectPopup(Popup):
 
     def __init__(self, matches, on_select, **kwargs):
         super().__init__(**kwargs)
-        self.title = "작업 대상 선택 (중복 SKU)"
+        self.title = "검수 대상 선택 (중복 SKU)"
         self.size_hint = (0.9, 0.7)
         layout = BoxLayout(
             orientation="vertical", padding=dp(10), spacing=dp(10)
         )
         layout.add_widget(
             Label(
-                text="스캔한 바코드가 여러 로케이션에 존재합니다.\n대상을 선택해주세요.",
+                text="스캔한 바코드가 여러 건 존재합니다.\n대상을 선택해주세요.",
                 font_name=FONT_NAME,
                 size_hint_y=None,
                 height=dp(40),
@@ -626,6 +720,7 @@ class MultipleSkuSelectPopup(Popup):
         self.content = layout
 
 
+# --- 구버전 수기 검수 로직 완전 복원 팝업 ---
 class InspectionPopup(Popup):
 
     def __init__(self, card, task_list_screen, **kwargs):
@@ -634,6 +729,7 @@ class InspectionPopup(Popup):
         self.task_data = card.task_data
         self.task_list_screen = task_list_screen
         self.current_remarks = str(t(self.task_data, "비고", ""))
+        self.box_size_change_remark = ""
 
         product_name = str(t(self.task_data, "상품명", ""))
         qty_per_box = safe_int(t(self.task_data, "박스입수량", 0))
@@ -643,27 +739,15 @@ class InspectionPopup(Popup):
         self.title = "검수 및 최종 처리"
         self.title_font = FONT_NAME
         self.size_hint = (0.95, None)
-        self.height = dp(580)
+        self.height = dp(560)
         self.auto_dismiss = False
 
         main_layout = BoxLayout(
             orientation="vertical", padding=dp(15), spacing=dp(10)
         )
 
-        if self.is_invoice_only:
-            invoice_banner = Label(
-                text="🏷️ [송장만 부착 대상] (입수량 1EA)",
-                font_name=FONT_NAME,
-                font_size=dp(15),
-                bold=True,
-                color=get_color_from_hex("#D32F2F"),
-                size_hint_y=None,
-                height=dp(30),
-            )
-            main_layout.add_widget(invoice_banner)
-
         qty_grid = GridLayout(
-            cols=2, spacing=dp(10), size_hint_y=None, height=dp(100)
+            cols=2, spacing=dp(10), size_hint_y=None, height=dp(120)
         )
         total_qty = safe_int(t(self.task_data, "지시수량", 0))
         confirmed_qty_str = str(t(self.task_data, "확인수량", ""))
@@ -685,11 +769,22 @@ class InspectionPopup(Popup):
             Label(
                 text=f"{confirmed_qty_display} EA",
                 font_name=FONT_NAME,
-                markup=True,
                 bold=True,
                 color=PRIMARY_BLUE,
             )
         )
+
+        qty_grid.add_widget(
+            Label(text="최종 로케이션 수량:", font_name=FONT_NAME)
+        )
+        self.final_qty_button = StyledButton(
+            text=str(confirmed_qty_display),
+            font_name=FONT_NAME,
+            bg_color=(0.9, 0.9, 0.9, 1),
+            color=(0, 0, 0, 1),
+        )
+        self.final_qty_button.bind(on_press=self.open_box_calculator)
+        qty_grid.add_widget(self.final_qty_button)
 
         main_layout.add_widget(qty_grid)
 
@@ -710,7 +805,7 @@ class InspectionPopup(Popup):
         cancel_button = StyledButton(text="취소", bg_color=(0.6, 0.6, 0.6, 1))
         cancel_button.bind(on_press=self.dismiss)
         ok_button = StyledButton(
-            text="최종 검수 완료", bg_color=PRIMARY_BLUE
+            text="최종 완료", bg_color=get_color_from_hex("#00897B")
         )
         ok_button.bind(on_press=self.confirm_inspection)
 
@@ -720,6 +815,17 @@ class InspectionPopup(Popup):
 
         self.content = main_layout
 
+    def open_box_calculator(self, instance):
+        initial_box_size = safe_int(t(self.task_data, "박스입수량", 1))
+        popup = BoxCalculatorPopup(
+            on_confirm=self.update_final_qty,
+            initial_box_size=initial_box_size,
+        )
+        popup.open()
+
+    def update_final_qty(self, total_quantity, new_box_size):
+        self.final_qty_button.text = str(total_quantity)
+
     def confirm_inspection(self, instance):
         app = App.get_running_app()
         final_location = self.final_location_input.text.strip()
@@ -727,9 +833,7 @@ class InspectionPopup(Popup):
             app.show_info_popup("오류", "최종 적치위치를 입력해야 합니다.")
             return
 
-        conf_q = safe_int(
-            t(self.task_data, "확인수량", t(self.task_data, "지시수량", 0))
-        )
+        conf_q = safe_int(self.final_qty_button.text)
         self.task_list_screen._finalize_task_processing(
             card=self.card,
             final_qty=conf_q,
@@ -1221,7 +1325,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
         req_qty = safe_int(t(self.task_data, "지시수량", 0))
         conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
-        conf_str = f" / [{conf_qty_val}EA]" if str(conf_qty_val).isdigit() and str(conf_qty_val) != "" else " / [-]"
+        conf_str = f" / [{conf_qty_val}EA]" if str(conf_qty_val).isdigit() and str(conf_qty_val) != "" else " / [0EA]"
 
         self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}EA[/b][color=D32F2F]{conf_str}[/color]"
 
@@ -1392,7 +1496,7 @@ class UnifiedReplenishScreen(Screen):
 
         # 3-3. 로케이션 & 정렬 & 긴급 필터
         opt_toolbar = BoxLayout(
-            size_hint_y=None, height=dp(32), spacing=dp(4)
+            size_hint_y=None, height=dp(32), spacing=dp(3)
         )
         from_zone_list = [
             "보관: 전체",
@@ -1411,7 +1515,7 @@ class UnifiedReplenishScreen(Screen):
             text="보관: 전체",
             values=from_zone_list,
             font_size=dp(11),
-            size_hint_x=0.32,
+            size_hint_x=0.30,
             option_cls=KoreanSpinnerOption,
         )
         self.sp_from.bind(text=self.on_from_spinner_change)
@@ -1420,26 +1524,36 @@ class UnifiedReplenishScreen(Screen):
             text="이동: 전체",
             values=["이동: 전체", "A존", "B존", "C존", "D존", "I존", "O존"],
             font_size=dp(11),
-            size_hint_x=0.32,
+            size_hint_x=0.30,
             option_cls=KoreanSpinnerOption,
         )
         self.sp_to.bind(text=self.on_to_spinner_change)
 
         self.btn_sort = StyledButton(
-            text="로케이션 ⬆",
-            size_hint_x=0.22,
-            font_size=dp(11),
+            text="▲",
+            size_hint_x=0.12,
+            font_size=dp(12),
             bg_color=get_color_from_hex("#546E7A"),
         )
         self.btn_sort.bind(on_press=self.toggle_sort_order)
 
-        chk_box = BoxLayout(size_hint_x=0.14, spacing=dp(1))
+        chk_box = BoxLayout(size_hint_x=0.28, spacing=dp(2))
         self.chk_urgent = CheckBox(
             active=False, size_hint_x=None, width=dp(20), color=PRIMARY_BLUE
         )
         self.chk_urgent.bind(active=self.on_urgent_check_change)
+        lbl_urg = Label(
+            text="긴급만",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            color=TEXT_DARK,
+            halign="left",
+            valign="middle",
+        )
+        lbl_urg.bind(size=lambda i, s: setattr(i, "text_size", s))
 
         chk_box.add_widget(self.chk_urgent)
+        chk_box.add_widget(lbl_urg)
         opt_toolbar.add_widget(self.sp_from)
         opt_toolbar.add_widget(self.sp_to)
         opt_toolbar.add_widget(self.btn_sort)
@@ -1517,7 +1631,7 @@ class UnifiedReplenishScreen(Screen):
 
     def toggle_sort_order(self, instance):
         self.sort_asc = not self.sort_asc
-        self.btn_sort.text = "로케이션 ⬆" if self.sort_asc else "로케이션 ⬇"
+        self.btn_sort.text = "▲" if self.sort_asc else "▼"
         self.apply_filters_and_render()
 
     def toggle_filter_panel(self, instance=None):
@@ -2858,7 +2972,7 @@ Builder.load_string(
             id: task_list_rv
             viewclass: 'UnifiedTaskCard'
             RecycleBoxLayout:
-                default_size: None, dp(170)
+                default_size: None, dp(180)
                 default_size_hint: 1, None
                 size_hint_y: None
                 height: self.minimum_height
@@ -2879,10 +2993,10 @@ Builder.load_string(
             size: self.size
             radius: [dp(12),]
 
-    # 💡 카드 상단 헤더: 장비 태그 / 지시수량 및 확인수량 / 체크박스
+    # 💡 카드 상단 헤더: 장비 태그 및 체크박스
     BoxLayout:
         size_hint_y: None
-        height: dp(26)
+        height: dp(22)
         spacing: dp(5)
         Label:
             id: lbl_equip
@@ -2891,18 +3005,6 @@ Builder.load_string(
             halign: 'left'
             valign: 'middle'
             markup: True
-            size_hint_x: 0.25
-            text_size: self.width, None
-        Label:
-            id: lbl_main_qty
-            font_name: app.FONT_NAME
-            font_size: dp(16)
-            bold: True
-            halign: 'right'
-            valign: 'middle'
-            markup: True
-            size_hint_x: 0.65
-            color: (0.12, 0.53, 0.9, 1)
             text_size: self.width, None
         CheckBox:
             id: box_check
@@ -2925,7 +3027,7 @@ Builder.load_string(
 
     BoxLayout:
         size_hint_y: None
-        height: dp(20)
+        height: dp(18)
         Label:
             id: lbl_barcode
             font_name: app.FONT_NAME
@@ -2933,17 +3035,8 @@ Builder.load_string(
             color: (0.4, 0.4, 0.4, 1)
             halign: 'left'
             text_size: self.width, None
-            size_hint_x: 0.55
-        Label:
-            id: lbl_box_info
-            font_name: app.FONT_NAME
-            font_size: dp(12)
-            color: (0.3, 0.3, 0.3, 1)
-            markup: True
-            halign: 'right'
-            text_size: self.width, None
-            size_hint_x: 0.45
 
+    # 💡 로케이션 표시
     BoxLayout:
         size_hint_y: None
         height: dp(25)
@@ -2952,6 +3045,33 @@ Builder.load_string(
             font_name: app.FONT_NAME
             font_size: dp(16)
             bold: True
+            markup: True
+            halign: 'left'
+            text_size: self.width, None
+
+    # 💡 로케이션 바로 아래 전면 배치된 수량 정보
+    BoxLayout:
+        size_hint_y: None
+        height: dp(24)
+        Label:
+            id: lbl_main_qty
+            font_name: app.FONT_NAME
+            font_size: dp(18)
+            bold: True
+            halign: 'left'
+            valign: 'middle'
+            markup: True
+            color: (0.12, 0.53, 0.9, 1)
+            text_size: self.width, None
+
+    BoxLayout:
+        size_hint_y: None
+        height: dp(18)
+        Label:
+            id: lbl_box_info
+            font_name: app.FONT_NAME
+            font_size: dp(12)
+            color: (0.3, 0.3, 0.3, 1)
             markup: True
             halign: 'left'
             text_size: self.width, None
