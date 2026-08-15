@@ -14,7 +14,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.0.5"
+CURRENT_VERSION = "1.0.6"
 
 
 def check_and_apply_update():
@@ -1878,6 +1878,13 @@ class UnifiedReplenishScreen(Screen):
 
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
+
+            # 💡 [핵심] 할당 성공 시 로컬 데이터(raw_all_tasks)의 상태 및 담당자를 즉시 변경!
+            user_name_lower = str(app.user_real_name).strip()
+            for task in self.raw_all_tasks:
+                if t(task, "작업ID") in self.checked_task_ids:
+                    task["상태"] = "작업중"
+                    task["작업 담당자"] = user_name_lower
 
             invalidate_cache(TASK_SHEET_NAME)
             self.checked_task_ids.clear()
