@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.3.5"
+CURRENT_VERSION = "1.3.6"
 
 
 def check_and_apply_update():
@@ -384,6 +384,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
 
 
 # 💡 [개선] 체크박스 제거 -> 선택 시 색상 반전(토글) 버튼 방식 + 전체선택/해제 통합 버튼
+# 💡 [원천 해결] 드롭다운 너비 가둠 해제(auto_width=False) + 직사각형 사각 옵션 리스트 음영 반전
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -391,41 +392,50 @@ class ZoneMultiSelectDropDown(DropDown):
         self.auto_dismiss = True
         self.on_apply = on_apply
         self.selected_states = {}
+        
+        # 💡 [핵심] 부모 버튼 너비 제한 해제하여 오른쪽 잘림 원천 차단
+        self.auto_width = False
+        self.width = dp(240)
 
+        # 전체 컨테이너 (사각 드롭다운 패널)
         container = BoxLayout(
             orientation="vertical",
-            padding=dp(6),
-            spacing=dp(5),
+            padding=dp(4),
+            spacing=dp(2),
             size_hint=(None, None),
-            width=dp(210),   # 좁은 레이아웃에서도 딱 맞는 크기
+            width=dp(240),
             height=dp(310),
         )
 
         with container.canvas.before:
-            Color(0.15, 0.15, 0.15, 0.98)
+            Color(0.2, 0.2, 0.2, 0.98)
             self.bg_rect = RoundedRectangle(
-                pos=container.pos, size=container.size, radius=[dp(8)]
+                pos=container.pos, size=container.size, radius=[dp(6)]
             )
         container.bind(
             pos=lambda i, p: setattr(self.bg_rect, "pos", p),
             size=lambda i, s: setattr(self.bg_rect, "size", s),
         )
 
-        # 💡 [상단 버튼] 전체선택 <-> 전체해제 토글 통합 버튼
+        # 💡 [상단 버튼] 직사각형 전체선택/해제 토글 통합 버튼
         all_active = len(selected_zones) == len(zone_counts_dict) or "전체" in selected_zones
-        self.btn_toggle_all = StyledButton(
+        self.btn_toggle_all = Button(
             text="전체해제" if all_active else "전체선택",
+            font_name=FONT_NAME,
             font_size=dp(12),
+            bold=True,
             size_hint_y=None,
             height=dp(32),
-            bg_color=get_color_from_hex("#546E7A"),
+            background_normal="",
+            background_color=get_color_from_hex("#37474F"),
+            color=(1, 1, 1, 1),
         )
         self.btn_toggle_all.bind(on_press=self._on_toggle_all_press)
         container.add_widget(self.btn_toggle_all)
 
-        # 스크롤 가능한 존 항목 리스트
-        scroll = ScrollView(size_hint_y=None, height=dp(210))
-        grid = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        # 스크롤 영역
+        scroll = ScrollView(size_hint_y=None, height=dp(220))
+        grid = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
         self.item_buttons = {}
@@ -433,14 +443,21 @@ class ZoneMultiSelectDropDown(DropDown):
             is_active = (zone_name in selected_zones or "전체" in selected_zones)
             self.selected_states[zone_name] = is_active
 
-            # 💡 색상 진해짐(파란색) / 해제(어두운 회색) 토글 버튼 생성
-            btn_item = StyledButton(
-                text=f"{zone_name} ({count}건)",
+            # 💡 [기존 옵션 스타일 복원] 직사각형 사각 옵션 버튼 (선택 시 진한 음영)
+            btn_item = Button(
+                text=f"  {zone_name} ({count}건)",
+                font_name=FONT_NAME,
                 font_size=dp(13),
+                halign="left",
+                valign="middle",
                 size_hint_y=None,
                 height=dp(36),
-                bg_color=PRIMARY_BLUE if is_active else get_color_from_hex("#424242"),
+                background_normal="",
+                # 선택 시: PRIMARY_BLUE(진한 파랑) / 해제 시: #263238(기존 어두운 사각 옵션 배경)
+                background_color=PRIMARY_BLUE if is_active else get_color_from_hex("#263238"),
+                color=(1, 1, 1, 1) if is_active else (0.7, 0.7, 0.7, 1),
             )
+            btn_item.bind(size=lambda i, s: setattr(i, "text_size", (s[0], None)))
             btn_item.bind(on_press=partial(self._on_item_press, zone_name))
             grid.add_widget(btn_item)
             self.item_buttons[zone_name] = btn_item
@@ -449,12 +466,16 @@ class ZoneMultiSelectDropDown(DropDown):
         container.add_widget(scroll)
 
         # 하단 적용 버튼
-        btn_apply = StyledButton(
+        btn_apply = Button(
             text="적용",
+            font_name=FONT_NAME,
+            font_size=dp(13),
+            bold=True,
             size_hint_y=None,
             height=dp(36),
-            font_size=dp(13),
-            bg_color=get_color_from_hex("#00897B"),
+            background_normal="",
+            background_color=get_color_from_hex("#00897B"),
+            color=(1, 1, 1, 1),
         )
         btn_apply.bind(on_press=self._on_apply_press)
         container.add_widget(btn_apply)
@@ -462,22 +483,21 @@ class ZoneMultiSelectDropDown(DropDown):
         self.add_widget(container)
 
     def _on_item_press(self, zone_name, instance):
-        # 클릭 시 상태 변경 및 색상 전환
         new_state = not self.selected_states[zone_name]
         self.selected_states[zone_name] = new_state
-        instance.set_bg_color(
-            PRIMARY_BLUE if new_state else get_color_from_hex("#424242")
-        )
+        
+        # 음영 반전 처리
+        instance.background_color = PRIMARY_BLUE if new_state else get_color_from_hex("#263238")
+        instance.color = (1, 1, 1, 1) if new_state else (0.7, 0.7, 0.7, 1)
         self._update_toggle_all_btn_text()
 
     def _on_toggle_all_press(self, instance):
-        # 현재 하나라도 꺼져있으면 전체 선택, 다 켜져있으면 전체 해제
         target_state = not all(self.selected_states.values())
         for zone_name in self.selected_states:
             self.selected_states[zone_name] = target_state
-            self.item_buttons[zone_name].set_bg_color(
-                PRIMARY_BLUE if target_state else get_color_from_hex("#424242")
-            )
+            btn = self.item_buttons[zone_name]
+            btn.background_color = PRIMARY_BLUE if target_state else get_color_from_hex("#263238")
+            btn.color = (1, 1, 1, 1) if target_state else (0.7, 0.7, 0.7, 1)
         self._update_toggle_all_btn_text()
 
     def _update_toggle_all_btn_text(self):
