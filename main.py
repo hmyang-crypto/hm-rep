@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.2.3"
+CURRENT_VERSION = "1.2.5"
 
 
 def check_and_apply_update():
@@ -2037,6 +2037,8 @@ class UnifiedReplenishScreen(Screen):
         try:
             app = App.get_running_app()
             sheet = get_worksheet(TASK_SHEET_NAME)
+            
+            # 💡 [핵심] 할당 직전 서버(구글 시트) 최신 데이터를 실시간 조회
             all_rows = execute_with_retry(sheet.get, "A:AA")
             if not all_rows or len(all_rows) < 2:
                 raise Exception("시트 데이터를 불러올 수 없습니다.")
@@ -2046,32 +2048,59 @@ class UnifiedReplenishScreen(Screen):
             status_col = headers.index("상태") + 1
             task_id_col = headers.index("작업ID") + 1
 
-            all_ids = sheet.col_values(task_id_col)
             cells_to_update = []
+            already_taken_count = 0
 
-            for task_id in self.checked_task_ids:
-                if task_id in all_ids:
-                    row_idx = all_ids.index(task_id) + 1
-                    cells_to_update.append(
-                        gspread.Cell(row_idx, assignee_col, app.user_real_name)
-                    )
-                    cells_to_update.append(
-                        gspread.Cell(row_idx, status_col, "작업중")
-                    )
+            # 시트 행 전체를 순회하며 실시간 검증
+            for row_idx, row in enumerate(all_rows[1:], start=2):
+                if len(row) < len(headers):
+                    row += [""] * (len(headers) - len(row))
+                
+                row_dict = {headers[i]: row[i] for i in range(len(headers))}
+                task_id = str(t(row_dict, "작업ID")).strip()
 
+                if task_id in self.checked_task_ids:
+                    curr_status = str(t(row_dict, "상태")).strip()
+                    curr_assignee = str(t(row_dict, "작업 담당자", t(row_dict, "담당자", ""))).strip()
+
+                    # 💡 [핵심 2차 검증] 서버상에서도 여전히 '대기' 상태이고 담당자가 없을 때만 할당 처리
+                    if curr_status in ["대기", ""] and curr_assignee == "":
+                        cells_to_update.append(
+                            gspread.Cell(row_idx, assignee_col, app.user_real_name)
+                        )
+                        cells_to_update.append(
+                            gspread.Cell(row_idx, status_col, "작업중")
+                        )
+                    else:
+                        # 이미 다른 사람이 가져간 경우
+                        already_taken_count += 1
+
+            # 할당 가능한 건만 시트 업데이트
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
-
-            user_name_raw = str(app.user_real_name).strip()
-            for task in self.raw_all_tasks:
-                if t(task, "작업ID") in self.checked_task_ids:
-                    task["상태"] = "작업중"
-                    task["작업 담당자"] = user_name_raw
 
             invalidate_cache(TASK_SHEET_NAME)
             self.checked_task_ids.clear()
 
-            Clock.schedule_once(lambda dt: self.on_claim_success())
+            # 💡 결과 안내 팝업 분기
+            if already_taken_count > 0 and len(cells_to_update) == 0:
+                Clock.schedule_once(
+                    lambda dt: app.show_info_popup(
+                        "할당 실패", "선택하신 작업이 이미 다른 작업자에게 할당되었습니다.\n목록을 자동으로 갱신합니다."
+                    )
+                )
+            elif already_taken_count > 0:
+                Clock.schedule_once(
+                    lambda dt: app.show_info_popup(
+                        "부분 할당 완료", f"이미 다른 사용자가 가져간 {already_taken_count}건을 제외하고 할당되었습니다."
+                    )
+                )
+            else:
+                Clock.schedule_once(lambda dt: self.on_claim_success())
+
+            # 💡 최신 시트 데이터 다시 불러와서 화면 강제 갱신
+            Clock.schedule_once(lambda dt: self.fetch_data())
+
         except Exception as e:
             Clock.schedule_once(
                 lambda dt, err=str(e): App.get_running_app().show_info_popup(
