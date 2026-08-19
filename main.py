@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.2.2"
+CURRENT_VERSION = "1.2.3"
 
 
 def check_and_apply_update():
@@ -723,7 +723,6 @@ class InspectionPopup(Popup):
         )
         main_layout.add_widget(info_label)
 
-        # 💡 [핵심 복원] 송장 전용 / 입수량 1인 경우 안내문 구
         if is_invoice_only:
             warn_lbl = Label(
                 text="[color=D32F2F][b]⚠️ [송장만 부착 항목] - 로케이션을 적지 마세요![/b][/color]",
@@ -955,6 +954,13 @@ class MainMenuScreen(Screen):
     def on_enter(self, *args):
         self.layout.clear_widgets()
         app = App.get_running_app()
+
+        # 💡 [핵심 보완] 메모리 유실 방지 및 자동 복구
+        if not app.user_real_name:
+            app.user_real_name = app.load_saved_user_name() or ""
+            if not app.user_real_name:
+                self.manager.current = "name_entry"
+                return
 
         top_bar = BoxLayout(size_hint_y=None, height=dp(40))
         welcome_box = BoxLayout(orientation="vertical", size_hint_x=0.75)
@@ -1335,7 +1341,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         if is_shelf_rack:
             tag_prefix += "[color=1565C0][선반랙][/color] "
 
-
         self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
         self.ids.lbl_barcode.text = f"바코드: {t(self.task_data, '상품바코드', t(self.task_data, '바코드', 'N/A'))}"
 
@@ -1359,13 +1364,12 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
-        # 💡 [핵심 복원] 인박스 확인 및 송장전용/입수량 1 적치 경고 문구
         box_notice_str = f"박스입수: {qty_per_box}"
         if is_inbox:
             box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
         if is_invoice_only:
             box_notice_str += "  [color=D32F2F][b][송장만 부착 - 로케이션 적지 말 것][/b][/color]"
-            
+
         self.ids.lbl_box_info.text = box_notice_str
 
         self.ids.box_check.opacity = 1
@@ -1685,6 +1689,14 @@ class UnifiedReplenishScreen(Screen):
         )
 
     def on_enter(self):
+        # 💡 [핵심 보완] 작업자 이름 자동 로딩 및 유실 복구
+        app = App.get_running_app()
+        if not app.user_real_name:
+            app.user_real_name = app.load_saved_user_name() or ""
+            if not app.user_real_name:
+                self.manager.current = "name_entry"
+                return
+
         self.active_main_tab = "PENDING"
         self.active_equip_filter = "ALL"
         self.btn_tab_pending.set_active_visual(True)
@@ -2173,11 +2185,13 @@ class TaskListScreen(Screen):
         self.all_tasks_data = []
 
     def on_enter(self, *args):
+        # 💡 [핵심 보완] 작업자 이름 자동 로딩 및 유실 복구
         app = App.get_running_app()
         if not app.user_real_name:
-            saved_name = app.load_saved_user_name()
-            if saved_name:
-                app.user_real_name = saved_name
+            app.user_real_name = app.load_saved_user_name() or ""
+            if not app.user_real_name:
+                self.manager.current = "name_entry"
+                return
         self.refresh_list(force_refresh=True)
 
     def refresh_list(self, force_refresh=True):
@@ -2642,6 +2656,14 @@ class AdminDashboardScreen(Screen):
         self.add_widget(self.layout)
 
     def on_enter(self):
+        # 💡 [핵심 보완] 작업자 이름 자동 로딩 및 유실 복구
+        app = App.get_running_app()
+        if not app.user_real_name:
+            app.user_real_name = app.load_saved_user_name() or ""
+            if not app.user_real_name:
+                self.manager.current = "name_entry"
+                return
+
         self.search_input.text = ""
         self.grid.clear_widgets()
         self.grid.add_widget(
@@ -2953,6 +2975,7 @@ class PrinterSettingsPopup(Popup):
             self.dismiss()
 
 
+# 💡 [핵심 보완] 블루투스 소켓 재연결 retry 및 버퍼 안정화
 class BluetoothPrinter:
 
     def __init__(self, device_address):
@@ -2963,55 +2986,74 @@ class BluetoothPrinter:
     def connect(self):
         if platform != "android":
             return False
-        try:
-            BluetoothAdapter = autoclass("android.bluetooth.BluetoothAdapter")
-            UUID = autoclass("java.util.UUID")
-            device = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(
-                self.mac_address
-            )
-            spp_uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-            self.socket = device.createRfcommSocketToServiceRecord(spp_uuid)
-            self.socket.connect()
-            self.stream = self.socket.getOutputStream()
-            return True
-        except Exception:
-            return False
+
+        for attempt in range(2):
+            try:
+                BluetoothAdapter = autoclass("android.bluetooth.BluetoothAdapter")
+                UUID = autoclass("java.util.UUID")
+                device = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(
+                    self.mac_address
+                )
+                spp_uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+                self.socket = device.createRfcommSocketToServiceRecord(spp_uuid)
+                self.socket.connect()
+                self.stream = self.socket.getOutputStream()
+                time.sleep(0.3)
+                return True
+            except Exception as e:
+                print(f"⚠️ 블루투스 연결 시도 {attempt + 1}회 실패: {e}")
+                self.disconnect()
+                time.sleep(0.5)
+        return False
 
     def disconnect(self):
-        if self.stream:
-            self.stream.close()
-        if self.socket:
-            self.socket.close()
+        try:
+            if self.stream:
+                self.stream.close()
+        except Exception:
+            pass
+        try:
+            if self.socket:
+                self.socket.close()
+        except Exception:
+            pass
+        self.stream = None
+        self.socket = None
 
     def print_outbound_label_cpcl(self, label_info: dict, quantity: int):
         if not self.stream:
             return False
 
-        barcode_suffix = label_info.get("바코드", "N/A")[-6:]
-        loc_raw = label_info.get("출고 로케이션", "N/A")
-        loc1 = loc_raw.split("-", 1)[0] if "-" in loc_raw else loc_raw
-        loc2 = loc_raw.split("-", 1)[1] if "-" in loc_raw else ""
+        try:
+            barcode_suffix = label_info.get("바코드", "N/A")[-6:]
+            loc_raw = label_info.get("출고 로케이션", "N/A")
+            loc1 = loc_raw.split("-", 1)[0] if "-" in loc_raw else loc_raw
+            loc2 = loc_raw.split("-", 1)[1] if "-" in loc_raw else ""
 
-        is_urgent = label_info.get("긴급여부", False)
-        is_invoice_only = label_info.get("송장전용", False)
+            is_urgent = label_info.get("긴급여부", False)
+            is_invoice_only = label_info.get("송장전용", False)
 
-        # 💡 [핵심 검증] 라벨 우측 상단 태그 문자열 처리
-        tag_str = ""
-        if is_urgent:
-            tag_str += "[긴급건] "
-        if is_invoice_only:
-            tag_str += "[송장만]"
+            tag_str = ""
+            if is_urgent:
+                tag_str += "[긴급건] "
+            if is_invoice_only:
+                tag_str += "[송장만]"
 
-        cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 20 50 {barcode_suffix}\r\n"
-        
-        if tag_str:
-            cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 50 {tag_str}\r\nLEFT\r\n"
+            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 20 50 {barcode_suffix}\r\n"
+            if tag_str:
+                cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 50 {tag_str}\r\nLEFT\r\n"
 
-        cmd += f"LINE 20 150 556 150 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 220 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 410 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
-        
-        self.stream.write(cmd.encode("cp949"))
-        self.stream.flush()
-        return True
+            cmd += f"LINE 20 150 556 150 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 220 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 410 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+
+            self.stream.write(cmd.encode("cp949"))
+            self.stream.flush()
+            time.sleep(0.2)
+            return True
+        except Exception as e:
+            print(f"🔴 CPCL 전송 중 에러: {e}")
+            return False
+        finally:
+            self.disconnect()
 
 
 Builder.load_string(
@@ -3217,7 +3259,8 @@ class MainApp(App):
     FONT_NAME = FONT_NAME
 
     def build(self):
-        self.user_real_name = None
+        # 💡 [핵심 보완] 앱 구동 시 저장된 사용자 이름 자동 로드
+        self.user_real_name = self.load_saved_user_name() or ""
         self.current_list_type = None
         self.loading_popup = LoadingPopup()
         self._scan_buffer = ""
@@ -3234,6 +3277,11 @@ class MainApp(App):
         sm.add_widget(AdminDashboardScreen(name="admin_dashboard"))
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
+
+        # 💡 [핵심 보완] 이미 저장된 이름이 존재하면 로그인 화면을 건너뛰고 바로 메인 메뉴로 진입
+        if self.user_real_name:
+            sm.current = "main_menu"
+
         return sm
 
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
