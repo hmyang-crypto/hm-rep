@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.4.5"
+CURRENT_VERSION = "1.4.6"
 
 
 def check_and_apply_update():
@@ -194,7 +194,6 @@ def safe_int(val, default=0):
         return default
 
 
-# 💡 [핵심 구현] 안드로이드 시스템 대화상자(AlertDialog) 호출로 한/영 전환 및 한글 완전 지원
 def open_native_korean_input(title, hint, initial_text, callback, is_number=False):
     if platform == "android":
         try:
@@ -203,6 +202,7 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
             AlertDialog = autoclass("android.app.AlertDialog$Builder")
             EditText = autoclass("android.widget.EditText")
             InputType = autoclass("android.text.InputType")
+            Gravity = autoclass("android.view.Gravity")  # 💡 상단 정렬을 위한 Gravity 추가
 
             context = PythonActivity.mActivity
             builder = AlertDialog(context)
@@ -218,7 +218,6 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
 
             builder.setView(input_field)
 
-            # Positive Button Event Listener
             class PositiveClickListener(PythonJavaClass):
                 __javainterfaces__ = ["android/content/DialogInterface$OnClickListener"]
 
@@ -236,12 +235,21 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
             builder.setNegativeButton("취소", None)
 
             dialog = builder.create()
+            
+            # 💡 [핵심] 키보드에 가리지 않도록 팝업 위치를 화면 상단으로 올려 배치
+            window = dialog.getWindow()
+            if window:
+                window.setGravity(Gravity.TOP)
+                # Y축 위치 조절 (상단 여백 150px 지정)
+                params = window.getAttributes()
+                params.y = 150
+                window.setAttributes(params)
+
             dialog.show()
             return
         except Exception as e:
             print(f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}")
 
-    # 안드로이드 실패 시 Kivy SingleInputPopup 팝업 호출
     SingleInputPopup(
         title=title,
         hint_text=hint,
