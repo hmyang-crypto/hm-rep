@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.3.3"
+CURRENT_VERSION = "1.3.4"
 
 
 def check_and_apply_update():
@@ -384,6 +384,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
 
 
 # 💡 [핵심] 가로 폭 확충 및 스크롤 탑재 존 다중 선택 드롭다운
+# 💡 [개선] 가로폭 넓힘 + 상단 전체선택/해제 버튼 탑재 드롭다운
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -397,7 +398,8 @@ class ZoneMultiSelectDropDown(DropDown):
             padding=dp(8),
             spacing=dp(6),
             size_hint=(None, None),
-            width=dp(250),  # 💡 가로 너비 확장
+            width=dp(280),  # 💡 너비를 280으로 확충하여 우측 잘림 방지
+            height=dp(310), # 💡 전체선택 버튼 영역 고려하여 높이 상향
         )
 
         with container.canvas.before:
@@ -410,8 +412,30 @@ class ZoneMultiSelectDropDown(DropDown):
             size=lambda i, s: setattr(self.bg_rect, "size", s),
         )
 
-        # 💡 위아래 스크롤뷰 적용
-        scroll = ScrollView(size_hint_y=None, height=dp(220))
+        # 💡 [신규] 상단 전체선택 / 전체해제 버튼 영역
+        top_btn_box = BoxLayout(
+            size_hint_y=None, height=dp(30), spacing=dp(5)
+        )
+        btn_select_all = StyledButton(
+            text="전체선택",
+            font_size=dp(11),
+            bg_color=get_color_from_hex("#546E7A"),
+        )
+        btn_select_all.bind(on_press=lambda x: self._toggle_all_checks(True))
+
+        btn_deselect_all = StyledButton(
+            text="전체해제",
+            font_size=dp(11),
+            bg_color=get_color_from_hex("#78909C"),
+        )
+        btn_deselect_all.bind(on_press=lambda x: self._toggle_all_checks(False))
+
+        top_btn_box.add_widget(btn_select_all)
+        top_btn_box.add_widget(btn_deselect_all)
+        container.add_widget(top_btn_box)
+
+        # 위아래 스크롤뷰
+        scroll = ScrollView(size_hint_y=None, height=dp(210))
         grid = GridLayout(cols=1, spacing=dp(3), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
@@ -443,6 +467,7 @@ class ZoneMultiSelectDropDown(DropDown):
         scroll.add_widget(grid)
         container.add_widget(scroll)
 
+        # 하단 적용 버튼
         btn_apply = StyledButton(
             text="적용",
             size_hint_y=None,
@@ -453,8 +478,11 @@ class ZoneMultiSelectDropDown(DropDown):
         btn_apply.bind(on_press=self._on_apply_press)
         container.add_widget(btn_apply)
 
-        container.height = dp(280)  # 스크롤+버튼 전체 높이 고정
         self.add_widget(container)
+
+    def _toggle_all_checks(self, is_check):
+        for chk in self.checkboxes.values():
+            chk.active = is_check
 
     def _on_apply_press(self, instance):
         selected = {
