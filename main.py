@@ -138,7 +138,8 @@ if platform == "android":
         print(f"🚨 KIVY_HOME 설정 오류: {e}")
 
 if platform == "android":
-    Window.softinput_mode = "below_target"
+    # 💡 키보드가 켜질 때 전체 레이아웃을 위로 밀어 올리도록 pan 모드로 변경
+    Window.softinput_mode = "pan"
     from android.permissions import Permission, request_permissions
     from android.runnable import run_on_ui_thread
     from jnius import JavaException, PythonJavaClass, autoclass, java_method
