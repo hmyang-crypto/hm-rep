@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.4.1"
+CURRENT_VERSION = "1.4.4"
 
 
 def check_and_apply_update():
@@ -138,8 +138,8 @@ if platform == "android":
         print(f"🚨 KIVY_HOME 설정 오류: {e}")
 
 if platform == "android":
-    # 💡 GBoard 한글 조합 입력창이 정상적으로 레이어 위에 표시되도록 pan 모드로 변경
-    Window.softinput_mode = "pan"
+    # 💡 [핵심 복원] IME 한/영 자판 전환 신호를 수신하도록 below_target 모드 적용
+    Window.softinput_mode = "below_target"
     from android.permissions import Permission, request_permissions
     from android.runnable import run_on_ui_thread
     from jnius import JavaException, PythonJavaClass, autoclass, java_method
@@ -384,7 +384,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
-# 💡 [원천 해결] Native CheckBox 위젯 적용 (엑스박스 깨짐 완전 차단)
+# Native CheckBox 적용 다중 선택 드롭다운
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -394,7 +394,7 @@ class ZoneMultiSelectDropDown(DropDown):
         self.checkboxes = {}
 
         self.auto_width = False
-        self.width = dp(150)  # 체크박스 우측 배치를 위해 폭 150dp로 약간 조정
+        self.width = dp(150)
 
         container = BoxLayout(
             orientation="vertical",
@@ -415,7 +415,6 @@ class ZoneMultiSelectDropDown(DropDown):
             size=lambda i, s: setattr(self.bg_rect, "size", s),
         )
 
-        # 상단 전체선택 / 전체해제 통합 버튼
         all_active = len(selected_zones) == len(zone_counts_dict) or "전체" in selected_zones
         self.btn_toggle_all = Button(
             text="전체해제" if all_active else "전체선택",
@@ -434,7 +433,6 @@ class ZoneMultiSelectDropDown(DropDown):
         self.btn_toggle_all.bind(on_press=self._on_toggle_all_press)
         container.add_widget(self.btn_toggle_all)
 
-        # 스크롤 영역
         scroll = ScrollView(size_hint_y=None, height=dp(190))
         grid = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
@@ -442,7 +440,6 @@ class ZoneMultiSelectDropDown(DropDown):
         for zone_name, count in zone_counts_dict.items():
             is_active = (zone_name in selected_zones or "전체" in selected_zones)
 
-            # 💡 각 행 컨테이너 (터치 가능하도록 TouchableBox 방식)
             item_box = TouchableBox(
                 orientation="horizontal",
                 size_hint_y=None,
@@ -458,7 +455,6 @@ class ZoneMultiSelectDropDown(DropDown):
                 size=lambda i, s, b=bg: setattr(b, "size", s),
             )
 
-            # 좌측 텍스트
             lbl = Label(
                 text=f"{zone_name} ({count}건)",
                 font_name=FONT_NAME,
@@ -469,7 +465,6 @@ class ZoneMultiSelectDropDown(DropDown):
             )
             lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
 
-            # 💡 [Native CheckBox 적용] 앱 내 긴급만 체크박스와 동일한 위젯
             chk = CheckBox(
                 active=is_active,
                 size_hint_x=None,
@@ -480,7 +475,6 @@ class ZoneMultiSelectDropDown(DropDown):
             item_box.add_widget(lbl)
             item_box.add_widget(chk)
 
-            # 행 전체 누르면 체크박스 토글
             item_box.bind(on_press=lambda instance, c=chk: setattr(c, "active", not c.active))
             chk.bind(active=self._on_check_change)
 
@@ -490,7 +484,6 @@ class ZoneMultiSelectDropDown(DropDown):
         scroll.add_widget(grid)
         container.add_widget(scroll)
 
-        # 하단 적용 버튼
         btn_apply = Button(
             text="적용",
             font_name=FONT_NAME,
@@ -758,6 +751,7 @@ class SingleInputPopup(Popup):
             )
             main_layout.add_widget(warning_label)
 
+        # 💡 [한/영 자판 전환 지원] keyboard_suggestions 활성화
         self.text_input = TextInput(
             text=initial_text,
             hint_text=hint_text,
@@ -767,6 +761,7 @@ class SingleInputPopup(Popup):
             font_size=dp(18),
             font_name=FONT_NAME,
             input_type=input_type,
+            keyboard_suggestions=True,
         )
         button_layout = BoxLayout(
             orientation="horizontal",
@@ -903,6 +898,7 @@ class InspectionPopup(Popup):
             font_name=FONT_NAME,
             font_size=dp(18),
             halign="center",
+            keyboard_suggestions=True,
         )
         input_grid.add_widget(self.box_size_input)
 
@@ -916,6 +912,7 @@ class InspectionPopup(Popup):
             font_name=FONT_NAME,
             font_size=dp(18),
             halign="center",
+            keyboard_suggestions=True,
         )
         input_grid.add_widget(self.box_count_input)
 
@@ -929,6 +926,7 @@ class InspectionPopup(Popup):
             font_name=FONT_NAME,
             font_size=dp(18),
             halign="center",
+            keyboard_suggestions=True,
         )
         input_grid.add_widget(self.rem_qty_input)
 
@@ -955,6 +953,7 @@ class InspectionPopup(Popup):
             font_size=dp(16),
             size_hint_y=None,
             height=dp(45),
+            keyboard_suggestions=True,
         )
         loc_box.add_widget(self.final_location_input)
         main_layout.add_widget(loc_box)
@@ -1061,6 +1060,7 @@ class NameEntryScreen(Screen):
             size_hint_y=None,
             height=dp(50),
             halign="center",
+            keyboard_suggestions=True,
         )
         input_box.add_widget(self.name_input)
 
@@ -1679,7 +1679,6 @@ class UnifiedReplenishScreen(Screen):
             size_hint_y=None, height=dp(32), spacing=dp(3)
         )
 
-        # 💡 [핵심] 다중 선택 드롭다운 버튼 설정
         self.btn_from_zone = StyledButton(
             text="보관: 전체", size_hint_x=0.30, font_size=dp(11)
         )
@@ -2113,7 +2112,6 @@ class UnifiedReplenishScreen(Screen):
             from_loc = str(t(task, "기존로케이션")).strip().upper()
             to_loc = str(t(task, "보충로케이션")).strip().upper()
 
-            # 💡 다중 선택 필터링 로직
             if "전체" not in self.selected_from_zones:
                 from_zone = f"{from_loc[0]}존" if from_loc else ""
                 if from_zone not in self.selected_from_zones:
@@ -2194,7 +2192,6 @@ class UnifiedReplenishScreen(Screen):
             headers = [str(h).strip() for h in all_rows[0]]
             assignee_col = headers.index("작업 담당자") + 1
             status_col = headers.index("상태") + 1
-            task_id_col = headers.index("작업ID") + 1
 
             cells_to_update = []
             already_taken_count = 0
@@ -2357,16 +2354,11 @@ class TaskListScreen(Screen):
 
     def on_enter(self, *args):
         app = App.get_running_app()
-        
-        # 💡 [핵심 보완] 메모리 유실 시 user_config.json에서 이름 자동 복구
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
-            
-        # 로컬 파일에도 이름이 완전히 없는 경우에만 로그인 화면으로 이동
-        if not app.user_real_name:
-            self.manager.current = "name_entry"
-            return
-            
+            if not app.user_real_name:
+                self.manager.current = "name_entry"
+                return
         self.refresh_list(force_refresh=True)
 
     def refresh_list(self, force_refresh=True):
@@ -2542,13 +2534,9 @@ class TaskListScreen(Screen):
                     "오류", "숫자만 입력해야 합니다."
                 )
 
-        SingleInputPopup(
-            title="확인 수량 입력",
-            hint_text="수량 입력",
-            on_confirm=on_confirm_qty,
-            initial_text=initial_val,
-            input_type="number",
-        ).open()
+        open_native_korean_input(
+            "확인 수량 입력", "수량 입력", initial_val, on_confirm_qty, is_number=True
+        )
 
     def prompt_for_remarks(self, card):
 
@@ -2566,11 +2554,7 @@ class TaskListScreen(Screen):
             )
             app.show_info_popup("알림", "비고가 추가되었습니다.")
 
-        SingleInputPopup(
-            title="비고 추가",
-            hint_text="비고 내용 입력",
-            on_confirm=on_confirm_rem,
-        ).open()
+        open_native_korean_input("비고 추가", "비고 내용 입력", "", on_confirm_rem)
 
     def process_failure(self, card):
 
@@ -2591,11 +2575,7 @@ class TaskListScreen(Screen):
                 daemon=True,
             ).start()
 
-        SingleInputPopup(
-            title="실패 사유 입력",
-            hint_text="사유 입력",
-            on_confirm=on_confirm_fail,
-        ).open()
+        open_native_korean_input("실패 사유 입력", "사유 입력", "", on_confirm_fail)
 
     def process_task(self, card):
         app = App.get_running_app()
@@ -2811,6 +2791,7 @@ class AdminDashboardScreen(Screen):
             font_name=FONT_NAME,
             font_size=dp(15),
             size_hint_x=0.8,
+            keyboard_suggestions=True,
         )
         self.search_input.bind(on_text_validate=self.search_tasks)
 
@@ -3269,6 +3250,7 @@ Builder.load_string(
                 font_name: app.FONT_NAME
                 size_hint_x: 0.8
                 on_text_validate: root.search_tasks()
+                keyboard_suggestions: True
             StyledButton:
                 text: '검색'
                 size_hint_x: 0.2
@@ -3456,22 +3438,12 @@ class MainApp(App):
         return sm
 
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
-        # 💡 [핵심 수정] 텍스트 입력창(TextInput)에 포커스가 맞춰져 있을 때는 
-        # GBoard 등 소프트 키보드가 한글을 정상 조합할 수 있도록 전역 스캔 처리를 스킵합니다.
+        # 💡 [핵심] TextInput에 포커스가 잡힌 경우 전역 바코드 인터셉트 해제하여 키보드 입력 허용
         try:
             kb = getattr(window, "_system_keyboard", None)
             focused_widget = getattr(kb, "widget", None) if kb else None
-            
-            # 포커스된 위젯이 TextInput이거나 활성화된 입력창이 있는 경우
             if focused_widget is not None and isinstance(focused_widget, TextInput):
                 return False
-                
-            # Screen 내부의 TextInput 포커스 재확인
-            if self.root and hasattr(self.root, "current_screen"):
-                curr = self.root.current_screen
-                for child in curr.walk():
-                    if isinstance(child, TextInput) and child.focus:
-                        return False
         except Exception:
             pass
 
@@ -3480,7 +3452,7 @@ class MainApp(App):
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
 
-        if key in [13, 40]:  # Enter 키 입력 시
+        if key in [13, 40]:
             if self._scan_buffer:
                 self.process_global_scan(self._scan_buffer)
                 self._scan_buffer = ""
@@ -3603,7 +3575,6 @@ class MainApp(App):
 
     def process_global_scan(self, barcode):
         clean_barcode = re.sub(r'[\r\n\t]', '', str(barcode)).strip()
-        
         if self.root and clean_barcode:
             curr_screen = self.root.current_screen
             if hasattr(curr_screen, "handle_barcode_scan"):
