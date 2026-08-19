@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.3.9"
+CURRENT_VERSION = "1.4.0"
 
 
 def check_and_apply_update():
@@ -2356,11 +2356,16 @@ class TaskListScreen(Screen):
 
     def on_enter(self, *args):
         app = App.get_running_app()
+        
+        # 💡 [핵심 보완] 메모리 유실 시 user_config.json에서 이름 자동 복구
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
-            if not app.user_real_name:
-                self.manager.current = "name_entry"
-                return
+            
+        # 로컬 파일에도 이름이 완전히 없는 경우에만 로그인 화면으로 이동
+        if not app.user_real_name:
+            self.manager.current = "name_entry"
+            return
+            
         self.refresh_list(force_refresh=True)
 
     def refresh_list(self, force_refresh=True):
