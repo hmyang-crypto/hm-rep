@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.2.5"
+CURRENT_VERSION = "1.2.6"
 
 
 def check_and_apply_update():
@@ -3451,10 +3451,13 @@ class MainApp(App):
         banner.show(Window)
 
     def process_global_scan(self, barcode):
-        clean_barcode = re.sub(r"[^\x20-\x7E]", "", barcode).strip().upper()
-        if self.root:
+        # 💡 [핵심 복원] 영문자/특수문자가 지워지지 않도록 개행문자(\r, \n)만 깔끔하게 제거
+        clean_barcode = re.sub(r'[\r\n\t]', '', str(barcode)).strip()
+        
+        if self.root and clean_barcode:
             curr_screen = self.root.current_screen
             if hasattr(curr_screen, "handle_barcode_scan"):
+                # 대소문자 구분 없이 인식하도록 매칭 처리
                 curr_screen.handle_barcode_scan(clean_barcode)
 
     def get_config_path(self):
