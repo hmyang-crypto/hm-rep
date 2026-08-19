@@ -6,18 +6,21 @@ import ssl
 import sys
 import threading
 import time
+import traceback
 import urllib.request
-from collections import defaultdict, Counter
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 from functools import partial
 
+# 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.3.1"
+CURRENT_VERSION = "1.3.2"
 
 
 def check_and_apply_update():
     try:
+        print("🔍 서버에서 최신 업데이트 확인 중...")
         ssl_context = ssl._create_unverified_context()
         req = urllib.request.Request(
             UPDATE_CHECK_URL, headers={"User-Agent": "Mozilla/5.0"}
@@ -30,6 +33,9 @@ def check_and_apply_update():
                 server_version = response.read().decode("utf-8").strip()
 
                 if server_version > CURRENT_VERSION:
+                    print(
+                        f"🚀 새 버전 발견 ({server_version})! 코드를 다운로드합니다."
+                    )
                     code_req = urllib.request.Request(
                         UPDATE_CODE_URL, headers={"User-Agent": "Mozilla/5.0"}
                     )
@@ -50,6 +56,8 @@ def check_and_apply_update():
                                 f.write(
                                     new_code_response.read().decode("utf-8")
                                 )
+
+                            print("✅ updated_main.py 최신 스크립트 저장 완료!")
     except Exception as e:
         print(f"⚠️ 업데이트 확인 중 오류 (무시하고 앱 실행): {e}")
 
@@ -62,6 +70,7 @@ if "updated_main.py" not in os.path.basename(__file__):
 
     if os.path.exists(_updated_script) and __name__ == "__main__":
         try:
+            print("🔄 최신 업데이트 스크립트(updated_main.py)로 실행합니다...")
             with open(_updated_script, "r", encoding="utf-8") as _f:
                 _code = _f.read()
             exec(
@@ -70,7 +79,9 @@ if "updated_main.py" not in os.path.basename(__file__):
             )
             sys.exit(0)
         except Exception as _exec_err:
-            print(f"⚠️ 업데이트 코드 실행 실패: {_exec_err}")
+            print(
+                f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}"
+            )
 
 from kivy.animation import Animation
 from kivy.app import App
@@ -83,22 +94,24 @@ from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import (
     BooleanProperty,
+    ColorProperty,
     DictProperty,
     ListProperty,
     NumericProperty,
     ObjectProperty,
+    StringProperty,
 )
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
-from kivy.uix.dropdown import DropDown
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.recycleboxlayout import RecycleBoxLayout
 from kivy.uix.recycleview import RecycleView
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
+from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.screenmanager import FadeTransition, Screen, ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner, SpinnerOption
@@ -126,7 +139,8 @@ if platform == "android":
 if platform == "android":
     Window.softinput_mode = "below_target"
     from android.permissions import Permission, request_permissions
-    from jnius import autoclass
+    from android.runnable import run_on_ui_thread
+    from jnius import JavaException, PythonJavaClass, autoclass, java_method
 
 import gspread
 from gspread.exceptions import APIError
@@ -161,6 +175,11 @@ BG_GRAY = get_color_from_hex("#F4F7FA")
 TEXT_DARK = get_color_from_hex("#212121")
 TEXT_MUTED = get_color_from_hex("#757575")
 
+DEFAULT_FONT_STYLE = {
+    "font_name": FONT_NAME,
+    "font_size": dp(15),
+    "color": TEXT_DARK,
+}
 Window.clearcolor = BG_GRAY
 
 
@@ -363,88 +382,6 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
-# 💡 드롭다운 체크박스 + 존별 수량 표기 결합 클래스
-class ZoneMultiSelectDropDown(DropDown):
-
-    def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
-        super().__init__(**kwargs)
-        self.auto_dismiss = True
-        self.on_apply = on_apply
-        self.checkboxes = {}
-
-        container = BoxLayout(
-            orientation="vertical",
-            padding=dp(6),
-            spacing=dp(4),
-            size_hint=(None, None),
-            width=dp(200),
-        )
-        container.bind(minimum_height=container.setter("height"))
-
-        with container.canvas.before:
-            Color(0.2, 0.2, 0.2, 0.98)
-            self.bg_rect = RoundedRectangle(
-                pos=container.pos, size=container.size, radius=[dp(8)]
-            )
-        container.bind(
-            pos=lambda i, p: setattr(self.bg_rect, "pos", p),
-            size=lambda i, s: setattr(self.bg_rect, "size", s),
-        )
-
-        scroll = ScrollView(size_hint_y=None, height=dp(200))
-        grid = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
-        grid.bind(minimum_height=grid.setter("height"))
-
-        for zone_name, count in zone_counts_dict.items():
-            item_box = BoxLayout(
-                size_hint_y=None, height=dp(36), spacing=dp(6), padding=(dp(4), 0)
-            )
-            chk = CheckBox(
-                active=(zone_name in selected_zones or "전체" in selected_zones),
-                size_hint_x=None,
-                width=dp(28),
-                color=PRIMARY_BLUE,
-            )
-            lbl = Label(
-                text=f"{zone_name} ({count})",
-                font_name=FONT_NAME,
-                font_size=dp(13),
-                color=(1, 1, 1, 1),
-                halign="left",
-                valign="middle",
-            )
-            lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
-
-            item_box.add_widget(chk)
-            item_box.add_widget(lbl)
-            grid.add_widget(item_box)
-            self.checkboxes[zone_name] = chk
-
-        scroll.add_widget(grid)
-        container.add_widget(scroll)
-
-        btn_apply = StyledButton(
-            text="적용",
-            size_hint_y=None,
-            height=dp(34),
-            font_size=dp(12),
-            bg_color=PRIMARY_BLUE,
-        )
-        btn_apply.bind(on_press=self._on_apply_press)
-        container.add_widget(btn_apply)
-
-        self.add_widget(container)
-
-    def _on_apply_press(self, instance):
-        selected = {
-            zone for zone, chk in self.checkboxes.items() if chk.active
-        }
-        if not selected or len(selected) == len(self.checkboxes):
-            selected = {"전체"}
-        self.on_apply(selected)
-        self.dismiss()
-
-
 g_sheet_client = None
 g_spreadsheet = None
 g_worksheet_objects = {}
@@ -469,7 +406,9 @@ def execute_with_retry(func, *args, **kwargs):
                 raise e
         except Exception as e:
             raise e
-    raise Exception("🚨 구글 API 오류로 작업이 최종 실패했습니다.")
+    raise Exception(
+        "🚨 구글 API 트래픽 초과 오류 누적으로 작업이 최종 실패했습니다."
+    )
 
 
 def invalidate_cache(sheet_name):
@@ -484,6 +423,7 @@ def initialize_gspread():
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
         GSPREAD_LOADED = False
         GSPREAD_ERROR_MSG = f"인증 키 파일 '{SERVICE_ACCOUNT_FILE}'을(를) 찾을 수 없습니다."
+        print(f"\n🚨 '{SERVICE_ACCOUNT_FILE}' 파일이 없습니다!\n")
         return
 
     try:
@@ -498,6 +438,7 @@ def initialize_gspread():
         g_spreadsheet = g_sheet_client.open(SPREADSHEET_NAME)
         g_worksheet_objects.clear()
         GSPREAD_LOADED = True
+        print(f"✅ 구글 시트 연결 성공: [{SPREADSHEET_NAME}]")
     except Exception as e:
         GSPREAD_ERROR_MSG = str(e)
         GSPREAD_LOADED = False
@@ -1014,6 +955,7 @@ class MainMenuScreen(Screen):
         self.layout.clear_widgets()
         app = App.get_running_app()
 
+        # 💡 [핵심 보완] 메모리 유실 방지 및 자동 복구
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
             if not app.user_real_name:
@@ -1373,11 +1315,12 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             self.card_bg_color = [1, 1, 1, 1]
 
         raw_equip = str(t(self.task_data, "장비", ""))
-        display_tag = (
-            "[color=0000FF][리치][/color]"
-            if raw_equip == "리치"
-            else ("[color=1E88E5][오더피커][/color]" if raw_equip == "오더피커" else "")
-        )
+        if raw_equip == "리치":
+            display_tag = "[color=0000FF][리치][/color]"
+        elif raw_equip == "오더피커":
+            display_tag = "[color=1E88E5][오더피커][/color]"
+        else:
+            display_tag = ""
         self.ids.lbl_equip.text = f"[b]{display_tag}[/b]"
 
         existing_qty = safe_int(t(self.task_data, "기존수량", 0))
@@ -1468,9 +1411,8 @@ class UnifiedReplenishScreen(Screen):
         self.active_main_tab = "PENDING"
         self.active_equip_filter = "ALL"
         self.only_urgent = False
-        
-        self.selected_from_zones = {"전체"}
-        self.selected_to_zones = {"전체"}
+        self.selected_from_zone = "전체"
+        self.selected_to_zone = "전체"
         self.sort_asc = True
         self.is_filter_expanded = True
 
@@ -1586,16 +1528,36 @@ class UnifiedReplenishScreen(Screen):
         opt_toolbar = BoxLayout(
             size_hint_y=None, height=dp(32), spacing=dp(3)
         )
-        
-        self.btn_from_zone = StyledButton(
-            text="보관: 전체", size_hint_x=0.30, font_size=dp(11)
+        from_zone_list = [
+            "보관: 전체",
+            "I존",
+            "J존",
+            "K존",
+            "L존",
+            "M존",
+            "N존",
+            "O존",
+            "P존",
+            "Q존",
+            "R존",
+        ]
+        self.sp_from = StyledSpinner(
+            text="보관: 전체",
+            values=from_zone_list,
+            font_size=dp(11),
+            size_hint_x=0.30,
+            option_cls=KoreanSpinnerOption,
         )
-        self.btn_from_zone.bind(on_press=self.open_from_zone_popup)
+        self.sp_from.bind(text=self.on_from_spinner_change)
 
-        self.btn_to_zone = StyledButton(
-            text="이동: 전체", size_hint_x=0.30, font_size=dp(11)
+        self.sp_to = StyledSpinner(
+            text="이동: 전체",
+            values=["이동: 전체", "A존", "B존", "C존", "D존", "I존", "O존"],
+            font_size=dp(11),
+            size_hint_x=0.30,
+            option_cls=KoreanSpinnerOption,
         )
-        self.btn_to_zone.bind(on_press=self.open_to_zone_popup)
+        self.sp_to.bind(text=self.on_to_spinner_change)
 
         self.btn_sort = StyledButton(
             text="▲",
@@ -1622,8 +1584,8 @@ class UnifiedReplenishScreen(Screen):
 
         chk_box.add_widget(self.chk_urgent)
         chk_box.add_widget(lbl_urg)
-        opt_toolbar.add_widget(self.btn_from_zone)
-        opt_toolbar.add_widget(self.btn_to_zone)
+        opt_toolbar.add_widget(self.sp_from)
+        opt_toolbar.add_widget(self.sp_to)
         opt_toolbar.add_widget(self.btn_sort)
         opt_toolbar.add_widget(chk_box)
         self.filter_panel.add_widget(opt_toolbar)
@@ -1694,54 +1656,6 @@ class UnifiedReplenishScreen(Screen):
 
         self.add_widget(self.layout)
 
-    def open_from_zone_popup(self, instance):
-        from_counts = Counter()
-        for task in self.raw_all_tasks:
-            loc = str(t(task, "기존로케이션")).strip().upper()
-            if loc:
-                from_counts[f"{loc[0]}존"] += 1
-
-        if not from_counts:
-            from_counts = Counter({"I존": 0, "J존": 0, "K존": 0})
-
-        def apply_from_zones(selected_set):
-            self.selected_from_zones = selected_set
-            if "전체" in selected_set or not selected_set:
-                self.btn_from_zone.text = "보관: 전체"
-            else:
-                zones_str = ",".join(sorted(selected_set)).replace("존", "")
-                self.btn_from_zone.text = f"보관: {zones_str}"
-            self.apply_filters_and_render()
-
-        dropdown = ZoneMultiSelectDropDown(
-            dict(sorted(from_counts.items())), self.selected_from_zones, apply_from_zones
-        )
-        dropdown.open(instance)
-
-    def open_to_zone_popup(self, instance):
-        to_counts = Counter()
-        for task in self.raw_all_tasks:
-            loc = str(t(task, "보충로케이션")).strip().upper()
-            if loc:
-                to_counts[f"{loc[0]}존"] += 1
-
-        if not to_counts:
-            to_counts = Counter({"A존": 0, "B존": 0, "E존": 0, "F존": 0})
-
-        def apply_to_zones(selected_set):
-            self.selected_to_zones = selected_set
-            if "전체" in selected_set or not selected_set:
-                self.btn_to_zone.text = "이동: 전체"
-            else:
-                zones_str = ",".join(sorted(selected_set)).replace("존", "")
-                self.btn_to_zone.text = f"이동: {zones_str}"
-            self.apply_filters_and_render()
-
-        dropdown = ZoneMultiSelectDropDown(
-            dict(sorted(to_counts.items())), self.selected_to_zones, apply_to_zones
-        )
-        dropdown.open(instance)
-
     def toggle_sort_order(self, instance):
         self.sort_asc = not self.sort_asc
         self.btn_sort.text = "▲" if self.sort_asc else "▼"
@@ -1775,6 +1689,7 @@ class UnifiedReplenishScreen(Screen):
         )
 
     def on_enter(self):
+        # 💡 [핵심 보완] 작업자 이름 자동 로딩 및 유실 복구
         app = App.get_running_app()
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
@@ -1896,6 +1811,18 @@ class UnifiedReplenishScreen(Screen):
         )
         self.apply_filters_and_render()
 
+    def on_from_spinner_change(self, spinner, text):
+        self.selected_from_zone = (
+            "전체" if "전체" in text else text.replace("존", "").strip()
+        )
+        self.apply_filters_and_render()
+
+    def on_to_spinner_change(self, spinner, text):
+        self.selected_to_zone = (
+            "전체" if "전체" in text else text.replace("존", "").strip()
+        )
+        self.apply_filters_and_render()
+
     def on_urgent_check_change(self, checkbox, value):
         self.only_urgent = value
         self.apply_filters_and_render()
@@ -1942,18 +1869,19 @@ class UnifiedReplenishScreen(Screen):
         eq_op_tot, eq_op_urg = 0, 0
         eq_reach_tot, eq_reach_urg = 0, 0
 
-        for task in self.raw_all_tasks:
-            raw_status = str(t(task, "상태")).strip()
-            assignee = str(t(task, "작업 담당자", t(task, "담당자", t(task, "보충담당자", "")))).strip().lower()
+        from_counts = {}
+        to_zones = ["A", "B", "C", "D", "I", "O"]
+        to_counts = {z: 0 for z in to_zones}
 
-            is_pending_status = raw_status in ["대기", ""]
-            is_working_status = raw_status in ["작업중", "진행중"]
+        for task in self.raw_all_tasks:
+            status = str(t(task, "상태")).strip()
+            assignee = str(t(task, "작업 담당자")).strip().lower()
 
             if self.active_main_tab == "PENDING":
-                if not is_pending_status or assignee != "":
+                if status != "대기" or assignee != "":
                     continue
             else:
-                if not is_working_status or assignee != user_name:
+                if status != "작업중" or assignee != user_name:
                     continue
 
             equip = str(t(task, "장비")).strip()
@@ -1972,6 +1900,17 @@ class UnifiedReplenishScreen(Screen):
                 if is_urg:
                     eq_reach_urg += 1
 
+            f_loc = str(t(task, "기존로케이션")).strip().upper()
+            if f_loc:
+                f_zone = f_loc[0]
+                from_counts[f_zone] = from_counts.get(f_zone, 0) + 1
+
+            t_loc = str(t(task, "보충로케이션")).strip().upper()
+            if t_loc:
+                t_zone = t_loc[0]
+                if t_zone in to_counts:
+                    to_counts[t_zone] += 1
+
         self.btn_eq_all.markup = True
         self.btn_eq_all.text = f"전체 ({eq_all_tot} / [color=D32F2F]{eq_all_urg}[/color])"
 
@@ -1981,23 +1920,37 @@ class UnifiedReplenishScreen(Screen):
         self.btn_eq_reach.markup = True
         self.btn_eq_reach.text = f"리치 ({eq_reach_tot} / [color=D32F2F]{eq_reach_urg}[/color])"
 
+        tot_from = sum(from_counts.values())
+        new_from_values = [f"보관: 전체 ({tot_from}건)"]
+        for z in sorted(from_counts.keys()):
+            new_from_values.append(f"{z}존 ({from_counts[z]}건)")
+
+        tot_to = sum(to_counts.values())
+        new_to_values = [f"이동: 전체 ({tot_to}건)"]
+        for z in to_zones:
+            if to_counts[z] > 0:
+                new_to_values.append(f"{z}존 ({to_counts[z]}건)")
+
+        self.sp_from.values = new_from_values
+        self.sp_to.values = new_to_values
+
         filtered_list = []
         for task in self.raw_all_tasks:
-            raw_status = str(t(task, "상태")).strip()
-            assignee = str(t(task, "작업 담당자", t(task, "담당자", t(task, "보충담당자", "")))).strip().lower()
+            status = str(t(task, "상태")).strip()
+            assignee = str(t(task, "작업 담당자")).strip().lower()
             equip = str(t(task, "장비")).strip()
 
-            is_pending_status = raw_status in ["대기", ""]
-            is_working_status = raw_status in ["작업중", "진행중"]
-
             if self.active_main_tab == "PENDING":
-                if not is_pending_status or assignee != "":
+                if status != "대기" or assignee != "":
                     continue
             else:
-                if not is_working_status or assignee != user_name:
+                if status != "작업중" or assignee != user_name:
                     continue
 
-            if self.active_equip_filter == "ORDERPICKER" and equip != "오더피커":
+            if (
+                self.active_equip_filter == "ORDERPICKER"
+                and equip != "오더피커"
+            ):
                 continue
             if self.active_equip_filter == "REACH" and equip != "리치":
                 continue
@@ -2005,14 +1958,21 @@ class UnifiedReplenishScreen(Screen):
             from_loc = str(t(task, "기존로케이션")).strip().upper()
             to_loc = str(t(task, "보충로케이션")).strip().upper()
 
-            if "전체" not in self.selected_from_zones:
-                from_zone = f"{from_loc[0]}존" if from_loc else ""
-                if from_zone not in self.selected_from_zones:
+            clean_from_sel = (
+                self.selected_from_zone.replace("보관:", "").strip()
+            )
+            clean_to_sel = (
+                self.selected_to_zone.replace("이동:", "").strip()
+            )
+
+            if "전체" not in clean_from_sel:
+                target_zone = clean_from_sel[0] if clean_from_sel else ""
+                if not from_loc.startswith(target_zone):
                     continue
 
-            if "전체" not in self.selected_to_zones:
-                to_zone = f"{to_loc[0]}존" if to_loc else ""
-                if to_zone not in self.selected_to_zones:
+            if "전체" not in clean_to_sel:
+                target_to_zone = clean_to_sel[0] if clean_to_sel else ""
+                if not to_loc.startswith(target_to_zone):
                     continue
 
             if self.only_urgent and t(task, "긴급여부") != "Y":
@@ -2078,6 +2038,7 @@ class UnifiedReplenishScreen(Screen):
             app = App.get_running_app()
             sheet = get_worksheet(TASK_SHEET_NAME)
             
+            # 💡 [핵심] 할당 직전 서버(구글 시트) 최신 데이터를 실시간 조회
             all_rows = execute_with_retry(sheet.get, "A:AA")
             if not all_rows or len(all_rows) < 2:
                 raise Exception("시트 데이터를 불러올 수 없습니다.")
@@ -2085,10 +2046,12 @@ class UnifiedReplenishScreen(Screen):
             headers = [str(h).strip() for h in all_rows[0]]
             assignee_col = headers.index("작업 담당자") + 1
             status_col = headers.index("상태") + 1
+            task_id_col = headers.index("작업ID") + 1
 
             cells_to_update = []
             already_taken_count = 0
 
+            # 시트 행 전체를 순회하며 실시간 검증
             for row_idx, row in enumerate(all_rows[1:], start=2):
                 if len(row) < len(headers):
                     row += [""] * (len(headers) - len(row))
@@ -2100,6 +2063,7 @@ class UnifiedReplenishScreen(Screen):
                     curr_status = str(t(row_dict, "상태")).strip()
                     curr_assignee = str(t(row_dict, "작업 담당자", t(row_dict, "담당자", ""))).strip()
 
+                    # 💡 [핵심 2차 검증] 서버상에서도 여전히 '대기' 상태이고 담당자가 없을 때만 할당 처리
                     if curr_status in ["대기", ""] and curr_assignee == "":
                         cells_to_update.append(
                             gspread.Cell(row_idx, assignee_col, app.user_real_name)
@@ -2108,14 +2072,17 @@ class UnifiedReplenishScreen(Screen):
                             gspread.Cell(row_idx, status_col, "작업중")
                         )
                     else:
+                        # 이미 다른 사람이 가져간 경우
                         already_taken_count += 1
 
+            # 할당 가능한 건만 시트 업데이트
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
 
             invalidate_cache(TASK_SHEET_NAME)
             self.checked_task_ids.clear()
 
+            # 💡 결과 안내 팝업 분기
             if already_taken_count > 0 and len(cells_to_update) == 0:
                 Clock.schedule_once(
                     lambda dt: app.show_info_popup(
@@ -2131,6 +2098,7 @@ class UnifiedReplenishScreen(Screen):
             else:
                 Clock.schedule_once(lambda dt: self.on_claim_success())
 
+            # 💡 최신 시트 데이터 다시 불러와서 화면 강제 갱신
             Clock.schedule_once(lambda dt: self.fetch_data())
 
         except Exception as e:
@@ -2246,6 +2214,7 @@ class TaskListScreen(Screen):
         self.all_tasks_data = []
 
     def on_enter(self, *args):
+        # 💡 [핵심 보완] 작업자 이름 자동 로딩 및 유실 복구
         app = App.get_running_app()
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
@@ -2510,6 +2479,44 @@ class TaskListScreen(Screen):
             card.task_data.get("remarks_text", t(card.task_data, "비고", "")),
         )
 
+    def _start_print_job(self, card_data):
+        try:
+            app = App.get_running_app()
+            default_printer = app.load_default_printer()
+            if not default_printer:
+                return
+
+            qty_per_box = safe_int(t(card_data, "박스입수량", t(card_data, "박스 입수량", 0)))
+            prod_name = str(t(card_data, "상품명", ""))
+            is_invoice_only = qty_per_box == 1 or "송장" in prod_name
+
+            label_info = {
+                "바코드": str(t(card_data, "상품바코드", t(card_data, "바코드", "N/A"))),
+                "출고 로케이션": str(t(card_data, "보충로케이션", "N/A")),
+                "긴급여부": (t(card_data, "긴급여부") == "Y"),
+                "송장전용": is_invoice_only,
+            }
+            threading.Thread(
+                target=self._print_thread,
+                args=(default_printer, label_info, 1),
+                daemon=True,
+            ).start()
+        except Exception as e:
+            print(f"🔴 프린터 작업 에러 무시됨: {e}")
+
+    def _print_thread(self, address, label_info, quantity):
+        try:
+            printer = BluetoothPrinter(address)
+            if printer.connect():
+                try:
+                    printer.print_outbound_label_cpcl(label_info, quantity)
+                except Exception:
+                    pass
+                finally:
+                    printer.disconnect()
+        except Exception as e:
+            print(f"🔴 블루투스 인쇄 실패: {e}")
+
     def _finalize_task_processing(
         self, card, final_qty, split_qty, final_location, updated_remarks
     ):
@@ -2548,7 +2555,19 @@ class TaskListScreen(Screen):
                 daemon=True,
             ).start()
 
-        run_sheet_update()
+        def on_yes_print():
+            try:
+                self._start_print_job(card.task_data)
+            except Exception:
+                pass
+            run_sheet_update()
+
+        app.show_confirmation_popup(
+            title="인쇄 및 완료",
+            message="[color=ffffff]보충완료 처리합니다.\n라벨 1장을 인쇄하시겠습니까?[/color]",
+            on_yes=on_yes_print,
+            on_no=run_sheet_update,
+        )
 
     def _perform_update(self, card, updates, msg):
         try:
@@ -2666,6 +2685,7 @@ class AdminDashboardScreen(Screen):
         self.add_widget(self.layout)
 
     def on_enter(self):
+        # 💡 [핵심 보완] 작업자 이름 자동 로딩 및 유실 복구
         app = App.get_running_app()
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
@@ -2984,6 +3004,87 @@ class PrinterSettingsPopup(Popup):
             self.dismiss()
 
 
+# 💡 [핵심 보완] 블루투스 소켓 재연결 retry 및 버퍼 안정화
+class BluetoothPrinter:
+
+    def __init__(self, device_address):
+        self.mac_address = device_address
+        self.socket = None
+        self.stream = None
+
+    def connect(self):
+        if platform != "android":
+            return False
+
+        for attempt in range(2):
+            try:
+                BluetoothAdapter = autoclass("android.bluetooth.BluetoothAdapter")
+                UUID = autoclass("java.util.UUID")
+                device = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(
+                    self.mac_address
+                )
+                spp_uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+                self.socket = device.createRfcommSocketToServiceRecord(spp_uuid)
+                self.socket.connect()
+                self.stream = self.socket.getOutputStream()
+                time.sleep(0.3)
+                return True
+            except Exception as e:
+                print(f"⚠️ 블루투스 연결 시도 {attempt + 1}회 실패: {e}")
+                self.disconnect()
+                time.sleep(0.5)
+        return False
+
+    def disconnect(self):
+        try:
+            if self.stream:
+                self.stream.close()
+        except Exception:
+            pass
+        try:
+            if self.socket:
+                self.socket.close()
+        except Exception:
+            pass
+        self.stream = None
+        self.socket = None
+
+    def print_outbound_label_cpcl(self, label_info: dict, quantity: int):
+        if not self.stream:
+            return False
+
+        try:
+            barcode_suffix = label_info.get("바코드", "N/A")[-6:]
+            loc_raw = label_info.get("출고 로케이션", "N/A")
+            loc1 = loc_raw.split("-", 1)[0] if "-" in loc_raw else loc_raw
+            loc2 = loc_raw.split("-", 1)[1] if "-" in loc_raw else ""
+
+            is_urgent = label_info.get("긴급여부", False)
+            is_invoice_only = label_info.get("송장전용", False)
+
+            tag_str = ""
+            if is_urgent:
+                tag_str += "[긴급건] "
+            if is_invoice_only:
+                tag_str += "[송장만]"
+
+            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 20 50 {barcode_suffix}\r\n"
+            if tag_str:
+                cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 50 {tag_str}\r\nLEFT\r\n"
+
+            cmd += f"LINE 20 150 556 150 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 220 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 410 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+
+            self.stream.write(cmd.encode("cp949"))
+            self.stream.flush()
+            time.sleep(0.2)
+            return True
+        except Exception as e:
+            print(f"🔴 CPCL 전송 중 에러: {e}")
+            return False
+        finally:
+            self.disconnect()
+
+
 Builder.load_string(
     """
 <TaskListScreen>:
@@ -3187,6 +3288,7 @@ class MainApp(App):
     FONT_NAME = FONT_NAME
 
     def build(self):
+        # 💡 [핵심 보완] 앱 구동 시 저장된 사용자 이름 자동 로드
         self.user_real_name = self.load_saved_user_name() or ""
         self.current_list_type = None
         self.loading_popup = LoadingPopup()
@@ -3205,21 +3307,24 @@ class MainApp(App):
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
 
+        # 💡 [핵심 보완] 이미 저장된 이름이 존재하면 로그인 화면을 건너뛰고 바로 메인 메뉴로 진입
         if self.user_real_name:
             sm.current = "main_menu"
 
         return sm
 
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
+        current_time = time.time()
         try:
             kb = getattr(window, "_system_keyboard", None)
             focused_widget = getattr(kb, "widget", None) if kb else None
-            if focused_widget is not None and isinstance(focused_widget, TextInput):
+            if focused_widget is not None and isinstance(
+                focused_widget, TextInput
+            ):
                 return False
         except Exception:
             pass
 
-        current_time = time.time()
         if current_time - self._last_keystroke_time > 0.25:
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
@@ -3236,12 +3341,123 @@ class MainApp(App):
 
     def on_start(self):
         threading.Thread(target=initialize_gspread, daemon=True).start()
+        Clock.schedule_interval(self.check_for_new_tasks, 30)
+
+        if platform == "android":
+            try:
+                request_permissions(
+                    [
+                        Permission.POST_NOTIFICATIONS,
+                        Permission.BLUETOOTH_SCAN,
+                        Permission.BLUETOOTH_CONNECT,
+                        Permission.BLUETOOTH_ADMIN,
+                        Permission.ACCESS_FINE_LOCATION,
+                    ]
+                )
+            except Exception as e:
+                print(f"🔴 권한 요청 오류: {e}")
+
+    def check_for_new_tasks(self, *args):
+        if self.root and any(
+            isinstance(w, NotificationBanner) for w in Window.children
+        ):
+            return
+        threading.Thread(target=self._perform_task_check, daemon=True).start()
+
+    def _perform_task_check(self):
+        try:
+            all_tasks = get_sheet_data(TASK_SHEET_NAME, force_refresh=True)
+
+            pending_tasks = [
+                task
+                for task in all_tasks
+                if str(t(task, "상태")).strip() == "대기"
+            ]
+            current_pending_task_ids = {
+                str(t(task, "작업ID")) for task in pending_tasks
+            }
+
+            if not self.last_known_pending_task_ids:
+                if self.root and self.root.current != "name_entry":
+                    self.last_known_pending_task_ids = current_pending_task_ids
+                return
+
+            new_task_ids = (
+                current_pending_task_ids - self.last_known_pending_task_ids
+            )
+
+            if new_task_ids:
+                new_tasks = [
+                    task
+                    for task in pending_tasks
+                    if str(t(task, "작업ID")) in new_task_ids
+                ]
+                if new_tasks:
+                    Clock.schedule_once(
+                        lambda dt: self.show_notification_banner(new_tasks)
+                    )
+
+            self.last_known_pending_task_ids = current_pending_task_ids
+        except Exception as e:
+            print(f"⚠️ 신규 작업 알림 확인 중 에러 (무시): {e}")
+
+    def play_notification_sound(self):
+        if platform != "android":
+            return
+        try:
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            RingtoneManager = autoclass("android.media.RingtoneManager")
+            context = PythonActivity.mActivity.getApplicationContext()
+            notification_uri = RingtoneManager.getDefaultUri(
+                RingtoneManager.TYPE_NOTIFICATION
+            )
+            if notification_uri:
+                ringtone = RingtoneManager.getRingtone(
+                    context, notification_uri
+                )
+                ringtone.play()
+        except Exception as e:
+            print(f"🔴 시스템 소리 재생 예외: {e}")
+
+    def show_notification_banner(self, new_tasks):
+        if not self.root or self.root.current == "name_entry":
+            return
+
+        self.play_notification_sound()
+
+        has_urgent = any(t(task, "긴급여부") == "Y" for task in new_tasks)
+        equipment_counts = defaultdict(int)
+        for task in new_tasks:
+            equip = t(task, "장비", "기타")
+            equipment_counts[equip] += 1
+
+        summary_parts = [
+            f"{eq} {num}건" for eq, num in equipment_counts.items()
+        ]
+        summary_text = ", ".join(summary_parts)
+
+        message = "새로운 "
+        if has_urgent:
+            message += "[color=FF3333][긴급][/color] "
+        message += f"작업 발생: {summary_text}"
+
+        def go_to_replenish_screen():
+            if self.root:
+                self.root.current = "unified_replenish"
+
+        banner = NotificationBanner(
+            text=message, on_press_callback=go_to_replenish_screen
+        )
+        banner.show(Window)
 
     def process_global_scan(self, barcode):
+        # 💡 [핵심 복원] 영문자/특수문자가 지워지지 않도록 개행문자(\r, \n)만 깔끔하게 제거
         clean_barcode = re.sub(r'[\r\n\t]', '', str(barcode)).strip()
+        
         if self.root and clean_barcode:
             curr_screen = self.root.current_screen
             if hasattr(curr_screen, "handle_barcode_scan"):
+                # 대소문자 구분 없이 인식하도록 매칭 처리
                 curr_screen.handle_barcode_scan(clean_barcode)
 
     def get_config_path(self):
