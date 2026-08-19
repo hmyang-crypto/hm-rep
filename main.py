@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.3.7"
+CURRENT_VERSION = "1.3.8"
 
 
 def check_and_apply_update():
@@ -383,7 +383,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
-# 💡 [디자인 전면 개선] 콤팩트 너비(dp 140) + 화이트/인디고 모던 테마 + 가운데 정렬
+# 💡 [개선] 콤팩트 너비(dp 140) + 연회색 배경 + 체크표시(☑/☐) 방식 + 가운데 정렬
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -392,11 +392,9 @@ class ZoneMultiSelectDropDown(DropDown):
         self.on_apply = on_apply
         self.selected_states = {}
         
-        # 💡 너비 축소 (dp 140) 및 부모 버튼 폭 제약 해제
         self.auto_width = False
         self.width = dp(140)
 
-        # 전체 메인 패널 (밝은 모던 패널)
         container = BoxLayout(
             orientation="vertical",
             padding=dp(5),
@@ -407,7 +405,7 @@ class ZoneMultiSelectDropDown(DropDown):
         )
 
         with container.canvas.before:
-            Color(0.98, 0.98, 0.98, 1)  # 💡 화이트 계열 배경
+            Color(0.98, 0.98, 0.98, 1)
             self.bg_rect = RoundedRectangle(
                 pos=container.pos, size=container.size, radius=[dp(8)]
             )
@@ -416,7 +414,7 @@ class ZoneMultiSelectDropDown(DropDown):
             size=lambda i, s: setattr(self.bg_rect, "size", s),
         )
 
-        # 💡 [상단 버튼] 전체선택 <-> 전체해제 (가운데 정렬)
+        # 상단 전체선택 / 전체해제 통합 버튼
         all_active = len(selected_zones) == len(zone_counts_dict) or "전체" in selected_zones
         self.btn_toggle_all = Button(
             text="전체해제" if all_active else "전체선택",
@@ -445,19 +443,20 @@ class ZoneMultiSelectDropDown(DropDown):
             is_active = (zone_name in selected_zones or "전체" in selected_zones)
             self.selected_states[zone_name] = is_active
 
-            # 💡 [목록 버튼] 가운데 정렬 + 모던 인디고 블루 음영
+            # 💡 [목록 버튼] 체크표시(☑/☐) + 연회색 배경 유지
+            check_mark = "☑" if is_active else "☐"
             btn_item = Button(
-                text=f"{zone_name} ({count}건)",
+                text=f"{check_mark} {zone_name} ({count}건)",
                 font_name=FONT_NAME,
                 font_size=dp(12),
-                halign="center",  # 💡 가운데 정렬
+                bold=is_active,
+                halign="center",
                 valign="middle",
                 size_hint_y=None,
                 height=dp(34),
                 background_normal="",
-                # 선택 시: 슬레이트 인디고(#3F51B5) / 미선택 시: 연회색(#EEEEEE)
-                background_color=get_color_from_hex("#3F51B5") if is_active else get_color_from_hex("#EEEEEE"),
-                color=(1, 1, 1, 1) if is_active else get_color_from_hex("#424242"),
+                background_color=get_color_from_hex("#EEEEEE"),  # 💡 마음에 들어 하신 연회색 고정
+                color=PRIMARY_BLUE if is_active else get_color_from_hex("#424242"),
             )
             btn_item.bind(size=lambda i, s: setattr(i, "text_size", s))
             btn_item.bind(on_press=partial(self._on_item_press, zone_name))
@@ -467,7 +466,7 @@ class ZoneMultiSelectDropDown(DropDown):
         scroll.add_widget(grid)
         container.add_widget(scroll)
 
-        # 💡 [하단 버튼] 적용 (오션 블루 포인트 + 가운데 정렬)
+        # 하단 적용 버튼 (메인 파란색 테마)
         btn_apply = Button(
             text="적용",
             font_name=FONT_NAME,
@@ -476,7 +475,7 @@ class ZoneMultiSelectDropDown(DropDown):
             size_hint_y=None,
             height=dp(34),
             background_normal="",
-            background_color=get_color_from_hex("#0288D1"),  # 💡 초록색 대체 (블루계열 포인트)
+            background_color=PRIMARY_BLUE,
             color=(1, 1, 1, 1),
             halign="center",
             valign="middle",
@@ -491,9 +490,12 @@ class ZoneMultiSelectDropDown(DropDown):
         new_state = not self.selected_states[zone_name]
         self.selected_states[zone_name] = new_state
         
-        # 상태에 따른 색상 변경
-        instance.background_color = get_color_from_hex("#3F51B5") if new_state else get_color_from_hex("#EEEEEE")
-        instance.color = (1, 1, 1, 1) if new_state else get_color_from_hex("#424242")
+        # 💡 체크표시 및 텍스트 색상 실시간 전환
+        check_mark = "☑" if new_state else "☐"
+        count_str = instance.text.split("(")[1] if "(" in instance.text else ")"
+        instance.text = f"{check_mark} {zone_name} ({count_str}"
+        instance.bold = new_state
+        instance.color = PRIMARY_BLUE if new_state else get_color_from_hex("#424242")
         self._update_toggle_all_btn_text()
 
     def _on_toggle_all_press(self, instance):
@@ -501,8 +503,11 @@ class ZoneMultiSelectDropDown(DropDown):
         for zone_name in self.selected_states:
             self.selected_states[zone_name] = target_state
             btn = self.item_buttons[zone_name]
-            btn.background_color = get_color_from_hex("#3F51B5") if target_state else get_color_from_hex("#EEEEEE")
-            btn.color = (1, 1, 1, 1) if target_state else get_color_from_hex("#424242")
+            check_mark = "☑" if target_state else "☐"
+            count_str = btn.text.split("(")[1] if "(" in btn.text else ")"
+            btn.text = f"{check_mark} {zone_name} ({count_str}"
+            btn.bold = target_state
+            btn.color = PRIMARY_BLUE if target_state else get_color_from_hex("#424242")
         self._update_toggle_all_btn_text()
 
     def _update_toggle_all_btn_text(self):
