@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.4.4"
+CURRENT_VERSION = "1.4.5"
 
 
 def check_and_apply_update():
@@ -138,7 +138,6 @@ if platform == "android":
         print(f"🚨 KIVY_HOME 설정 오류: {e}")
 
 if platform == "android":
-    # 💡 [핵심 복원] IME 한/영 자판 전환 신호를 수신하도록 below_target 모드 적용
     Window.softinput_mode = "below_target"
     from android.permissions import Permission, request_permissions
     from android.runnable import run_on_ui_thread
@@ -193,6 +192,63 @@ def safe_int(val, default=0):
         return int(clean_str) if clean_str else default
     except Exception:
         return default
+
+
+# 💡 [핵심 구현] 안드로이드 시스템 대화상자(AlertDialog) 호출로 한/영 전환 및 한글 완전 지원
+def open_native_korean_input(title, hint, initial_text, callback, is_number=False):
+    if platform == "android":
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            AlertDialog = autoclass("android.app.AlertDialog$Builder")
+            EditText = autoclass("android.widget.EditText")
+            InputType = autoclass("android.text.InputType")
+
+            context = PythonActivity.mActivity
+            builder = AlertDialog(context)
+            builder.setTitle(title)
+
+            input_field = EditText(context)
+            input_field.setHint(hint)
+            if initial_text:
+                input_field.setText(str(initial_text))
+            
+            if is_number:
+                input_field.setInputType(InputType.TYPE_CLASS_NUMBER)
+
+            builder.setView(input_field)
+
+            # Positive Button Event Listener
+            class PositiveClickListener(PythonJavaClass):
+                __javainterfaces__ = ["android/content/DialogInterface$OnClickListener"]
+
+                def __init__(self, cb, field):
+                    super().__init__()
+                    self.cb = cb
+                    self.field = field
+
+                @java_method("(Landroid/content/DialogInterface;I)V")
+                def onClick(self, dialog, which):
+                    res = self.field.getText().toString()
+                    Clock.schedule_once(lambda dt: self.cb(res), 0.1)
+
+            builder.setPositiveButton("확인", PositiveClickListener(callback, input_field))
+            builder.setNegativeButton("취소", None)
+
+            dialog = builder.create()
+            dialog.show()
+            return
+        except Exception as e:
+            print(f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}")
+
+    # 안드로이드 실패 시 Kivy SingleInputPopup 팝업 호출
+    SingleInputPopup(
+        title=title,
+        hint_text=hint,
+        initial_text=initial_text,
+        input_type="number" if is_number else "text",
+        on_confirm=callback,
+    ).open()
 
 
 class StyledButton(Button):
@@ -751,7 +807,6 @@ class SingleInputPopup(Popup):
             )
             main_layout.add_widget(warning_label)
 
-        # 💡 [한/영 자판 전환 지원] keyboard_suggestions 활성화
         self.text_input = TextInput(
             text=initial_text,
             hint_text=hint_text,
@@ -761,7 +816,6 @@ class SingleInputPopup(Popup):
             font_size=dp(18),
             font_name=FONT_NAME,
             input_type=input_type,
-            keyboard_suggestions=True,
         )
         button_layout = BoxLayout(
             orientation="horizontal",
@@ -898,7 +952,12 @@ class InspectionPopup(Popup):
             font_name=FONT_NAME,
             font_size=dp(18),
             halign="center",
-            keyboard_suggestions=True,
+            readonly=True,
+        )
+        self.box_size_input.bind(
+            on_touch_down=lambda instance, touch: self._touch_input(
+                instance, touch, "박스 입수량 입력", True
+            )
         )
         input_grid.add_widget(self.box_size_input)
 
@@ -912,7 +971,12 @@ class InspectionPopup(Popup):
             font_name=FONT_NAME,
             font_size=dp(18),
             halign="center",
-            keyboard_suggestions=True,
+            readonly=True,
+        )
+        self.box_count_input.bind(
+            on_touch_down=lambda instance, touch: self._touch_input(
+                instance, touch, "박스 수량 입력", True
+            )
         )
         input_grid.add_widget(self.box_count_input)
 
@@ -926,7 +990,12 @@ class InspectionPopup(Popup):
             font_name=FONT_NAME,
             font_size=dp(18),
             halign="center",
-            keyboard_suggestions=True,
+            readonly=True,
+        )
+        self.rem_qty_input.bind(
+            on_touch_down=lambda instance, touch: self._touch_input(
+                instance, touch, "낱개 수량 입력", True
+            )
         )
         input_grid.add_widget(self.rem_qty_input)
 
@@ -953,7 +1022,12 @@ class InspectionPopup(Popup):
             font_size=dp(16),
             size_hint_y=None,
             height=dp(45),
-            keyboard_suggestions=True,
+            readonly=True,
+        )
+        self.final_location_input.bind(
+            on_touch_down=lambda instance, touch: self._touch_input(
+                instance, touch, "최종 적치위치 입력", False
+            )
         )
         loc_box.add_widget(self.final_location_input)
         main_layout.add_widget(loc_box)
@@ -973,6 +1047,15 @@ class InspectionPopup(Popup):
         main_layout.add_widget(top_button_grid)
 
         self.content = main_layout
+
+    def _touch_input(self, instance, touch, title, is_num):
+        if instance.collide_point(*touch.pos):
+            def set_val(val):
+                instance.text = str(val).strip()
+
+            open_native_korean_input(title, title, instance.text, set_val, is_number=is_num)
+            return True
+        return False
 
     def confirm_inspection(self, instance):
         app = App.get_running_app()
@@ -1053,15 +1136,16 @@ class NameEntryScreen(Screen):
             )
         )
         self.name_input = TextInput(
-            hint_text="예: 홍길동",
+            hint_text="터치하여 이름 입력",
             multiline=False,
             font_name=FONT_NAME,
             font_size=dp(20),
             size_hint_y=None,
             height=dp(50),
             halign="center",
-            keyboard_suggestions=True,
+            readonly=True,
         )
+        self.name_input.bind(on_touch_down=self.on_input_touch)
         input_box.add_widget(self.name_input)
 
         start_btn = StyledButton(
@@ -1073,6 +1157,18 @@ class NameEntryScreen(Screen):
         layout.add_widget(start_btn)
         layout.add_widget(Widget(size_hint_y=0.2))
         self.add_widget(layout)
+
+    def on_input_touch(self, instance, touch):
+        if instance.collide_point(*touch.pos):
+            def set_name(val):
+                if val.strip():
+                    self.name_input.text = val.strip()
+
+            open_native_korean_input(
+                "작업자 이름 입력", "이름을 입력하세요", self.name_input.text, set_name
+            )
+            return True
+        return False
 
     def on_enter(self, *args):
         app = App.get_running_app()
@@ -2786,14 +2882,14 @@ class AdminDashboardScreen(Screen):
 
         search_bar = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
         self.search_input = TextInput(
-            hint_text="바코드 스캔 또는 입력 후 검색",
+            hint_text="터치하여 바코드/SKU 검색",
             multiline=False,
             font_name=FONT_NAME,
             font_size=dp(15),
             size_hint_x=0.8,
-            keyboard_suggestions=True,
+            readonly=True,
         )
-        self.search_input.bind(on_text_validate=self.search_tasks)
+        self.search_input.bind(on_touch_down=self.on_search_touch)
 
         btn_search = StyledButton(
             text="검색", size_hint_x=0.2, font_size=dp(14)
@@ -2810,6 +2906,18 @@ class AdminDashboardScreen(Screen):
         self.scroll.add_widget(self.grid)
         self.layout.add_widget(self.scroll)
         self.add_widget(self.layout)
+
+    def on_search_touch(self, instance, touch):
+        if instance.collide_point(*touch.pos):
+            def set_query(val):
+                self.search_input.text = val
+                self.search_tasks()
+
+            open_native_korean_input(
+                "검색어 입력", "바코드 또는 SKU 검색", self.search_input.text, set_query
+            )
+            return True
+        return False
 
     def on_enter(self):
         app = App.get_running_app()
@@ -3250,7 +3358,6 @@ Builder.load_string(
                 font_name: app.FONT_NAME
                 size_hint_x: 0.8
                 on_text_validate: root.search_tasks()
-                keyboard_suggestions: True
             StyledButton:
                 text: '검색'
                 size_hint_x: 0.2
@@ -3438,7 +3545,6 @@ class MainApp(App):
         return sm
 
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
-        # 💡 [핵심] TextInput에 포커스가 잡힌 경우 전역 바코드 인터셉트 해제하여 키보드 입력 허용
         try:
             kb = getattr(window, "_system_keyboard", None)
             focused_widget = getattr(kb, "widget", None) if kb else None
