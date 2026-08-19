@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.2.7"
+CURRENT_VERSION = "1.2.8"
 
 
 def check_and_apply_update():
@@ -105,6 +105,7 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.dropdown import DropDown
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
@@ -684,42 +685,54 @@ class MultipleSkuSelectPopup(Popup):
         self.content = layout
 
 
-# 💡 [신규 추가] 보관 / 이동 구역 다중 선택 팝업
-class ZoneSelectPopup(Popup):
+# 💡 [소형 드롭다운 컴포넌트] 버튼 직하단 다중 선택 패널
+class ZoneMultiSelectDropDown(DropDown):
 
-    def __init__(self, title, zone_list, selected_zones, on_apply, **kwargs):
+    def __init__(self, zone_list, selected_zones, on_apply, **kwargs):
         super().__init__(**kwargs)
-        self.title = title
-        self.title_font = FONT_NAME
-        self.size_hint = (0.85, 0.65)
-        self.auto_dismiss = False
+        self.auto_dismiss = True
         self.on_apply = on_apply
         self.checkboxes = {}
 
-        main_layout = BoxLayout(
-            orientation="vertical", padding=dp(12), spacing=dp(10)
+        container = BoxLayout(
+            orientation="vertical",
+            padding=dp(8),
+            spacing=dp(6),
+            size_hint=(None, None),
+            width=dp(220),
+        )
+        container.bind(minimum_height=container.setter("height"))
+
+        with container.canvas.before:
+            Color(0.2, 0.2, 0.2, 0.98)
+            self.bg_rect = RoundedRectangle(
+                pos=container.pos, size=container.size, radius=[dp(8)]
+            )
+        container.bind(
+            pos=lambda i, p: setattr(self.bg_rect, "pos", p),
+            size=lambda i, s: setattr(self.bg_rect, "size", s),
         )
 
-        scroll = ScrollView()
-        grid = GridLayout(cols=2, spacing=dp(8), size_hint_y=None)
+        grid = GridLayout(cols=2, spacing=dp(4), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
         for zone in zone_list:
             item_box = BoxLayout(
-                size_hint_y=None, height=dp(36), spacing=dp(5)
+                size_hint_y=None, height=dp(32), spacing=dp(4), padding=(dp(2), 0)
             )
             chk = CheckBox(
                 active=(zone in selected_zones or "전체" in selected_zones),
                 size_hint_x=None,
-                width=dp(30),
+                width=dp(26),
                 color=PRIMARY_BLUE,
             )
             lbl = Label(
                 text=zone,
                 font_name=FONT_NAME,
-                font_size=dp(14),
-                color=TEXT_DARK,
+                font_size=dp(13),
+                color=(1, 1, 1, 1),
                 halign="left",
+                valign="middle",
             )
             lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
 
@@ -728,22 +741,21 @@ class ZoneSelectPopup(Popup):
             grid.add_widget(item_box)
             self.checkboxes[zone] = chk
 
-        scroll.add_widget(grid)
-        main_layout.add_widget(scroll)
+        container.add_widget(grid)
 
-        btn_box = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(8))
-        btn_cancel = StyledButton(text="취소", bg_color=(0.6, 0.6, 0.6, 1))
-        btn_cancel.bind(on_press=self.dismiss)
-        btn_ok = StyledButton(text="적용")
-        btn_ok.bind(on_press=self._on_ok_press)
+        btn_apply = StyledButton(
+            text="적용",
+            size_hint_y=None,
+            height=dp(34),
+            font_size=dp(12),
+            bg_color=PRIMARY_BLUE,
+        )
+        btn_apply.bind(on_press=self._on_apply_press)
+        container.add_widget(btn_apply)
 
-        btn_box.add_widget(btn_cancel)
-        btn_box.add_widget(btn_ok)
-        main_layout.add_widget(btn_box)
+        self.add_widget(container)
 
-        self.content = main_layout
-
-    def _on_ok_press(self, instance):
+    def _on_apply_press(self, instance):
         selected = {
             zone for zone, chk in self.checkboxes.items() if chk.active
         }
@@ -1480,7 +1492,6 @@ class UnifiedReplenishScreen(Screen):
         self.active_equip_filter = "ALL"
         self.only_urgent = False
         
-        # 💡 [핵심] 단일 선택(str) -> 다중 선택 집합(set)으로 구조 교체
         self.selected_from_zones = {"전체"}
         self.selected_to_zones = {"전체"}
         self.sort_asc = True
@@ -1599,7 +1610,6 @@ class UnifiedReplenishScreen(Screen):
             size_hint_y=None, height=dp(32), spacing=dp(3)
         )
         
-        # 💡 [신규 다중 선택 버튼 바인딩]
         self.btn_from_zone = StyledButton(
             text="보관: 전체", size_hint_x=0.30, font_size=dp(11)
         )
@@ -1708,7 +1718,13 @@ class UnifiedReplenishScreen(Screen):
         self.add_widget(self.layout)
 
     def open_from_zone_popup(self, instance):
-        from_list = ["I존", "J존", "K존", "L존", "M존", "N존", "O존", "P존", "Q존", "R존"]
+        from_zones = sorted({
+            f"{str(t(task, '기존로케이션')).strip().upper()[0]}존"
+            for task in self.raw_all_tasks
+            if str(t(task, "기존로케이션")).strip()
+        })
+        if not from_zones:
+            from_zones = ["I존", "J존", "K존", "L존", "M존", "N존", "O존", "P존", "Q존", "R존"]
 
         def apply_from_zones(selected_set):
             self.selected_from_zones = selected_set
@@ -1719,12 +1735,19 @@ class UnifiedReplenishScreen(Screen):
                 self.btn_from_zone.text = f"보관: {zones_str}"
             self.apply_filters_and_render()
 
-        ZoneSelectPopup(
-            "보관 구역 다중 선택", from_list, self.selected_from_zones, apply_from_zones
-        ).open()
+        dropdown = ZoneMultiSelectDropDown(
+            from_zones, self.selected_from_zones, apply_from_zones
+        )
+        dropdown.open(instance)
 
     def open_to_zone_popup(self, instance):
-        to_list = ["A존", "B존", "C존", "D존", "I존", "O존"]
+        to_zones = sorted({
+            f"{str(t(task, '보충로케이션')).strip().upper()[0]}존"
+            for task in self.raw_all_tasks
+            if str(t(task, "보충로케이션")).strip()
+        })
+        if not to_zones:
+            to_zones = ["A존", "B존", "C존", "D존", "I존", "O존"]
 
         def apply_to_zones(selected_set):
             self.selected_to_zones = selected_set
@@ -1735,9 +1758,10 @@ class UnifiedReplenishScreen(Screen):
                 self.btn_to_zone.text = f"이동: {zones_str}"
             self.apply_filters_and_render()
 
-        ZoneSelectPopup(
-            "이동 구역 다중 선택", to_list, self.selected_to_zones, apply_to_zones
-        ).open()
+        dropdown = ZoneMultiSelectDropDown(
+            to_zones, self.selected_to_zones, apply_to_zones
+        )
+        dropdown.open(instance)
 
     def toggle_sort_order(self, instance):
         self.sort_asc = not self.sort_asc
@@ -2002,13 +2026,11 @@ class UnifiedReplenishScreen(Screen):
             from_loc = str(t(task, "기존로케이션")).strip().upper()
             to_loc = str(t(task, "보충로케이션")).strip().upper()
 
-            # 💡 [핵심] 보관 구역 다중 선택 체크
             if "전체" not in self.selected_from_zones:
                 from_zone = f"{from_loc[0]}존" if from_loc else ""
                 if from_zone not in self.selected_from_zones:
                     continue
 
-            # 💡 [핵심] 이동 구역 다중 선택 체크
             if "전체" not in self.selected_to_zones:
                 to_zone = f"{to_loc[0]}존" if to_loc else ""
                 if to_zone not in self.selected_to_zones:
@@ -2077,7 +2099,6 @@ class UnifiedReplenishScreen(Screen):
             app = App.get_running_app()
             sheet = get_worksheet(TASK_SHEET_NAME)
             
-            # 💡 [핵심] 할당 직전 서버(구글 시트) 최신 데이터를 실시간 조회
             all_rows = execute_with_retry(sheet.get, "A:AA")
             if not all_rows or len(all_rows) < 2:
                 raise Exception("시트 데이터를 불러올 수 없습니다.")
@@ -2089,7 +2110,6 @@ class UnifiedReplenishScreen(Screen):
             cells_to_update = []
             already_taken_count = 0
 
-            # 시트 행 전체를 순회하며 실시간 선점 검증
             for row_idx, row in enumerate(all_rows[1:], start=2):
                 if len(row) < len(headers):
                     row += [""] * (len(headers) - len(row))
@@ -3477,7 +3497,6 @@ class MainApp(App):
         banner.show(Window)
 
     def process_global_scan(self, barcode):
-        # 💡 [핵심 복원] 구버전 파싱 로직 원복 (\r, \n 개행문자만 제거하여 영문/숫자/특수문자 100% 보존)
         clean_barcode = re.sub(r'[\r\n\t]', '', str(barcode)).strip()
         if self.root and clean_barcode:
             curr_screen = self.root.current_screen
