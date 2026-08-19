@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.3.8"
+CURRENT_VERSION = "1.3.9"
 
 
 def check_and_apply_update():
@@ -383,24 +383,24 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
-# 💡 [개선] 콤팩트 너비(dp 140) + 연회색 배경 + 체크표시(☑/☐) 방식 + 가운데 정렬
+# 💡 [원천 해결] Native CheckBox 위젯 적용 (엑스박스 깨짐 완전 차단)
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
         super().__init__(**kwargs)
         self.auto_dismiss = True
         self.on_apply = on_apply
-        self.selected_states = {}
-        
+        self.checkboxes = {}
+
         self.auto_width = False
-        self.width = dp(140)
+        self.width = dp(150)  # 체크박스 우측 배치를 위해 폭 150dp로 약간 조정
 
         container = BoxLayout(
             orientation="vertical",
-            padding=dp(5),
+            padding=dp(6),
             spacing=dp(3),
             size_hint=(None, None),
-            width=dp(140),
+            width=dp(150),
             height=dp(280),
         )
 
@@ -435,38 +435,61 @@ class ZoneMultiSelectDropDown(DropDown):
 
         # 스크롤 영역
         scroll = ScrollView(size_hint_y=None, height=dp(190))
-        grid = GridLayout(cols=1, spacing=dp(3), size_hint_y=None)
+        grid = GridLayout(cols=1, spacing=dp(2), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
-        self.item_buttons = {}
         for zone_name, count in zone_counts_dict.items():
             is_active = (zone_name in selected_zones or "전체" in selected_zones)
-            self.selected_states[zone_name] = is_active
 
-            # 💡 [목록 버튼] 체크표시(☑/☐) + 연회색 배경 유지
-            check_mark = "☑" if is_active else "☐"
-            btn_item = Button(
-                text=f"{check_mark} {zone_name} ({count}건)",
-                font_name=FONT_NAME,
-                font_size=dp(12),
-                bold=is_active,
-                halign="center",
-                valign="middle",
+            # 💡 각 행 컨테이너 (터치 가능하도록 TouchableBox 방식)
+            item_box = TouchableBox(
+                orientation="horizontal",
                 size_hint_y=None,
                 height=dp(34),
-                background_normal="",
-                background_color=get_color_from_hex("#EEEEEE"),  # 💡 마음에 들어 하신 연회색 고정
-                color=PRIMARY_BLUE if is_active else get_color_from_hex("#424242"),
+                padding=(dp(8), 0),
+                spacing=dp(4),
             )
-            btn_item.bind(size=lambda i, s: setattr(i, "text_size", s))
-            btn_item.bind(on_press=partial(self._on_item_press, zone_name))
-            grid.add_widget(btn_item)
-            self.item_buttons[zone_name] = btn_item
+            with item_box.canvas.before:
+                Color(*get_color_from_hex("#EEEEEE"))
+                bg = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(4)])
+            item_box.bind(
+                pos=lambda i, p, b=bg: setattr(b, "pos", p),
+                size=lambda i, s, b=bg: setattr(b, "size", s),
+            )
+
+            # 좌측 텍스트
+            lbl = Label(
+                text=f"{zone_name} ({count}건)",
+                font_name=FONT_NAME,
+                font_size=dp(12),
+                color=get_color_from_hex("#212121"),
+                halign="left",
+                valign="middle",
+            )
+            lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
+
+            # 💡 [Native CheckBox 적용] 앱 내 긴급만 체크박스와 동일한 위젯
+            chk = CheckBox(
+                active=is_active,
+                size_hint_x=None,
+                width=dp(26),
+                color=PRIMARY_BLUE,
+            )
+
+            item_box.add_widget(lbl)
+            item_box.add_widget(chk)
+
+            # 행 전체 누르면 체크박스 토글
+            item_box.bind(on_press=lambda instance, c=chk: setattr(c, "active", not c.active))
+            chk.bind(active=self._on_check_change)
+
+            grid.add_widget(item_box)
+            self.checkboxes[zone_name] = chk
 
         scroll.add_widget(grid)
         container.add_widget(scroll)
 
-        # 하단 적용 버튼 (메인 파란색 테마)
+        # 하단 적용 버튼
         btn_apply = Button(
             text="적용",
             font_name=FONT_NAME,
@@ -486,39 +509,24 @@ class ZoneMultiSelectDropDown(DropDown):
 
         self.add_widget(container)
 
-    def _on_item_press(self, zone_name, instance):
-        new_state = not self.selected_states[zone_name]
-        self.selected_states[zone_name] = new_state
-        
-        # 💡 체크표시 및 텍스트 색상 실시간 전환
-        check_mark = "☑" if new_state else "☐"
-        count_str = instance.text.split("(")[1] if "(" in instance.text else ")"
-        instance.text = f"{check_mark} {zone_name} ({count_str}"
-        instance.bold = new_state
-        instance.color = PRIMARY_BLUE if new_state else get_color_from_hex("#424242")
+    def _on_check_change(self, checkbox, value):
         self._update_toggle_all_btn_text()
 
     def _on_toggle_all_press(self, instance):
-        target_state = not all(self.selected_states.values())
-        for zone_name in self.selected_states:
-            self.selected_states[zone_name] = target_state
-            btn = self.item_buttons[zone_name]
-            check_mark = "☑" if target_state else "☐"
-            count_str = btn.text.split("(")[1] if "(" in btn.text else ")"
-            btn.text = f"{check_mark} {zone_name} ({count_str}"
-            btn.bold = target_state
-            btn.color = PRIMARY_BLUE if target_state else get_color_from_hex("#424242")
+        target_state = not all(chk.active for chk in self.checkboxes.values())
+        for chk in self.checkboxes.values():
+            chk.active = target_state
         self._update_toggle_all_btn_text()
 
     def _update_toggle_all_btn_text(self):
-        all_selected = all(self.selected_states.values())
+        all_selected = all(chk.active for chk in self.checkboxes.values())
         self.btn_toggle_all.text = "전체해제" if all_selected else "전체선택"
 
     def _on_apply_press(self, instance):
         selected = {
-            zone for zone, active in self.selected_states.items() if active
+            zone for zone, chk in self.checkboxes.items() if chk.active
         }
-        if not selected or len(selected) == len(self.selected_states):
+        if not selected or len(selected) == len(self.checkboxes):
             selected = {"전체"}
         self.on_apply(selected)
         self.dismiss()
