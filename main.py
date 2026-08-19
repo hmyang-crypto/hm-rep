@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.4.0"
+CURRENT_VERSION = "1.4.1"
 
 
 def check_and_apply_update():
@@ -138,7 +138,8 @@ if platform == "android":
         print(f"🚨 KIVY_HOME 설정 오류: {e}")
 
 if platform == "android":
-    Window.softinput_mode = "below_target"
+    # 💡 GBoard 한글 조합 입력창이 정상적으로 레이어 위에 표시되도록 pan 모드로 변경
+    Window.softinput_mode = "pan"
     from android.permissions import Permission, request_permissions
     from android.runnable import run_on_ui_thread
     from jnius import JavaException, PythonJavaClass, autoclass, java_method
@@ -3455,22 +3456,31 @@ class MainApp(App):
         return sm
 
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
-        current_time = time.time()
+        # 💡 [핵심 수정] 텍스트 입력창(TextInput)에 포커스가 맞춰져 있을 때는 
+        # GBoard 등 소프트 키보드가 한글을 정상 조합할 수 있도록 전역 스캔 처리를 스킵합니다.
         try:
             kb = getattr(window, "_system_keyboard", None)
             focused_widget = getattr(kb, "widget", None) if kb else None
-            if focused_widget is not None and isinstance(
-                focused_widget, TextInput
-            ):
+            
+            # 포커스된 위젯이 TextInput이거나 활성화된 입력창이 있는 경우
+            if focused_widget is not None and isinstance(focused_widget, TextInput):
                 return False
+                
+            # Screen 내부의 TextInput 포커스 재확인
+            if self.root and hasattr(self.root, "current_screen"):
+                curr = self.root.current_screen
+                for child in curr.walk():
+                    if isinstance(child, TextInput) and child.focus:
+                        return False
         except Exception:
             pass
 
+        current_time = time.time()
         if current_time - self._last_keystroke_time > 0.25:
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
 
-        if key in [13, 40]:
+        if key in [13, 40]:  # Enter 키 입력 시
             if self._scan_buffer:
                 self.process_global_scan(self._scan_buffer)
                 self._scan_buffer = ""
