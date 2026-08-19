@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.4.6"
+CURRENT_VERSION = "1.4.7"
 
 
 def check_and_apply_update():
@@ -138,8 +138,8 @@ if platform == "android":
         print(f"🚨 KIVY_HOME 설정 오류: {e}")
 
 if platform == "android":
-    # 💡 키보드가 켜질 때 전체 레이아웃을 위로 밀어 올리도록 pan 모드로 변경
-    Window.softinput_mode = "pan"
+    # 💡 배경 앱 화면 전체가 찌그러지며 밀려 올라가지 않도록 below_target으로 고정
+    Window.softinput_mode = "below_target"
     from android.permissions import Permission, request_permissions
     from android.runnable import run_on_ui_thread
     from jnius import JavaException, PythonJavaClass, autoclass, java_method
@@ -203,7 +203,7 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
             AlertDialog = autoclass("android.app.AlertDialog$Builder")
             EditText = autoclass("android.widget.EditText")
             InputType = autoclass("android.text.InputType")
-            Gravity = autoclass("android.view.Gravity")  # 💡 상단 정렬을 위한 Gravity 추가
+            WindowManager = autoclass("android.view.WindowManager$LayoutParams")
 
             context = PythonActivity.mActivity
             builder = AlertDialog(context)
@@ -237,14 +237,10 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
 
             dialog = builder.create()
             
-            # 💡 [핵심] 키보드에 가리지 않도록 팝업 위치를 화면 상단으로 올려 배치
+            # 💡 [핵심] 배경 화면은 고정시키고, 팝업창만 키보드 위로 살짝 올라오게 설정
             window = dialog.getWindow()
             if window:
-                window.setGravity(Gravity.TOP)
-                # Y축 위치 조절 (상단 여백 150px 지정)
-                params = window.getAttributes()
-                params.y = 150
-                window.setAttributes(params)
+                window.setSoftInputMode(WindowManager.SOFT_INPUT_ADJUST_PAN)
 
             dialog.show()
             return
