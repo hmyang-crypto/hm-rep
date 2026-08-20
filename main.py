@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.4.8"
+CURRENT_VERSION = "1.4.9"
 
 
 def check_and_apply_update():
@@ -237,7 +237,7 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
 
             dialog = builder.create()
             
-            # 💡 [핵심] 배경 화면은 고정시키고, 팝업창만 키보드 위로 살짝 올라오게 설정
+            # 💡 배경 화면은 고정시키고, 팝업창만 키보드 위로 살짝 올라오게 설정
             window = dialog.getWindow()
             if window:
                 window.setSoftInputMode(WindowManager.SOFT_INPUT_ADJUST_PAN)
@@ -2009,9 +2009,8 @@ class UnifiedReplenishScreen(Screen):
 
         self.fetch_data()
 
-    # 예시: UnifiedReplenishScreen 내 handle_barcode_scan
     def handle_barcode_scan(self, barcode):
-        clean_bc = str(barcode).strip()  # upper() 제거 및 원본 문자열 유지
+        clean_bc = str(barcode).strip()
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
@@ -2022,7 +2021,7 @@ class UnifiedReplenishScreen(Screen):
             and str(t(t_item, "작업 담당자")).strip().lower() == user_name
             and str(t(t_item, "상품바코드", t(t_item, "바코드", ""))).strip() == clean_bc
         ]
-        # ... 이하 동일
+
         if my_matches:
             if self.active_main_tab != "MY":
                 self.switch_main_tab("MY")
@@ -2037,10 +2036,7 @@ class UnifiedReplenishScreen(Screen):
                 t_item
                 for t_item in self.raw_all_tasks
                 if str(t(t_item, "상태")).strip() == "대기"
-                and str(
-                    t(t_item, "상품바코드", t(t_item, "바코드", ""))
-                ).strip().upper()
-                == clean_bc
+                and str(t(t_item, "상품바코드", t(t_item, "바코드", ""))).strip() == clean_bc
             ]
             if pending_matches:
                 task_id = t(pending_matches[0], "작업ID")
@@ -2601,11 +2597,8 @@ class TaskListScreen(Screen):
             )
 
     def open_quantity_popup(self, card, card_ref=None):
-        ordered_qty = str(t(card.task_data, "지시수량", "0")).strip()
-        existing_conf_qty = str(card.task_data.get("confirmed_quantity", "")).strip()
-        initial_val = (
-            existing_conf_qty if existing_conf_qty.isdigit() else ordered_qty
-        )
+        # 💡 [요청사항 반영] 롤백하여 초기값 기입력 없이 빈 상태("")로 오픈
+        initial_val = ""
 
         def on_confirm_qty(text):
             val = text.strip()
@@ -3547,7 +3540,7 @@ class MainApp(App):
 
         return sm
 
-    # 💡 [핵심 수정] 앞자리 '0'이 잘리지 않도록 100% 문자열(String) 보존
+    # 💡 문자열 그대로 버퍼에 저장하여 앞자리 '0'이 잘리지 않음
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
         try:
             kb = getattr(window, "_system_keyboard", None)
@@ -3562,21 +3555,18 @@ class MainApp(App):
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
 
-        if key in [13, 40]:  # Enter 키 입력 시
+        if key in [13, 40]:  # Enter 키
             if self._scan_buffer:
                 self.process_global_scan(str(self._scan_buffer))
                 self._scan_buffer = ""
             return True
 
-        # codepoint 기반으로 문자를 원본 형태 그대로 버퍼에 추가
         if codepoint:
             self._scan_buffer += str(codepoint)
         return False
 
     def process_global_scan(self, barcode):
-        # 💡 개행문자만 제거하고 앞쪽 '0'을 포함한 모든 텍스트 원본 형태 유지를 보장
         clean_barcode = str(barcode).replace("\r", "").replace("\n", "").replace("\t", "").strip()
-        
         if self.root and clean_barcode:
             curr_screen = self.root.current_screen
             if hasattr(curr_screen, "handle_barcode_scan"):
@@ -3692,13 +3682,6 @@ class MainApp(App):
             text=message, on_press_callback=go_to_replenish_screen
         )
         banner.show(Window)
-
-    def process_global_scan(self, barcode):
-        clean_barcode = re.sub(r'[\r\n\t]', '', str(barcode)).strip()
-        if self.root and clean_barcode:
-            curr_screen = self.root.current_screen
-            if hasattr(curr_screen, "handle_barcode_scan"):
-                curr_screen.handle_barcode_scan(clean_barcode)
 
     def get_config_path(self):
         return "user_config.json"
