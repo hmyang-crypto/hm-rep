@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.4.9"
+CURRENT_VERSION = "1.5.0"
 
 
 def check_and_apply_update():
@@ -138,7 +138,6 @@ if platform == "android":
         print(f"🚨 KIVY_HOME 설정 오류: {e}")
 
 if platform == "android":
-    # 💡 배경 앱 화면 전체가 찌그러지며 밀려 올라가지 않도록 below_target으로 고정
     Window.softinput_mode = "below_target"
     from android.permissions import Permission, request_permissions
     from android.runnable import run_on_ui_thread
@@ -237,7 +236,6 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
 
             dialog = builder.create()
             
-            # 💡 배경 화면은 고정시키고, 팝업창만 키보드 위로 살짝 올라오게 설정
             window = dialog.getWindow()
             if window:
                 window.setSoftInputMode(WindowManager.SOFT_INPUT_ADJUST_PAN)
@@ -1887,6 +1885,21 @@ class UnifiedReplenishScreen(Screen):
 
         self.add_widget(self.layout)
 
+    def reset_filters(self):
+        """💡 필터 설정값 전체 초기화 메서드"""
+        self.selected_from_zones = {"전체"}
+        self.selected_to_zones = {"전체"}
+        self.btn_from_zone.text = "보관: 전체"
+        self.btn_to_zone.text = "이동: 전체"
+        self.active_equip_filter = "ALL"
+        self.btn_eq_all.set_active_visual(True)
+        self.btn_eq_op.set_active_visual(False)
+        self.btn_eq_reach.set_active_visual(False)
+        self.only_urgent = False
+        self.chk_urgent.active = False
+        self.sort_asc = True
+        self.btn_sort.text = "▲"
+
     def open_from_zone_popup(self, instance):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
@@ -1993,13 +2006,12 @@ class UnifiedReplenishScreen(Screen):
                 self.manager.current = "name_entry"
                 return
 
+        # 💡 [핵심 구현] 화면 들어올 때 필터 설정 전체 초기화
+        self.reset_filters()
+
         self.active_main_tab = "PENDING"
-        self.active_equip_filter = "ALL"
         self.btn_tab_pending.set_active_visual(True)
         self.btn_tab_my.set_active_visual(False)
-        self.btn_eq_all.set_active_visual(True)
-        self.btn_eq_op.set_active_visual(False)
-        self.btn_eq_reach.set_active_visual(False)
 
         self.is_filter_expanded = True
         if self.filter_panel not in self.layout.children:
@@ -2078,6 +2090,9 @@ class UnifiedReplenishScreen(Screen):
         self.btn_tab_my.set_active_visual(tab_mode == "MY")
         self.checked_task_ids.clear()
         self.chk_all.active = False
+
+        # 💡 [핵심 구현] 탭 전환 시에도 필터 설정값 초기화
+        self.reset_filters()
 
         if tab_mode == "MY":
             self.btn_main_action.text = "↩ 선택 항목 일괄 반납 (0)"
@@ -2597,7 +2612,6 @@ class TaskListScreen(Screen):
             )
 
     def open_quantity_popup(self, card, card_ref=None):
-        # 💡 [요청사항 반영] 롤백하여 초기값 기입력 없이 빈 상태("")로 오픈
         initial_val = ""
 
         def on_confirm_qty(text):
@@ -3540,7 +3554,6 @@ class MainApp(App):
 
         return sm
 
-    # 💡 문자열 그대로 버퍼에 저장하여 앞자리 '0'이 잘리지 않음
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
         try:
             kb = getattr(window, "_system_keyboard", None)
@@ -3555,7 +3568,7 @@ class MainApp(App):
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
 
-        if key in [13, 40]:  # Enter 키
+        if key in [13, 40]:
             if self._scan_buffer:
                 self.process_global_scan(str(self._scan_buffer))
                 self._scan_buffer = ""
