@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.5.0"
+CURRENT_VERSION = "1.5.1"
 
 
 def check_and_apply_update():
@@ -371,7 +371,7 @@ class TouchableBox(ButtonBehavior, BoxLayout):
 
 class NotificationBanner(ButtonBehavior, BoxLayout):
 
-    def __init__(self, text, on_press_callback, **kwargs):
+    def __init__(self, text, on_press_callback=None, duration=3, **kwargs):
         super().__init__(**kwargs)
         self.orientation = "horizontal"
         self.size_hint = (0.95, None)
@@ -380,6 +380,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
         self.padding = (dp(15), dp(5))
         self.spacing = dp(10)
         self.on_press_callback = on_press_callback
+        self.auto_dismiss_duration = duration
 
         with self.canvas.before:
             Color(0.1, 0.1, 0.1, 0.95)
@@ -425,7 +426,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             pos_hint={"center_x": 0.5, "top": 0.98}, duration=0.4, t="out_quad"
         )
         anim.start(self)
-        Clock.schedule_once(self.dismiss, 6)
+        Clock.schedule_once(self.dismiss, self.auto_dismiss_duration)
 
     def dismiss(self, *args):
         Clock.unschedule(self.dismiss)
@@ -1886,7 +1887,6 @@ class UnifiedReplenishScreen(Screen):
         self.add_widget(self.layout)
 
     def reset_filters(self):
-        """💡 필터 설정값 전체 초기화 메서드"""
         self.selected_from_zones = {"전체"}
         self.selected_to_zones = {"전체"}
         self.btn_from_zone.text = "보관: 전체"
@@ -2006,7 +2006,6 @@ class UnifiedReplenishScreen(Screen):
                 self.manager.current = "name_entry"
                 return
 
-        # 💡 [핵심 구현] 화면 들어올 때 필터 설정 전체 초기화
         self.reset_filters()
 
         self.active_main_tab = "PENDING"
@@ -2091,7 +2090,6 @@ class UnifiedReplenishScreen(Screen):
         self.checked_task_ids.clear()
         self.chk_all.active = False
 
-        # 💡 [핵심 구현] 탭 전환 시에도 필터 설정값 초기화
         self.reset_filters()
 
         if tab_mode == "MY":
@@ -2120,12 +2118,19 @@ class UnifiedReplenishScreen(Screen):
         self.only_urgent = value
         self.apply_filters_and_render()
 
+    # 💡 [핵심 수정] 체크 클릭 시 checked_task_ids 동기화 + 데이터 실시간 갱신
     def toggle_card_check(self, task_data, is_checked):
         task_id = t(task_data, "작업ID")
         if is_checked:
             self.checked_task_ids.add(task_id)
         else:
             self.checked_task_ids.discard(task_id)
+
+        # 현재 RecycleView 메모리 데이터의 is_checked 값 동기화 (스크롤 풀림 방지)
+        for item in self.rv.data:
+            if t(item["task_data"], "작업ID") == task_id:
+                item["is_checked"] = is_checked
+                break
 
         action_prefix = (
             "↩ 선택 항목 일괄 반납"
@@ -2249,6 +2254,7 @@ class UnifiedReplenishScreen(Screen):
         is_my_mode = self.active_main_tab == "MY"
         for task in filtered_list:
             task_id = t(task, "작업ID")
+            # 💡 [핵심 구현] raw 데이터 및 checked_task_ids 기반으로 is_checked 상태 정확히 복원
             rv_items.append(
                 {
                     "task_data": task,
@@ -2362,9 +2368,7 @@ class UnifiedReplenishScreen(Screen):
             )
 
     def on_claim_success(self):
-        App.get_running_app().show_info_popup(
-            "성공", "선택한 작업이 '내 작업'으로 할당되었습니다."
-        )
+        App.get_running_app().show_toast("선택한 작업이 '내 작업'으로 할당되었습니다.")
         self.switch_main_tab("MY")
 
     def batch_return_checked_tasks(self, instance):
@@ -2422,9 +2426,7 @@ class UnifiedReplenishScreen(Screen):
             self.checked_task_ids.clear()
 
             Clock.schedule_once(
-                lambda dt: App.get_running_app().show_info_popup(
-                    "성공", "선택한 작업이 일괄 반납되었습니다."
-                )
+                lambda dt: App.get_running_app().show_toast("선택한 작업이 일괄 반납되었습니다.")
             )
             Clock.schedule_once(lambda dt: self.apply_filters_and_render())
         except Exception as e:
@@ -2632,9 +2634,7 @@ class TaskListScreen(Screen):
                 if card_ref and hasattr(card_ref, "apply_filters_and_render"):
                     card_ref.apply_filters_and_render()
 
-                App.get_running_app().show_info_popup(
-                    "알림", f"수량 '{val}'(이)가 임시 저장되었습니다."
-                )
+                App.get_running_app().show_toast(f"수량 '{val}'(이)가 임시 저장되었습니다.")
             else:
                 App.get_running_app().show_info_popup(
                     "오류", "숫자만 입력해야 합니다."
@@ -2658,7 +2658,7 @@ class TaskListScreen(Screen):
             card.task_data["remarks_text"] = (
                 f"{curr}\n{formatted}" if curr else formatted
             )
-            app.show_info_popup("알림", "비고가 추가되었습니다.")
+            app.show_toast("비고가 추가되었습니다.")
 
         open_native_korean_input("비고 추가", "비고 내용 입력", "", on_confirm_rem)
 
@@ -2839,7 +2839,8 @@ class TaskListScreen(Screen):
 
     def on_action_success(self, msg):
         App.get_running_app().dismiss_loading_popup()
-        App.get_running_app().show_info_popup("성공", msg)
+        # 💡 [핵심 구현] 보충 완료 메시지를 확인 버튼 없는 2초 자동 소멸 토스트 알림으로 변경
+        App.get_running_app().show_toast(msg)
 
         def _safe_refresh_ui(dt):
             try:
@@ -3694,6 +3695,11 @@ class MainApp(App):
         banner = NotificationBanner(
             text=message, on_press_callback=go_to_replenish_screen
         )
+        banner.show(Window)
+
+    # 💡 [신규 구현] 버튼 클릭 없이 2초 뒤 자동 소멸하는 미니 토스트 알림
+    def show_toast(self, message, duration=2):
+        banner = NotificationBanner(text=message, duration=duration)
         banner.show(Window)
 
     def get_config_path(self):
