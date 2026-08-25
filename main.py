@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.5.2"
+CURRENT_VERSION = "1.5.3"
 
 
 def check_and_apply_update():
@@ -2924,8 +2924,9 @@ class AdminDashboardScreen(Screen):
                 self.search_input.text = val
                 self.search_tasks()
 
+            # 💡 [편의성 개선] 재검색 시 초기값을 빈칸("")으로 전달하여 자동으로 리셋
             open_native_korean_input(
-                "검색어 입력", "바코드 또는 SKU 검색", self.search_input.text, set_query
+                "검색어 입력", "바코드 또는 SKU 검색", "", set_query
             )
             return True
         return False
@@ -2975,7 +2976,7 @@ class AdminDashboardScreen(Screen):
             )
 
     def handle_barcode_scan(self, barcode):
-        self.search_input.text = barcode
+        self.search_input.text = str(barcode).strip()
         self.search_tasks()
 
     def search_tasks(self, instance=None):
@@ -3002,7 +3003,8 @@ class AdminDashboardScreen(Screen):
                 .strip()
                 .lower()
             )
-            if query in bc:
+            sku = str(t(task, "상품명", "")).strip().lower()
+            if query in bc or query in sku:
                 matches.append(task)
 
         if not matches:
@@ -3022,13 +3024,13 @@ class AdminDashboardScreen(Screen):
             self.grid.add_widget(self._create_dashboard_card(task))
 
     def _create_dashboard_card(self, task):
-        status = str(t(task, "상태", "미지정")).strip()
+        status = str(t(task, "상태", "대기")).strip()
         is_urgent = t(task, "긴급여부") == "Y"
 
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(110),
+            height=dp(105),
             padding=dp(10),
             spacing=dp(4),
         )
@@ -3042,58 +3044,77 @@ class AdminDashboardScreen(Screen):
             size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
         )
 
-        top_row = BoxLayout(size_hint_y=None, height=dp(25))
+        # 1. 상태값 및 긴급 배지
+        top_row = BoxLayout(size_hint_y=None, height=dp(22))
         st_color = (
-            "[color=3366ff]"
-            if status == "작업중"
-            else (
-                "[color=00897B]"
-                if status in ["보충완료", "최종완료"]
-                else "[color=757575]"
-            )
+            "[color=1E88E5]" if status == "작업중"
+            else ("[color=00897B]" if status in ["보충완료", "최종완료"]
+            else "[color=E65100]" if status == "보충실패"
+            else "[color=757575]")
         )
         urg_tag = "[color=D32F2F][긴급][/color] " if is_urgent else ""
 
-        lbl_prod = Label(
-            text=f"{st_color}[b][{status}][/b][/color] {urg_tag}{t(task, '상품명')}",
+        lbl_status = Label(
+            text=f"{st_color}[b][{status}][/b][/color] {urg_tag}",
             font_name=FONT_NAME,
             font_size=dp(14),
             markup=True,
             halign="left",
+            valign="middle",
         )
-        lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
-        top_row.add_widget(lbl_prod)
+        lbl_status.bind(size=lambda i, s: setattr(i, "text_size", s))
+        top_row.add_widget(lbl_status)
         card.add_widget(top_row)
 
+        # 2. 상품명 (SKU) - 길면 말줄임표 처리
+        product_name = str(t(task, "상품명", "N/A")).strip()
+        lbl_prod = Label(
+            text=f"[b]{product_name}[/b]",
+            font_name=FONT_NAME,
+            font_size=dp(14),
+            color=TEXT_DARK,
+            markup=True,
+            halign="left",
+            valign="middle",
+            shorten=True,  # 💡 길이가 길 경우 자동 말줄임표(...) 처리
+            shorten_from="right",
+            size_hint_y=None,
+            height=dp(22),
+        )
+        lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
+        card.add_widget(lbl_prod)
+
+        # 3. 바코드 및 로케이션 정보
+        barcode_val = str(t(task, "상품바코드", t(task, "바코드", "N/A"))).strip()
+        from_loc = str(t(task, "기존로케이션", "-")).strip()
+        to_loc = str(t(task, "보충로케이션", "-")).strip()
+
         lbl_info = Label(
-            text=f"바코드: {t(task, '상품바코드', t(task, '바코드'))} | {t(task, '기존로케이션')} ➔ {t(task, '보충로케이션')}",
+            text=f"바코드: {barcode_val} | [color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
             color=TEXT_DARK,
+            markup=True,
             halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(20),
         )
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_info)
 
-        raw_time = str(
-            t(task, "최종완료일시", t(task, "완료일시", ""))
-        ).strip()
-        time_str = ""
-        if status in ["최종완료", "완료"] and raw_time:
-            time_str = f" | [color=2E7D32][b]완료시간: {raw_time}[/b][/color]"
-
-        assignee = t(
-            task,
-            "검수담당자",
-            t(task, "보충담당자", t(task, "작업 담당자", "미할당")),
-        )
+        # 4. 수량 정보 (담당자 노출 제거)
+        req_qty = t(task, "지시수량", 0)
+        conf_qty = t(task, "확인수량", 0)
         lbl_sub = Label(
-            text=f"담당: {assignee} / 수량: {t(task, '확인수량', t(task, '지시수량', 0))}{time_str}",
+            text=f"지시수량: {req_qty} / 확인수량: {conf_qty}",
             font_name=FONT_NAME,
             font_size=dp(12),
             color=TEXT_MUTED,
-            markup=True,
             halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(18),
         )
         lbl_sub.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_sub)
