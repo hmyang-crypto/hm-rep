@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.5.4"
+CURRENT_VERSION = "1.5.5"
 
 
 def check_and_apply_update():
@@ -2924,7 +2924,7 @@ class AdminDashboardScreen(Screen):
                 self.search_input.text = val
                 self.search_tasks()
 
-            # 💡 재검색 시 초기값을 빈칸("")으로 전달
+            # 💡 재검색 터치 시 검색창 자동 빈칸("") 처리
             open_native_korean_input(
                 "검색어 입력", "바코드 또는 SKU 검색", "", set_query
             )
@@ -2998,11 +2998,8 @@ class AdminDashboardScreen(Screen):
 
         matches = []
         for task in self.all_tasks:
-            bc = (
-                str(t(task, "상품바코드", t(task, "바코드", "")))
-                .strip()
-                .lower()
-            )
+            # 💡 F열 '상품바코드'를 최우선으로 검색
+            bc = str(t(task, "상품바코드", t(task, "바코드", ""))).strip().lower()
             sku = str(t(task, "상품명", "")).strip().lower()
             if query in bc or query in sku:
                 matches.append(task)
@@ -3066,7 +3063,7 @@ class AdminDashboardScreen(Screen):
         top_row.add_widget(lbl_status)
         card.add_widget(top_row)
 
-        # 2. 상품명 (SKU) - 말줄임표 처리
+        # 2. 상품명 (SKU) - 길면 말줄임표(...) 처리
         product_name = str(t(task, "상품명", "N/A")).strip()
         lbl_prod = Label(
             text=f"[b]{product_name}[/b]",
@@ -3084,7 +3081,7 @@ class AdminDashboardScreen(Screen):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_prod)
 
-        # 3. 바코드 및 로케이션 정보 (바코드 정보 명확히 표시)
+        # 3. F열 '상품바코드' 및 로케이션 정보
         barcode_val = str(t(task, "상품바코드", t(task, "바코드", "N/A"))).strip()
         from_loc = str(t(task, "기존로케이션", "-")).strip()
         to_loc = str(t(task, "보충로케이션", "-")).strip()
@@ -3103,7 +3100,7 @@ class AdminDashboardScreen(Screen):
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_info)
 
-        # 4. 수량 정보 + 완료시간 복원
+        # 4. 수량 정보 및 완료시간 복원 (담당자 정보는 제거)
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
         raw_time = str(t(task, "최종완료일시", t(task, "완료일시", ""))).strip()
