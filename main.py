@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.6.3"
+CURRENT_VERSION = "1.6.4"
 
 
 def check_and_apply_update():
@@ -1987,6 +1987,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
 
 # --- 올인원 통합 보충 작업 화면 ---
+# --- 올인원 통합 보충 작업 화면 ---
 class UnifiedReplenishScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -2052,12 +2053,15 @@ class UnifiedReplenishScreen(Screen):
         main_tab_box = BoxLayout(
             size_hint_y=None, height=dp(36), spacing=dp(5)
         )
+        
+        # 💡 markup=True 속성 추가
         self.btn_tab_pending = StyledToggleButton(
             text="대기 작업",
             group="main_tab",
             state="down",
             size_hint_x=0.5,
             font_size=dp(14),
+            markup=True,
         )
         self.btn_tab_pending.bind(
             on_press=lambda x: self.switch_main_tab("PENDING")
@@ -2069,6 +2073,7 @@ class UnifiedReplenishScreen(Screen):
             state="normal",
             size_hint_x=0.5,
             font_size=dp(14),
+            markup=True,
         )
         self.btn_tab_my.bind(on_press=lambda x: self.switch_main_tab("MY"))
 
@@ -2494,7 +2499,6 @@ class UnifiedReplenishScreen(Screen):
             f"{action_prefix} ({len(self.checked_task_ids)})"
         )
 
-    # 💡 [요청 반영] 탭별 긴급 수량 계산 및 버튼 텍스트 업데이트 반영
     def apply_filters_and_render(self):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
@@ -2503,7 +2507,6 @@ class UnifiedReplenishScreen(Screen):
         eq_op_tot, eq_op_urg = 0, 0
         eq_reach_tot, eq_reach_urg = 0, 0
 
-        # 대기/내작업 별 전체 및 긴급 수량 집계
         pending_urg_count = 0
         my_urg_count = 0
 
@@ -2541,9 +2544,14 @@ class UnifiedReplenishScreen(Screen):
                 if is_urg:
                     eq_reach_urg += 1
 
-        # 💡 상단 탭 버튼 긴급 수량 갱신
-        self.btn_tab_pending.text = f"대기 작업 (긴급: {pending_urg_count})"
-        self.btn_tab_my.text = f"내 작업 (긴급: {my_urg_count})"
+        # 💡 [핵심 수정] 긴급 수량을 빨간색([color=D32F2F]) 및 살짝 작은 글씨(12dp)로 적용
+        urg_font_sz = int(dp(12))
+        self.btn_tab_pending.markup = True
+        self.btn_tab_pending.text = f"대기 작업 [color=D32F2F][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
+        
+        self.btn_tab_my.markup = True
+        self.btn_tab_my.text = f"내 작업 [color=D32F2F][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
+        
         self.btn_tab_pending.set_active_visual(self.active_main_tab == "PENDING")
         self.btn_tab_my.set_active_visual(self.active_main_tab == "MY")
 
