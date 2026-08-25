@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.6.0"
+CURRENT_VERSION = "1.6.1"
 
 
 def check_and_apply_update():
@@ -1790,7 +1790,7 @@ class SkuLocationSearchScreen(Screen):
 
         # 표 컬럼 헤더
         th_loc = Label(
-            text="[b]보관 로케이션 (F:보관)[/b]",
+            text="[b]보관 로케이션 [/b]",
             font_name=FONT_NAME,
             font_size=dp(12),
             color=get_color_from_hex("#37474F"),
@@ -1809,7 +1809,7 @@ class SkuLocationSearchScreen(Screen):
         )
 
         th_qty = Label(
-            text="[b]재고 수량(H열)[/b]",
+            text="[b]재고 수량[/b]",
             font_name=FONT_NAME,
             font_size=dp(12),
             color=get_color_from_hex("#37474F"),
