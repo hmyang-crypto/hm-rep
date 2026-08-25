@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.6.5"
+CURRENT_VERSION = "1.6.6"
 
 
 def check_and_apply_update():
@@ -182,6 +182,9 @@ DEFAULT_FONT_STYLE = {
     "color": TEXT_DARK,
 }
 Window.clearcolor = BG_GRAY
+
+# 💡 내 최근 완료 이력 메모리 저장소 (최대 15건)
+g_recent_completed_tasks = []
 
 
 def safe_int(val, default=0):
@@ -851,6 +854,152 @@ class SingleInputPopup(Popup):
         self.dismiss()
 
 
+# 💡 [v1.6.5 신규] 최근 완료 이력 컴팩트 리스트 팝업 창
+class RecentCompletedPopup(Popup):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "내 최근 완료 내역 (최신순)"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.95, 0.85)
+
+        layout = BoxLayout(
+            orientation="vertical", padding=dp(10), spacing=dp(8)
+        )
+
+        if not g_recent_completed_tasks:
+            layout.add_widget(
+                Label(
+                    text="최근 완료된 보충 작업 이력이 없습니다.",
+                    font_name=FONT_NAME,
+                    font_size=dp(15),
+                    color=TEXT_MUTED,
+                )
+            )
+        else:
+            scroll = ScrollView()
+            grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
+            grid.bind(minimum_height=grid.setter("height"))
+
+            # 💡 최신순(역순)으로 리스트 생성
+            for item in reversed(g_recent_completed_tasks):
+                grid.add_widget(self._create_compact_history_row(item))
+
+            scroll.add_widget(grid)
+            layout.add_widget(scroll)
+
+        btn_close = StyledButton(
+            text="닫기",
+            size_hint_y=None,
+            height=dp(40),
+            bg_color=get_color_from_hex("#78909C"),
+        )
+        btn_close.bind(on_press=self.dismiss)
+        layout.add_widget(btn_close)
+
+        self.content = layout
+
+    def _create_compact_history_row(self, task_data):
+        row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(68),
+            padding=dp(8),
+            spacing=dp(6),
+        )
+
+        with row.canvas.before:
+            Color(1, 1, 1, 1)
+            RoundedRectangle(pos=row.pos, size=row.size, radius=[dp(8)])
+        row.bind(
+            pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+            size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+        )
+
+        info_box = BoxLayout(orientation="vertical", spacing=dp(2))
+
+        # 1행: 장비 / 완료시각
+        equip_name = str(t(task_data, "장비", "N/A")).strip()
+        comp_time = str(t(task_data, "완료일시", datetime.now().strftime("%H:%M"))).strip()
+        if len(comp_time) > 8:
+            comp_time = comp_time[-8:-3]
+
+        lbl_top = Label(
+            text=f"[color=1E88E5][b][{equip_name}][/b][/color]  |  시간: {comp_time}",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            markup=True,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(16),
+        )
+        lbl_top.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_top)
+
+        # 2행: 상품명 및 바코드
+        prod_name = str(t(task_data, "상품명", "N/A")).strip()
+        bc_val = get_barcode_from_task(task_data)
+        lbl_prod = Label(
+            text=f"[b]{prod_name}[/b] ({bc_val})",
+            font_name=FONT_NAME,
+            font_size=dp(13),
+            color=TEXT_DARK,
+            markup=True,
+            halign="left",
+            valign="middle",
+            shorten=True,
+            shorten_from="right",
+            size_hint_y=None,
+            height=dp(18),
+        )
+        lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_prod)
+
+        # 3행: 보관 ➔ 출고 위치 및 수량
+        from_loc = str(t(task_data, "기존로케이션", "-")).strip()
+        to_loc = str(t(task_data, "보충로케이션", "-")).strip()
+        req_q = t(task_data, "지시수량", 0)
+        conf_q = t(task_data, "확인수량", 0)
+
+        lbl_loc_qty = Label(
+            text=f"위치: [color=D32F2F]{from_loc}[/color]➔[color=1E88E5]{to_loc}[/color] | 수량: 지시{req_q}/[color=2E7D32][b]확인{conf_q}[/b][/color]",
+            font_name=FONT_NAME,
+            font_size=dp(11),
+            color=TEXT_MUTED,
+            markup=True,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(16),
+        )
+        lbl_loc_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_loc_qty)
+
+        row.add_widget(info_box)
+
+        # 원터치 라벨 재인쇄 버튼
+        btn_reprint = StyledButton(
+            text="🖨️\n재인쇄",
+            size_hint_x=None,
+            width=dp(55),
+            font_size=dp(11),
+            bg_color=get_color_from_hex("#00897B"),
+        )
+        btn_reprint.bind(on_press=lambda x: self._reprint_label(task_data))
+        row.add_widget(btn_reprint)
+
+        return row
+
+    def _reprint_label(self, task_data):
+        try:
+            task_list_screen = App.get_running_app().root.get_screen("task_list")
+            task_list_screen._start_print_job(task_data)
+            App.get_running_app().show_toast("라벨 재인쇄를 요청했습니다.")
+        except Exception as e:
+            App.get_running_app().show_info_popup("오류", f"인쇄 오류: {e}")
+
+
 class MultipleSkuSelectPopup(Popup):
 
     def __init__(self, matches, on_select, **kwargs):
@@ -1474,6 +1623,16 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_sku_loc))
 
+        # 💡 [요청 반영] 최근 완료 내역 팝업 연결
+        btn_recent = StyledButton(
+            text="📋 금일 완료 이력 (최근)",
+            bg_color=get_color_from_hex("#43A047"),
+            size_hint_x=None,
+            width=dp(220),
+        )
+        btn_recent.bind(on_press=lambda x: RecentCompletedPopup().open())
+        menu_box.add_widget(create_compact_menu_row(btn_recent))
+
         self.layout.add_widget(menu_box)
         self.layout.add_widget(Widget())
 
@@ -1987,7 +2146,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
 
 # --- 올인원 통합 보충 작업 화면 ---
-# --- 올인원 통합 보충 작업 화면 ---
 class UnifiedReplenishScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -2007,10 +2165,10 @@ class UnifiedReplenishScreen(Screen):
             orientation="vertical", padding=dp(8), spacing=dp(4)
         )
 
-        header = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(8))
+        header = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(6))
         btn_back = StyledButton(
             text="< 뒤로",
-            size_hint_x=0.2,
+            size_hint_x=0.18,
             bg_color=get_color_from_hex("#78909C"),
         )
         btn_back.bind(
@@ -2020,16 +2178,28 @@ class UnifiedReplenishScreen(Screen):
         lbl_title = Label(
             text="보충 작업 통합 컨트롤",
             font_name=FONT_NAME,
-            font_size=dp(16),
+            font_size=dp(15),
             bold=True,
             color=TEXT_DARK,
         )
 
-        btn_refresh = StyledButton(text="갱신", size_hint_x=0.2)
+        # 💡 [요청 반영] 최근 완료 내역 원터치 팝업 버튼 추가
+        btn_recent = StyledButton(
+            text="최근완료",
+            size_hint_x=0.22,
+            font_size=dp(12),
+            bg_color=get_color_from_hex("#43A047"),
+        )
+        btn_recent.bind(on_press=lambda x: RecentCompletedPopup().open())
+
+        btn_refresh = StyledButton(
+            text="갱신", size_hint_x=0.18, font_size=dp(12)
+        )
         btn_refresh.bind(on_press=lambda x: self.fetch_data())
 
         header.add_widget(btn_back)
         header.add_widget(lbl_title)
+        header.add_widget(btn_recent)
         header.add_widget(btn_refresh)
         self.layout.add_widget(header)
 
@@ -2053,8 +2223,6 @@ class UnifiedReplenishScreen(Screen):
         main_tab_box = BoxLayout(
             size_hint_y=None, height=dp(36), spacing=dp(5)
         )
-        
-        # 💡 markup=True 속성 추가
         self.btn_tab_pending = StyledToggleButton(
             text="대기 작업",
             group="main_tab",
@@ -2081,7 +2249,6 @@ class UnifiedReplenishScreen(Screen):
         main_tab_box.add_widget(self.btn_tab_my)
         self.filter_panel.add_widget(main_tab_box)
 
-        # 💡 [버튼 순서 변경 반영] 오더피커 -> 리치 -> 전체
         equip_filter_box = BoxLayout(
             size_hint_y=None, height=dp(32), spacing=dp(5)
         )
@@ -2544,14 +2711,14 @@ class UnifiedReplenishScreen(Screen):
                 if is_urg:
                     eq_reach_urg += 1
 
-        # 💡 [핵심 수정] 긴급 수량을 빨간색([color=D32F2F]) 및 살짝 작은 글씨(12dp)로 적용
+        # 💡 [눈이 편한 밝은 노란색 #FFD600 서식 적용]
         urg_font_sz = int(dp(12))
         self.btn_tab_pending.markup = True
-        self.btn_tab_pending.text = f"대기 작업 [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
+        self.btn_tab_pending.text = f"대기 작업 [color=FFD600][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
         
         self.btn_tab_my.markup = True
-        self.btn_tab_my.text = f"내 작업 [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
-        
+        self.btn_tab_my.text = f"내 작업 [color=FFD600][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
+
         self.btn_tab_pending.set_active_visual(self.active_main_tab == "PENDING")
         self.btn_tab_my.set_active_visual(self.active_main_tab == "MY")
 
@@ -3126,13 +3293,21 @@ class TaskListScreen(Screen):
             ).start()
             return
 
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         updates = {
             "상태": "보충완료",
             "보충담당자": app.user_real_name,
-            "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "완료일시": now_str,
             "확인수량": str(final_qty),
             "비고": updated_remarks,
         }
+
+        # 💡 [요청 반영] 내가 완료한 이력을 메모리 리스트 상단에 적재 (최대 15건)
+        completed_record = dict(card.task_data)
+        completed_record.update(updates)
+        g_recent_completed_tasks.append(completed_record)
+        if len(g_recent_completed_tasks) > 15:
+            g_recent_completed_tasks.pop(0)
 
         def run_sheet_update():
             app.show_loading_popup()
@@ -3372,7 +3547,6 @@ class AdminDashboardScreen(Screen):
         for task in matches:
             self.grid.add_widget(self._create_dashboard_card(task))
 
-    # 💡 긴급 전환 / 해제 시트 동기화 로직
     def toggle_urgent_status(self, task_data, card_widget):
         task_id = str(t(task_data, "작업ID")).strip()
         current_urg = task_data.get("긴급여부") == "Y"
@@ -3459,7 +3633,6 @@ class AdminDashboardScreen(Screen):
             size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
         )
 
-        # 1. 상단 행 (상태값 + 긴급 전환 버튼)
         top_row = BoxLayout(size_hint_y=None, height=dp(26), spacing=dp(5))
         st_color = (
             "[color=1E88E5]" if status == "작업중"
@@ -3480,7 +3653,6 @@ class AdminDashboardScreen(Screen):
         lbl_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         top_row.add_widget(lbl_status)
 
-        # 💡 긴급 전환 / 해제 버튼
         btn_urg_toggle = StyledButton(
             text="긴급 해제" if is_urgent else "긴급 전환",
             size_hint_x=None,
@@ -3493,7 +3665,6 @@ class AdminDashboardScreen(Screen):
 
         card.add_widget(top_row)
 
-        # 2. 상품명 (SKU)
         product_name = str(t(task, "상품명", "N/A")).strip()
         lbl_prod = Label(
             text=f"[b]{product_name}[/b]",
@@ -3511,7 +3682,6 @@ class AdminDashboardScreen(Screen):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_prod)
 
-        # 3. 바코드
         barcode_val = get_barcode_from_task(task)
         lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{barcode_val}[/color][/b]",
@@ -3527,7 +3697,6 @@ class AdminDashboardScreen(Screen):
         lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_bc)
 
-        # 4. 출고 로케이션
         to_loc = str(t(task, "보충로케이션", "-")).strip()
         lbl_info = Label(
             text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]",
@@ -3543,7 +3712,6 @@ class AdminDashboardScreen(Screen):
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_info)
 
-        # 5. 수량 및 완료시간
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
         raw_time = str(t(task, "최종완료일시", t(task, "완료일시", ""))).strip()
