@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.6.9"
+CURRENT_VERSION = "1.7.0"
 
 
 def check_and_apply_update():
@@ -856,6 +856,7 @@ class SingleInputPopup(Popup):
 
 # 💡 [v1.6.5 신규] 최근 완료 이력 컴팩트 리스트 팝업 창
 # 💡 [v1.6.9] 로케이션 잘림 현상 완벽 해결 및 선명 노출 적용
+# 💡 [v1.7.0] 재인쇄 터치 시 [예/아니오] 확인 팝업 로직 추가
 class RecentCompletedPopup(Popup):
 
     def __init__(self, **kwargs):
@@ -882,7 +883,6 @@ class RecentCompletedPopup(Popup):
             grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
             grid.bind(minimum_height=grid.setter("height"))
 
-            # 최신순(역순)으로 리스트 생성
             for item in reversed(g_recent_completed_tasks):
                 grid.add_widget(self._create_compact_history_row(item))
 
@@ -901,7 +901,6 @@ class RecentCompletedPopup(Popup):
         self.content = layout
 
     def _create_compact_history_row(self, task_data):
-        # 💡 [핵심 수정 1] 행 높이를 dp(68) -> dp(82)로 확대하여 잘림 방지
         row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
@@ -958,7 +957,7 @@ class RecentCompletedPopup(Popup):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_prod)
 
-        # 💡 [핵심 수정 2] 3행: 보관 ➔ 출고 위치 전용 독립 라인
+        # 3행: 보관 ➔ 출고 위치 전용 라인
         from_loc = str(t(task_data, "기존로케이션", "-")).strip()
         to_loc = str(t(task_data, "보충로케이션", "-")).strip()
         lbl_loc = Label(
@@ -994,7 +993,7 @@ class RecentCompletedPopup(Popup):
 
         row.add_widget(info_box)
 
-        # 원터치 라벨 재인쇄 버튼
+        # 원터치 라벨 재인쇄 버튼 (확인 팝업 연결)
         btn_reprint = StyledButton(
             text="[인쇄]",
             size_hint_x=None,
@@ -1002,18 +1001,29 @@ class RecentCompletedPopup(Popup):
             font_size=dp(12),
             bg_color=get_color_from_hex("#00897B"),
         )
-        btn_reprint.bind(on_press=lambda x: self._reprint_label(task_data))
+        btn_reprint.bind(on_press=lambda x: self._prompt_reprint(task_data))
         row.add_widget(btn_reprint)
 
         return row
 
-    def _reprint_label(self, task_data):
-        try:
-            task_list_screen = App.get_running_app().root.get_screen("task_list")
-            task_list_screen._start_print_job(task_data)
-            App.get_running_app().show_toast("라벨 재인쇄를 요청했습니다.")
-        except Exception as e:
-            App.get_running_app().show_info_popup("오류", f"인쇄 오류: {e}")
+    # 💡 [신규 추가] 재인쇄 전 [예/아니오] 확인 팝업
+    def _prompt_reprint(self, task_data):
+        app = App.get_running_app()
+
+        def do_reprint():
+            try:
+                task_list_screen = app.root.get_screen("task_list")
+                task_list_screen._start_print_job(task_data)
+                app.show_toast("라벨 재인쇄를 요청했습니다.")
+            except Exception as e:
+                app.show_info_popup("오류", f"인쇄 오류: {e}")
+
+        prod_name = str(t(task_data, "상품명", "선택 항목")).strip()
+        app.show_confirmation_popup(
+            title="라벨 재인쇄",
+            message=f"[color=ffffff][{prod_name[:18]}]\n라벨 1장을 재인쇄하시겠습니까?[/color]",
+            on_yes=do_reprint,
+        )
 
 
 class MultipleSkuSelectPopup(Popup):
