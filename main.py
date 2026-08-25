@@ -1557,7 +1557,6 @@ class MainMenuScreen(Screen):
         self.manager.current = "task_list"
 
 
-# 💡 [v1.6.0 신규 구현] 표(Table) 형태 그룹핑 SKU별 로케이션 검색 화면
 class SkuLocationSearchScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -1696,7 +1695,6 @@ class SkuLocationSearchScreen(Screen):
             )
             return
 
-        # 💡 [바코드별 그룹핑] 바코드를 Key로 사용하여 로케이션 항목 모으기
         grouped_results = defaultdict(list)
         for row in self.raw_inventory:
             loc_type = str(t(row, "로케이션 유형", "")).strip()
@@ -1722,7 +1720,6 @@ class SkuLocationSearchScreen(Screen):
             )
             return
 
-        # 바코드 그룹별로 1개의 카드(표) 생성
         for bc, rows in grouped_results.items():
             self.grid.add_widget(self._create_grouped_table_card(bc, rows))
 
@@ -1730,7 +1727,6 @@ class SkuLocationSearchScreen(Screen):
         sku_name = str(t(rows[0], "SKU", t(rows[0], "상품명", "N/A"))).strip()
         tot_qty = sum(safe_int(t(r, "로케이션 수량", 0)) for r in rows)
 
-        # 전체 카드 컨테이너
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
@@ -1738,7 +1734,6 @@ class SkuLocationSearchScreen(Screen):
             spacing=dp(6),
         )
         
-        # 동적 높이 계산 (헤더 45dp + 표 헤더 25dp + 각 행 22dp)
         table_height = dp(45) + dp(25) + (len(rows) * dp(22)) + dp(24)
         card.height = table_height
 
@@ -1752,7 +1747,6 @@ class SkuLocationSearchScreen(Screen):
             size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
         )
 
-        # 1. 헤더 - SKU명 (중복 제거)
         lbl_sku = Label(
             text=f"[b]{sku_name}[/b]",
             font_name=FONT_NAME,
@@ -1769,7 +1763,6 @@ class SkuLocationSearchScreen(Screen):
         lbl_sku.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_sku)
 
-        # 2. 헤더 - 바코드 및 총 재고
         lbl_bc_tot = Label(
             text=f"바코드: [b][color=1E88E5]{barcode}[/color][/b]  |  총 보관재고: [b][color=D32F2F]{tot_qty}개[/color][/b]",
             font_name=FONT_NAME,
@@ -1784,13 +1777,11 @@ class SkuLocationSearchScreen(Screen):
         lbl_bc_tot.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_bc_tot)
 
-        # 💡 3. 표(Table) 구조 구성
         table_grid = GridLayout(cols=2, size_hint_y=None, spacing=dp(1))
         table_grid.height = dp(25) + (len(rows) * dp(22))
 
-        # 표 컬럼 헤더
         th_loc = Label(
-            text="[b]보관 로케이션 [/b]",
+            text="[b]보관 로케이션 (F:보관)[/b]",
             font_name=FONT_NAME,
             font_size=dp(12),
             color=get_color_from_hex("#37474F"),
@@ -1809,7 +1800,7 @@ class SkuLocationSearchScreen(Screen):
         )
 
         th_qty = Label(
-            text="[b]재고 수량[/b]",
+            text="[b]재고 수량(H열)[/b]",
             font_name=FONT_NAME,
             font_size=dp(12),
             color=get_color_from_hex("#37474F"),
@@ -1830,7 +1821,6 @@ class SkuLocationSearchScreen(Screen):
         table_grid.add_widget(th_loc)
         table_grid.add_widget(th_qty)
 
-        # 표 행(Data Rows) 채우기
         for idx, r in enumerate(rows):
             loc_str = str(t(r, "로케이션", "N/A")).strip()
             qty_val = safe_int(t(r, "로케이션 수량", 0))
@@ -2086,14 +2076,9 @@ class UnifiedReplenishScreen(Screen):
         main_tab_box.add_widget(self.btn_tab_my)
         self.filter_panel.add_widget(main_tab_box)
 
+        # 💡 [요청 반영] 장비 필터 버튼 순서 변경: 오더피커 -> 리치 -> 전체
         equip_filter_box = BoxLayout(
             size_hint_y=None, height=dp(32), spacing=dp(5)
-        )
-        self.btn_eq_all = StyledToggleButton(
-            text="전체", group="equip_filter", state="normal", font_size=dp(12)
-        )
-        self.btn_eq_all.bind(
-            on_press=lambda x: self.switch_equip_filter("ALL")
         )
 
         self.btn_eq_op = StyledToggleButton(
@@ -2113,9 +2098,16 @@ class UnifiedReplenishScreen(Screen):
             on_press=lambda x: self.switch_equip_filter("REACH")
         )
 
-        equip_filter_box.add_widget(self.btn_eq_all)
+        self.btn_eq_all = StyledToggleButton(
+            text="전체", group="equip_filter", state="normal", font_size=dp(12)
+        )
+        self.btn_eq_all.bind(
+            on_press=lambda x: self.switch_equip_filter("ALL")
+        )
+
         equip_filter_box.add_widget(self.btn_eq_op)
         equip_filter_box.add_widget(self.btn_eq_reach)
+        equip_filter_box.add_widget(self.btn_eq_all)
         self.filter_panel.add_widget(equip_filter_box)
 
         opt_toolbar = BoxLayout(
@@ -3356,6 +3348,70 @@ class AdminDashboardScreen(Screen):
         for task in matches:
             self.grid.add_widget(self._create_dashboard_card(task))
 
+    # 💡 [요청사항 반영] 긴급 전환/해제 기능 추가
+    def toggle_urgent_status(self, task_data, card_widget):
+        task_id = str(t(task_data, "작업ID")).strip()
+        current_urg = task_data.get("긴급여부") == "Y"
+        new_urg_val = "N" if current_urg else "Y"
+        action_name = "긴급해제" if current_urg else "긴급전환"
+
+        def perform_toggle():
+            App.get_running_app().show_loading_popup()
+            threading.Thread(
+                target=self._async_toggle_urgent,
+                args=(task_id, new_urg_val, action_name, task_data, card_widget),
+                daemon=True,
+            ).start()
+
+        App.get_running_app().show_confirmation_popup(
+            title=f"{action_name} 확인",
+            message=f"해당 작업을 [{action_name}] 처리하시겠습니까?",
+            on_yes=perform_toggle,
+        )
+
+    def _async_toggle_urgent(self, task_id, new_urg_val, action_name, task_data, card_widget):
+        try:
+            sheet = get_worksheet(TASK_SHEET_NAME)
+            headers = [str(h).strip() for h in sheet.row_values(1)]
+
+            if "긴급여부" not in headers or "작업ID" not in headers:
+                raise Exception("시트에 '긴급여부' 또는 '작업ID' 열이 존재하지 않습니다.")
+
+            task_id_col = headers.index("작업ID") + 1
+            urg_col = headers.index("긴급여부") + 1
+
+            all_ids = sheet.col_values(task_id_col)
+            if task_id not in all_ids:
+                raise Exception(f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다.")
+
+            row_idx = all_ids.index(task_id) + 1
+            sheet.update_cell(row_idx, urg_col, new_urg_val)
+
+            # 로컬 데이터 반영
+            task_data["긴급여부"] = new_urg_val
+            for task in self.all_tasks:
+                if str(t(task, "작업ID")).strip() == task_id:
+                    task["긴급여부"] = new_urg_val
+                    break
+
+            invalidate_cache(TASK_SHEET_NAME)
+
+            Clock.schedule_once(
+                lambda dt: App.get_running_app().show_toast(f"[{action_name}] 처리가 완료되었습니다.")
+            )
+            Clock.schedule_once(lambda dt: self.search_tasks())
+
+        except Exception as e:
+            Clock.schedule_once(
+                lambda dt, err=str(e): App.get_running_app().show_info_popup(
+                    "오류", f"긴급 처리 중 오류: {err}"
+                )
+            )
+        finally:
+            Clock.schedule_once(
+                lambda dt: App.get_running_app().dismiss_loading_popup()
+            )
+
     def _create_dashboard_card(self, task):
         status = str(t(task, "상태", "대기")).strip()
         is_urgent = t(task, "긴급여부") == "Y"
@@ -3363,12 +3419,15 @@ class AdminDashboardScreen(Screen):
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(125),
+            height=dp(130),
             padding=dp(10),
             spacing=dp(3),
         )
+
+        bg_color = get_color_from_hex("#FFCDD2") if is_urgent else [1, 1, 1, 1]
+
         with card.canvas.before:
-            Color(1, 1, 1, 1)
+            Color(*bg_color)
             RoundedRectangle(
                 pos=card.pos, size=card.size, radius=[dp(10)]
             )
@@ -3377,7 +3436,8 @@ class AdminDashboardScreen(Screen):
             size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
         )
 
-        top_row = BoxLayout(size_hint_y=None, height=dp(20))
+        # 1. 상단 행 (상태값 + 긴급 전환 버튼)
+        top_row = BoxLayout(size_hint_y=None, height=dp(26), spacing=dp(5))
         st_color = (
             "[color=1E88E5]" if status == "작업중"
             else ("[color=00897B]" if status in ["보충완료", "최종완료"]
@@ -3396,8 +3456,21 @@ class AdminDashboardScreen(Screen):
         )
         lbl_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         top_row.add_widget(lbl_status)
+
+        # 💡 [신규 추가] 긴급 전환 / 해제 버튼
+        btn_urg_toggle = StyledButton(
+            text="긴급 해제" if is_urgent else "긴급 전환",
+            size_hint_x=None,
+            width=dp(75),
+            font_size=dp(11),
+            bg_color=get_color_from_hex("#D32F2F") if not is_urgent else get_color_from_hex("#78909C"),
+        )
+        btn_urg_toggle.bind(on_press=lambda x: self.toggle_urgent_status(task, card))
+        top_row.add_widget(btn_urg_toggle)
+
         card.add_widget(top_row)
 
+        # 2. 상품명 (SKU)
         product_name = str(t(task, "상품명", "N/A")).strip()
         lbl_prod = Label(
             text=f"[b]{product_name}[/b]",
@@ -3415,6 +3488,7 @@ class AdminDashboardScreen(Screen):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_prod)
 
+        # 3. 바코드
         barcode_val = get_barcode_from_task(task)
         lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{barcode_val}[/color][/b]",
@@ -3430,6 +3504,7 @@ class AdminDashboardScreen(Screen):
         lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_bc)
 
+        # 4. 출고 로케이션
         to_loc = str(t(task, "보충로케이션", "-")).strip()
         lbl_info = Label(
             text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]",
@@ -3445,6 +3520,7 @@ class AdminDashboardScreen(Screen):
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_info)
 
+        # 5. 수량 및 완료시간
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
         raw_time = str(t(task, "최종완료일시", t(task, "완료일시", ""))).strip()
