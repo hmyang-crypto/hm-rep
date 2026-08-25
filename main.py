@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.6.2"
+CURRENT_VERSION = "1.6.3"
 
 
 def check_and_apply_update():
@@ -2076,7 +2076,7 @@ class UnifiedReplenishScreen(Screen):
         main_tab_box.add_widget(self.btn_tab_my)
         self.filter_panel.add_widget(main_tab_box)
 
-        # 💡 [요청 반영] 장비 필터 버튼 순서 변경: 오더피커 -> 리치 -> 전체
+        # 💡 [버튼 순서 변경 반영] 오더피커 -> 리치 -> 전체
         equip_filter_box = BoxLayout(
             size_hint_y=None, height=dp(32), spacing=dp(5)
         )
@@ -2424,8 +2424,6 @@ class UnifiedReplenishScreen(Screen):
 
     def switch_main_tab(self, tab_mode):
         self.active_main_tab = tab_mode
-        self.btn_tab_pending.set_active_visual(tab_mode == "PENDING")
-        self.btn_tab_my.set_active_visual(tab_mode == "MY")
         self.checked_task_ids.clear()
         self.chk_all.active = False
 
@@ -2496,6 +2494,7 @@ class UnifiedReplenishScreen(Screen):
             f"{action_prefix} ({len(self.checked_task_ids)})"
         )
 
+    # 💡 [요청 반영] 탭별 긴급 수량 계산 및 버튼 텍스트 업데이트 반영
     def apply_filters_and_render(self):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
@@ -2504,9 +2503,21 @@ class UnifiedReplenishScreen(Screen):
         eq_op_tot, eq_op_urg = 0, 0
         eq_reach_tot, eq_reach_urg = 0, 0
 
+        # 대기/내작업 별 전체 및 긴급 수량 집계
+        pending_urg_count = 0
+        my_urg_count = 0
+
         for task in self.raw_all_tasks:
             status = str(t(task, "상태")).strip()
             assignee = str(t(task, "작업 담당자")).strip().lower()
+            is_urg = t(task, "긴급여부") == "Y"
+
+            if status == "대기" and assignee == "":
+                if is_urg:
+                    pending_urg_count += 1
+            elif status == "작업중" and assignee == user_name:
+                if is_urg:
+                    my_urg_count += 1
 
             if self.active_main_tab == "PENDING":
                 if status != "대기" or assignee != "":
@@ -2516,7 +2527,6 @@ class UnifiedReplenishScreen(Screen):
                     continue
 
             equip = str(t(task, "장비")).strip()
-            is_urg = t(task, "긴급여부") == "Y"
 
             eq_all_tot += 1
             if is_urg:
@@ -2530,6 +2540,12 @@ class UnifiedReplenishScreen(Screen):
                 eq_reach_tot += 1
                 if is_urg:
                     eq_reach_urg += 1
+
+        # 💡 상단 탭 버튼 긴급 수량 갱신
+        self.btn_tab_pending.text = f"대기 작업 (긴급: {pending_urg_count})"
+        self.btn_tab_my.text = f"내 작업 (긴급: {my_urg_count})"
+        self.btn_tab_pending.set_active_visual(self.active_main_tab == "PENDING")
+        self.btn_tab_my.set_active_visual(self.active_main_tab == "MY")
 
         self.btn_eq_all.markup = True
         self.btn_eq_all.text = f"전체 ({eq_all_tot} / [color=D32F2F]{eq_all_urg}[/color])"
@@ -3348,7 +3364,7 @@ class AdminDashboardScreen(Screen):
         for task in matches:
             self.grid.add_widget(self._create_dashboard_card(task))
 
-    # 💡 [요청사항 반영] 긴급 전환/해제 기능 추가
+    # 💡 긴급 전환 / 해제 시트 동기화 로직
     def toggle_urgent_status(self, task_data, card_widget):
         task_id = str(t(task_data, "작업ID")).strip()
         current_urg = task_data.get("긴급여부") == "Y"
@@ -3387,7 +3403,6 @@ class AdminDashboardScreen(Screen):
             row_idx = all_ids.index(task_id) + 1
             sheet.update_cell(row_idx, urg_col, new_urg_val)
 
-            # 로컬 데이터 반영
             task_data["긴급여부"] = new_urg_val
             for task in self.all_tasks:
                 if str(t(task, "작업ID")).strip() == task_id:
@@ -3457,7 +3472,7 @@ class AdminDashboardScreen(Screen):
         lbl_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         top_row.add_widget(lbl_status)
 
-        # 💡 [신규 추가] 긴급 전환 / 해제 버튼
+        # 💡 긴급 전환 / 해제 버튼
         btn_urg_toggle = StyledButton(
             text="긴급 해제" if is_urgent else "긴급 전환",
             size_hint_x=None,
