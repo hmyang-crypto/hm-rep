@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.5.1"
+CURRENT_VERSION = "1.5.2"
 
 
 def check_and_apply_update():
@@ -1558,7 +1558,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         is_shelf_rack = t(self.task_data, "선반랙 여부", "").upper() == "Y"
 
         if is_urgent:
-            self.card_bg_color = get_color_from_hex("#FFEBEE")
+            self.card_bg_color = get_color_from_hex("#FFCDD2")
         elif is_shelf_rack:
             self.card_bg_color = get_color_from_hex("#E3F2FD")
         else:
