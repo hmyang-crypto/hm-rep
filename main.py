@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.7.0"
+CURRENT_VERSION = "1.7.1"
 
 
 def check_and_apply_update():
@@ -183,7 +183,7 @@ DEFAULT_FONT_STYLE = {
 }
 Window.clearcolor = BG_GRAY
 
-# 💡 내 최근 완료 이력 메모리 저장소 (최대 15건)
+# 내 최근 완료 이력 메모리 저장소
 g_recent_completed_tasks = []
 
 
@@ -205,15 +205,90 @@ def get_barcode_from_task(task_dict):
     return "N/A"
 
 
-def open_native_korean_input(title, hint, initial_text, callback, is_number=False):
+# 💡 [v1.7.1] 최근 완료 이력 로컬 파일 입출력 및 새벽 4시 리셋 로직
+HISTORY_FILE_PATH = "recent_history.json"
+
+
+def get_current_4am_cutoff():
+    now = datetime.now()
+    if now.hour < 4:
+        cutoff = (now - timedelta(days=1)).replace(
+            hour=4, minute=0, second=0, microsecond=0
+        )
+    else:
+        cutoff = now.replace(hour=4, minute=0, second=0, microsecond=0)
+    return cutoff
+
+
+def load_recent_history():
+    global g_recent_completed_tasks
+    g_recent_completed_tasks.clear()
+    if not os.path.exists(HISTORY_FILE_PATH):
+        return
+
+    try:
+        with open(HISTORY_FILE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        cutoff = get_current_4am_cutoff()
+        filtered = []
+
+        for item in data:
+            dt_str = str(t(item, "완료일시", "")).strip()
+            if dt_str:
+                try:
+                    item_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                    if item_dt >= cutoff:
+                        filtered.append(item)
+                except Exception:
+                    filtered.append(item)
+            else:
+                filtered.append(item)
+
+        g_recent_completed_tasks = filtered[-15:]
+        if len(filtered) != len(data):
+            save_recent_history()
+    except Exception as e:
+        print(f"⚠️ 최근 완료 이력 불러오기 에러: {e}")
+
+
+def save_recent_history():
+    try:
+        with open(HISTORY_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(
+                g_recent_completed_tasks[-15:],
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except Exception as e:
+        print(f"⚠️ 최근 완료 이력 저장 에러: {e}")
+
+
+def clear_recent_history_file():
+    global g_recent_completed_tasks
+    g_recent_completed_tasks.clear()
+    if os.path.exists(HISTORY_FILE_PATH):
+        try:
+            os.remove(HISTORY_FILE_PATH)
+        except Exception:
+            pass
+
+
+def open_native_korean_input(
+    title, hint, initial_text, callback, is_number=False
+):
     if platform == "android":
         try:
             from jnius import autoclass
+
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             AlertDialog = autoclass("android.app.AlertDialog$Builder")
             EditText = autoclass("android.widget.EditText")
             InputType = autoclass("android.text.InputType")
-            WindowManager = autoclass("android.view.WindowManager$LayoutParams")
+            WindowManager = autoclass(
+                "android.view.WindowManager$LayoutParams"
+            )
 
             context = PythonActivity.mActivity
             builder = AlertDialog(context)
@@ -223,14 +298,16 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
             input_field.setHint(hint)
             if initial_text:
                 input_field.setText(str(initial_text))
-            
+
             if is_number:
                 input_field.setInputType(InputType.TYPE_CLASS_NUMBER)
 
             builder.setView(input_field)
 
             class PositiveClickListener(PythonJavaClass):
-                __javainterfaces__ = ["android/content/DialogInterface$OnClickListener"]
+                __javainterfaces__ = [
+                    "android/content/DialogInterface$OnClickListener"
+                ]
 
                 def __init__(self, cb, field):
                     super().__init__()
@@ -242,11 +319,13 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
                     res = self.field.getText().toString()
                     Clock.schedule_once(lambda dt: self.cb(res), 0.1)
 
-            builder.setPositiveButton("확인", PositiveClickListener(callback, input_field))
+            builder.setPositiveButton(
+                "확인", PositiveClickListener(callback, input_field)
+            )
             builder.setNegativeButton("취소", None)
 
             dialog = builder.create()
-            
+
             window = dialog.getWindow()
             if window:
                 window.setSoftInputMode(WindowManager.SOFT_INPUT_ADJUST_PAN)
@@ -254,7 +333,9 @@ def open_native_korean_input(title, hint, initial_text, callback, is_number=Fals
             dialog.show()
             return
         except Exception as e:
-            print(f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}")
+            print(
+                f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}"
+            )
 
     SingleInputPopup(
         title=title,
@@ -485,7 +566,10 @@ class ZoneMultiSelectDropDown(DropDown):
             size=lambda i, s: setattr(self.bg_rect, "size", s),
         )
 
-        all_active = len(selected_zones) == len(zone_counts_dict) or "전체" in selected_zones
+        all_active = (
+            len(selected_zones) == len(zone_counts_dict)
+            or "전체" in selected_zones
+        )
         self.btn_toggle_all = Button(
             text="전체해제" if all_active else "전체선택",
             font_name=FONT_NAME,
@@ -508,7 +592,7 @@ class ZoneMultiSelectDropDown(DropDown):
         grid.bind(minimum_height=grid.setter("height"))
 
         for zone_name, count in zone_counts_dict.items():
-            is_active = (zone_name in selected_zones or "전체" in selected_zones)
+            is_active = zone_name in selected_zones or "전체" in selected_zones
 
             item_box = TouchableBox(
                 orientation="horizontal",
@@ -519,7 +603,9 @@ class ZoneMultiSelectDropDown(DropDown):
             )
             with item_box.canvas.before:
                 Color(*get_color_from_hex("#EEEEEE"))
-                bg = RoundedRectangle(pos=item_box.pos, size=item_box.size, radius=[dp(4)])
+                bg = RoundedRectangle(
+                    pos=item_box.pos, size=item_box.size, radius=[dp(4)]
+                )
             item_box.bind(
                 pos=lambda i, p, b=bg: setattr(b, "pos", p),
                 size=lambda i, s, b=bg: setattr(b, "size", s),
@@ -545,7 +631,11 @@ class ZoneMultiSelectDropDown(DropDown):
             item_box.add_widget(lbl)
             item_box.add_widget(chk)
 
-            item_box.bind(on_press=lambda instance, c=chk: setattr(c, "active", not c.active))
+            item_box.bind(
+                on_press=lambda instance, c=chk: setattr(
+                    c, "active", not c.active
+                )
+            )
             chk.bind(active=self._on_check_change)
 
             grid.add_widget(item_box)
@@ -854,9 +944,7 @@ class SingleInputPopup(Popup):
         self.dismiss()
 
 
-# 💡 [v1.6.5 신규] 최근 완료 이력 컴팩트 리스트 팝업 창
-# 💡 [v1.6.9] 로케이션 잘림 현상 완벽 해결 및 선명 노출 적용
-# 💡 [v1.7.0] 재인쇄 터치 시 [예/아니오] 확인 팝업 로직 추가
+# 최근 완료 이력 컴팩트 리스트 팝업 창
 class RecentCompletedPopup(Popup):
 
     def __init__(self, **kwargs):
@@ -868,6 +956,8 @@ class RecentCompletedPopup(Popup):
         layout = BoxLayout(
             orientation="vertical", padding=dp(10), spacing=dp(8)
         )
+
+        load_recent_history()
 
         if not g_recent_completed_tasks:
             layout.add_widget(
@@ -921,7 +1011,9 @@ class RecentCompletedPopup(Popup):
 
         # 1행: 장비 / 완료시각
         equip_name = str(t(task_data, "장비", "N/A")).strip()
-        comp_time = str(t(task_data, "완료일시", datetime.now().strftime("%H:%M"))).strip()
+        comp_time = str(
+            t(task_data, "완료일시", datetime.now().strftime("%H:%M"))
+        ).strip()
         if len(comp_time) > 8:
             comp_time = comp_time[-8:-3]
 
@@ -1006,7 +1098,6 @@ class RecentCompletedPopup(Popup):
 
         return row
 
-    # 💡 [신규 추가] 재인쇄 전 [예/아니오] 확인 팝업
     def _prompt_reprint(self, task_data):
         app = App.get_running_app()
 
@@ -1370,6 +1461,11 @@ class NameEntryScreen(Screen):
             )
             return
         app = App.get_running_app()
+
+        # 💡 작업자가 변경되면 기존 완료 이력 파일도 자동 초기화
+        if app.user_real_name and app.user_real_name != name:
+            clear_recent_history_file()
+
         app.user_real_name = name
         app.save_user_name(name)
         self.manager.current = "main_menu"
@@ -1649,7 +1745,6 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_sku_loc))
 
-        # 💡 [요청 반영] 최근 완료 내역 팝업 연결
         btn_recent = StyledButton(
             text="📋 금일 완료 이력 (최근)",
             bg_color=get_color_from_hex("#43A047"),
@@ -2209,7 +2304,6 @@ class UnifiedReplenishScreen(Screen):
             color=TEXT_DARK,
         )
 
-        # 💡 [요청 반영] 최근 완료 내역 원터치 팝업 버튼 추가
         btn_recent = StyledButton(
             text="최근완료",
             size_hint_x=0.22,
@@ -2737,15 +2831,16 @@ class UnifiedReplenishScreen(Screen):
                 if is_urg:
                     eq_reach_urg += 1
 
-        # 💡 [눈이 편한 밝은 노란색 #FFD600 서식 적용]
         urg_font_sz = int(dp(12))
         self.btn_tab_pending.markup = True
         self.btn_tab_pending.text = f"대기 작업 [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
-        
+
         self.btn_tab_my.markup = True
         self.btn_tab_my.text = f"내 작업 [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
 
-        self.btn_tab_pending.set_active_visual(self.active_main_tab == "PENDING")
+        self.btn_tab_pending.set_active_visual(
+            self.active_main_tab == "PENDING"
+        )
         self.btn_tab_my.set_active_visual(self.active_main_tab == "MY")
 
         self.btn_eq_all.markup = True
@@ -2853,7 +2948,7 @@ class UnifiedReplenishScreen(Screen):
         try:
             app = App.get_running_app()
             sheet = get_worksheet(TASK_SHEET_NAME)
-            
+
             all_rows = execute_with_retry(sheet.get, "A:AA")
             if not all_rows or len(all_rows) < 2:
                 raise Exception("시트 데이터를 불러올 수 없습니다.")
@@ -2868,17 +2963,25 @@ class UnifiedReplenishScreen(Screen):
             for row_idx, row in enumerate(all_rows[1:], start=2):
                 if len(row) < len(headers):
                     row += [""] * (len(headers) - len(row))
-                
+
                 row_dict = {headers[i]: row[i] for i in range(len(headers))}
                 task_id = str(t(row_dict, "작업ID")).strip()
 
                 if task_id in self.checked_task_ids:
                     curr_status = str(t(row_dict, "상태")).strip()
-                    curr_assignee = str(t(row_dict, "작업 담당자", t(row_dict, "담당자", ""))).strip()
+                    curr_assignee = str(
+                        t(
+                            row_dict,
+                            "작업 담당자",
+                            t(row_dict, "담당자", ""),
+                        )
+                    ).strip()
 
                     if curr_status in ["대기", ""] and curr_assignee == "":
                         cells_to_update.append(
-                            gspread.Cell(row_idx, assignee_col, app.user_real_name)
+                            gspread.Cell(
+                                row_idx, assignee_col, app.user_real_name
+                            )
                         )
                         cells_to_update.append(
                             gspread.Cell(row_idx, status_col, "작업중")
@@ -2895,13 +2998,15 @@ class UnifiedReplenishScreen(Screen):
             if already_taken_count > 0 and len(cells_to_update) == 0:
                 Clock.schedule_once(
                     lambda dt: app.show_info_popup(
-                        "할당 실패", "선택하신 작업이 이미 다른 작업자에게 할당되었습니다.\n목록을 자동으로 갱신합니다."
+                        "할당 실패",
+                        "선택하신 작업이 이미 다른 작업자에게 할당되었습니다.\n목록을 자동으로 갱신합니다.",
                     )
                 )
             elif already_taken_count > 0:
                 Clock.schedule_once(
                     lambda dt: app.show_info_popup(
-                        "부분 할당 완료", f"이미 다른 사용자가 가져간 {already_taken_count}건을 제외하고 할당되었습니다."
+                        "부분 할당 완료",
+                        f"이미 다른 사용자가 가져간 {already_taken_count}건을 제외하고 할당되었습니다.",
                     )
                 )
             else:
@@ -3136,7 +3241,8 @@ class TaskListScreen(Screen):
             task_id = str(t(card.task_data, "작업ID"))
             headers = sheet.row_values(1)
             row_idx = (
-                sheet.col_values(headers.index("작업ID") + 1).index(task_id) + 1
+                sheet.col_values(headers.index("작업ID") + 1).index(task_id)
+                + 1
             )
             sheet.update_cells(
                 [
@@ -3168,7 +3274,7 @@ class TaskListScreen(Screen):
             val = text.strip()
             if val.isdigit():
                 task_id = t(card.task_data, "작업ID")
-                
+
                 if card_ref and hasattr(card_ref, "raw_all_tasks"):
                     for task in card_ref.raw_all_tasks:
                         if t(task, "작업ID") == task_id:
@@ -3182,14 +3288,20 @@ class TaskListScreen(Screen):
                 if card_ref and hasattr(card_ref, "apply_filters_and_render"):
                     card_ref.apply_filters_and_render()
 
-                App.get_running_app().show_toast(f"수량 '{val}'(이)가 임시 저장되었습니다.")
+                App.get_running_app().show_toast(
+                    f"수량 '{val}'(이)가 임시 저장되었습니다."
+                )
             else:
                 App.get_running_app().show_info_popup(
                     "오류", "숫자만 입력해야 합니다."
                 )
 
         open_native_korean_input(
-            "확인 수량 입력", "수량 입력", initial_val, on_confirm_qty, is_number=True
+            "확인 수량 입력",
+            "수량 입력",
+            initial_val,
+            on_confirm_qty,
+            is_number=True,
         )
 
     def prompt_for_remarks(self, card):
@@ -3208,7 +3320,9 @@ class TaskListScreen(Screen):
             )
             app.show_toast("비고가 추가되었습니다.")
 
-        open_native_korean_input("비고 추가", "비고 내용 입력", "", on_confirm_rem)
+        open_native_korean_input(
+            "비고 추가", "비고 내용 입력", "", on_confirm_rem
+        )
 
     def process_failure(self, card):
 
@@ -3229,7 +3343,9 @@ class TaskListScreen(Screen):
                 daemon=True,
             ).start()
 
-        open_native_korean_input("실패 사유 입력", "사유 입력", "", on_confirm_fail)
+        open_native_korean_input(
+            "실패 사유 입력", "사유 입력", "", on_confirm_fail
+        )
 
     def process_task(self, card):
         app = App.get_running_app()
@@ -3239,7 +3355,9 @@ class TaskListScreen(Screen):
             return
 
         qty_val = str(
-            card.task_data.get("confirmed_quantity", t(card.task_data, "확인수량", ""))
+            card.task_data.get(
+                "confirmed_quantity", t(card.task_data, "확인수량", "")
+            )
         ).strip()
         if not qty_val.isdigit() or int(qty_val) == 0:
             app.show_info_popup(
@@ -3266,7 +3384,9 @@ class TaskListScreen(Screen):
             if not default_printer:
                 return
 
-            qty_per_box = safe_int(t(card_data, "박스입수량", t(card_data, "박스 입수량", 0)))
+            qty_per_box = safe_int(
+                t(card_data, "박스입수량", t(card_data, "박스 입수량", 0))
+            )
             prod_name = str(t(card_data, "상품명", ""))
             is_invoice_only = qty_per_box == 1 or "송장" in prod_name
 
@@ -3328,12 +3448,14 @@ class TaskListScreen(Screen):
             "비고": updated_remarks,
         }
 
-        # 💡 [요청 반영] 내가 완료한 이력을 메모리 리스트 상단에 적재 (최대 15건)
+        # 💡 [v1.7.1] 완료 처리 시 이력 파일 추가 및 로컬 영구 저장
         completed_record = dict(card.task_data)
         completed_record.update(updates)
         g_recent_completed_tasks.append(completed_record)
         if len(g_recent_completed_tasks) > 15:
             g_recent_completed_tasks.pop(0)
+
+        save_recent_history()
 
         def run_sheet_update():
             app.show_loading_popup()
@@ -3367,7 +3489,9 @@ class TaskListScreen(Screen):
             all_task_ids = sheet.col_values(task_id_col_idx)
 
             if task_id not in all_task_ids:
-                raise Exception(f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다.")
+                raise Exception(
+                    f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다."
+                )
 
             row_idx = all_task_ids.index(task_id) + 1
             cells = []
@@ -3427,7 +3551,9 @@ class AdminDashboardScreen(Screen):
                 text="< 메인",
                 size_hint_x=0.2,
                 bg_color=get_color_from_hex("#78909C"),
-                on_press=lambda x: setattr(self.manager, "current", "main_menu"),
+                on_press=lambda x: setattr(
+                    self.manager, "current", "main_menu"
+                ),
             )
         )
         top_bar.add_widget(
@@ -3583,7 +3709,13 @@ class AdminDashboardScreen(Screen):
             App.get_running_app().show_loading_popup()
             threading.Thread(
                 target=self._async_toggle_urgent,
-                args=(task_id, new_urg_val, action_name, task_data, card_widget),
+                args=(
+                    task_id,
+                    new_urg_val,
+                    action_name,
+                    task_data,
+                    card_widget,
+                ),
                 daemon=True,
             ).start()
 
@@ -3593,20 +3725,26 @@ class AdminDashboardScreen(Screen):
             on_yes=perform_toggle,
         )
 
-    def _async_toggle_urgent(self, task_id, new_urg_val, action_name, task_data, card_widget):
+    def _async_toggle_urgent(
+        self, task_id, new_urg_val, action_name, task_data, card_widget
+    ):
         try:
             sheet = get_worksheet(TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
 
             if "긴급여부" not in headers or "작업ID" not in headers:
-                raise Exception("시트에 '긴급여부' 또는 '작업ID' 열이 존재하지 않습니다.")
+                raise Exception(
+                    "시트에 '긴급여부' 또는 '작업ID' 열이 존재하지 않습니다."
+                )
 
             task_id_col = headers.index("작업ID") + 1
             urg_col = headers.index("긴급여부") + 1
 
             all_ids = sheet.col_values(task_id_col)
             if task_id not in all_ids:
-                raise Exception(f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다.")
+                raise Exception(
+                    f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다."
+                )
 
             row_idx = all_ids.index(task_id) + 1
             sheet.update_cell(row_idx, urg_col, new_urg_val)
@@ -3620,14 +3758,16 @@ class AdminDashboardScreen(Screen):
             invalidate_cache(TASK_SHEET_NAME)
 
             Clock.schedule_once(
-                lambda dt: App.get_running_app().show_toast(f"[{action_name}] 처리가 완료되었습니다.")
+                lambda dt: App.get_running_app().show_toast(
+                    f"[{action_name}] 처리가 완료되었습니다."
+                )
             )
             Clock.schedule_once(lambda dt: self.search_tasks())
 
         except Exception as e:
             Clock.schedule_once(
                 lambda dt, err=str(e): App.get_running_app().show_info_popup(
-                    "오류", f"긴급 처리 중 오류: {err}"
+                    "오류", f"긴급 처리 중 오류: {e}"
                 )
             )
         finally:
@@ -3661,10 +3801,15 @@ class AdminDashboardScreen(Screen):
 
         top_row = BoxLayout(size_hint_y=None, height=dp(26), spacing=dp(5))
         st_color = (
-            "[color=1E88E5]" if status == "작업중"
-            else ("[color=00897B]" if status in ["보충완료", "최종완료"]
-            else "[color=E65100]" if status == "보충실패"
-            else "[color=757575]")
+            "[color=1E88E5]"
+            if status == "작업중"
+            else (
+                "[color=00897B]"
+                if status in ["보충완료", "최종완료"]
+                else (
+                    "[color=E65100]" if status == "보충실패" else "[color=757575]"
+                )
+            )
         )
         urg_tag = "[color=D32F2F][긴급][/color] " if is_urgent else ""
 
@@ -3684,9 +3829,15 @@ class AdminDashboardScreen(Screen):
             size_hint_x=None,
             width=dp(75),
             font_size=dp(11),
-            bg_color=get_color_from_hex("#D32F2F") if not is_urgent else get_color_from_hex("#78909C"),
+            bg_color=(
+                get_color_from_hex("#D32F2F")
+                if not is_urgent
+                else get_color_from_hex("#78909C")
+            ),
         )
-        btn_urg_toggle.bind(on_press=lambda x: self.toggle_urgent_status(task, card))
+        btn_urg_toggle.bind(
+            on_press=lambda x: self.toggle_urgent_status(task, card)
+        )
         top_row.add_widget(btn_urg_toggle)
 
         card.add_widget(top_row)
@@ -3740,8 +3891,10 @@ class AdminDashboardScreen(Screen):
 
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
-        raw_time = str(t(task, "최종완료일시", t(task, "완료일시", ""))).strip()
-        
+        raw_time = str(
+            t(task, "최종완료일시", t(task, "완료일시", ""))
+        ).strip()
+
         time_str = ""
         if status in ["보충완료", "최종완료", "완료"] and raw_time:
             time_str = f" | [color=2E7D32][b]완료시간: {raw_time}[/b][/color]"
@@ -3776,7 +3929,9 @@ class CompletedHistoryScreen(Screen):
                 text="< 메인",
                 size_hint_x=0.2,
                 bg_color=get_color_from_hex("#78909C"),
-                on_press=lambda x: setattr(self.manager, "current", "main_menu"),
+                on_press=lambda x: setattr(
+                    self.manager, "current", "main_menu"
+                ),
             )
         )
         top.add_widget(
@@ -3805,7 +3960,9 @@ class SettingsScreen(Screen):
                 text="< 메인",
                 size_hint_x=0.2,
                 bg_color=get_color_from_hex("#78909C"),
-                on_press=lambda x: setattr(self.manager, "current", "main_menu"),
+                on_press=lambda x: setattr(
+                    self.manager, "current", "main_menu"
+                ),
             )
         )
         header.add_widget(
@@ -3924,13 +4081,19 @@ class BluetoothPrinter:
 
         for attempt in range(2):
             try:
-                BluetoothAdapter = autoclass("android.bluetooth.BluetoothAdapter")
+                BluetoothAdapter = autoclass(
+                    "android.bluetooth.BluetoothAdapter"
+                )
                 UUID = autoclass("java.util.UUID")
                 device = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(
                     self.mac_address
                 )
-                spp_uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-                self.socket = device.createRfcommSocketToServiceRecord(spp_uuid)
+                spp_uuid = UUID.fromString(
+                    "00001101-0000-1000-8000-00805F9B34FB"
+                )
+                self.socket = device.createRfcommSocketToServiceRecord(
+                    spp_uuid
+                )
                 self.socket.connect()
                 self.stream = self.socket.getOutputStream()
                 time.sleep(0.3)
@@ -4201,6 +4364,8 @@ class MainApp(App):
         self._last_keystroke_time = 0
         self.last_known_pending_task_ids = set()
 
+        load_recent_history()
+
         Window.bind(on_key_down=self._on_keyboard_down)
 
         sm = ScreenManager(transition=FadeTransition())
@@ -4222,7 +4387,9 @@ class MainApp(App):
         try:
             kb = getattr(window, "_system_keyboard", None)
             focused_widget = getattr(kb, "widget", None) if kb else None
-            if focused_widget is not None and isinstance(focused_widget, TextInput):
+            if focused_widget is not None and isinstance(
+                focused_widget, TextInput
+            ):
                 return False
         except Exception:
             pass
@@ -4243,7 +4410,13 @@ class MainApp(App):
         return False
 
     def process_global_scan(self, barcode):
-        clean_barcode = str(barcode).replace("\r", "").replace("\n", "").replace("\t", "").strip()
+        clean_barcode = (
+            str(barcode)
+            .replace("\r", "")
+            .replace("\n", "")
+            .replace("\t", "")
+            .strip()
+        )
         if self.root and clean_barcode:
             curr_screen = self.root.current_screen
             if hasattr(curr_screen, "handle_barcode_scan"):
@@ -4289,7 +4462,9 @@ class MainApp(App):
 
             if not self.last_known_pending_task_ids:
                 if self.root and self.root.current != "name_entry":
-                    self.last_known_pending_task_ids = current_pending_task_ids
+                    self.last_known_pending_task_ids = (
+                        current_pending_task_ids
+                    )
                 return
 
             new_task_ids = (
