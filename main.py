@@ -2924,7 +2924,6 @@ class AdminDashboardScreen(Screen):
                 self.search_input.text = val
                 self.search_tasks()
 
-            # 재검색 터치 시 검색창 자동 빈칸("") 처리
             open_native_korean_input(
                 "검색어 입력", "바코드 또는 SKU 검색", "", set_query
             )
@@ -2933,7 +2932,6 @@ class AdminDashboardScreen(Screen):
 
     def on_enter(self):
         app = App.get_running_app()
-        # 💡 [핵심 해결] 이름 유실 시 user_config.json에서 자동 복구하여 로그인 화면으로 튕김 방지
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
             if not app.user_real_name:
@@ -3081,7 +3079,7 @@ class AdminDashboardScreen(Screen):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_prod)
 
-        # 3. F열 '상품바코드' 독립 라인
+        # 3. F열 '상품바코드' 노출
         barcode_val = str(t(task, "상품바코드", t(task, "바코드", "N/A"))).strip()
         lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{barcode_val}[/color][/b]",
@@ -3097,11 +3095,10 @@ class AdminDashboardScreen(Screen):
         lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_bc)
 
-        # 4. 로케이션 정보 라인
-        from_loc = str(t(task, "기존로케이션", "-")).strip()
+        # 💡 [핵심 수정] 보관 로케이션 제외, '출고 로케이션(보충로케이션)'만 단독 노출
         to_loc = str(t(task, "보충로케이션", "-")).strip()
         lbl_info = Label(
-            text=f"위치: [color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]",
+            text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]",
             font_name=FONT_NAME,
             font_size=dp(13),
             color=TEXT_DARK,
@@ -3114,7 +3111,7 @@ class AdminDashboardScreen(Screen):
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_info)
 
-        # 5. 수량 정보 및 완료시간 복원 (담당자 표시 제외)
+        # 5. 수량 정보 및 완료시간
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
         raw_time = str(t(task, "최종완료일시", t(task, "완료일시", ""))).strip()
