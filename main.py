@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.5.9"
+CURRENT_VERSION = "1.6.0"
 
 
 def check_and_apply_update():
@@ -153,7 +153,7 @@ USER_SHEET_NAME = "사용자_목록"
 TASK_SHEET_NAME = "보충작업_지시서"
 LOG_SHEET_NAME = "작업완료_로그"
 FCM_TOKEN_SHEET_NAME = "FCM_토큰"
-LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"  # 💡 시트명 수정
+LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
 
 SHEET_RANGES = {
     USER_SHEET_NAME: "A:AA",
@@ -1461,7 +1461,6 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_dashboard))
 
-        # 💡 [신규 메뉴 추가] SKU별 로케이션 검색
         btn_sku_loc = StyledButton(
             text="🔍 SKU별 로케이션 검색",
             bg_color=get_color_from_hex("#E65100"),
@@ -1558,7 +1557,7 @@ class MainMenuScreen(Screen):
         self.manager.current = "task_list"
 
 
-# 💡 [신규 화면] SKU별 로케이션 검색 전용 화면
+# 💡 [v1.6.0 신규 구현] 표(Table) 형태 그룹핑 SKU별 로케이션 검색 화면
 class SkuLocationSearchScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -1568,7 +1567,6 @@ class SkuLocationSearchScreen(Screen):
             orientation="vertical", padding=dp(10), spacing=dp(10)
         )
 
-        # 상단 헤더
         top_bar = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
         top_bar.add_widget(
             StyledButton(
@@ -1594,7 +1592,6 @@ class SkuLocationSearchScreen(Screen):
         )
         self.layout.add_widget(top_bar)
 
-        # 검색 입력 바
         search_bar = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
         self.search_input = TextInput(
             hint_text="터치하여 바코드 스캔/입력",
@@ -1615,9 +1612,8 @@ class SkuLocationSearchScreen(Screen):
         search_bar.add_widget(btn_search)
         self.layout.add_widget(search_bar)
 
-        # 스크롤 결과 뷰
         self.scroll = ScrollView()
-        self.grid = GridLayout(cols=1, spacing=dp(8), size_hint_y=None)
+        self.grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None)
         self.grid.bind(minimum_height=self.grid.setter("height"))
         self.scroll.add_widget(self.grid)
         self.layout.add_widget(self.scroll)
@@ -1647,7 +1643,7 @@ class SkuLocationSearchScreen(Screen):
         self.grid.clear_widgets()
         self.grid.add_widget(
             Label(
-                text="바코드를 스캔하면 점유 로케이션이 나옵니다.",
+                text="바코드를 스캔하면 점유 로케이션이 표로 나옵니다.",
                 font_name=FONT_NAME,
                 font_size=dp(15),
                 color=TEXT_MUTED,
@@ -1665,7 +1661,6 @@ class SkuLocationSearchScreen(Screen):
 
     def _async_fetch_inventory(self):
         try:
-            # 💡 '로케이션별재고 raw' 시트 비동기 Caching
             data = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
             self.raw_inventory = data
             Clock.schedule_once(lambda dt: self.search_location())
@@ -1691,7 +1686,7 @@ class SkuLocationSearchScreen(Screen):
         if not query:
             self.grid.add_widget(
                 Label(
-                    text="바코드를 스캔하면 점유 로케이션이 나옵니다.",
+                    text="바코드를 스캔하면 점유 로케이션이 표로 나옵니다.",
                     font_name=FONT_NAME,
                     font_size=dp(15),
                     color=TEXT_MUTED,
@@ -1701,20 +1696,20 @@ class SkuLocationSearchScreen(Screen):
             )
             return
 
-        matches = []
+        # 💡 [바코드별 그룹핑] 바코드를 Key로 사용하여 로케이션 항목 모으기
+        grouped_results = defaultdict(list)
         for row in self.raw_inventory:
-            # 💡 [필터링 핵심] F열(로케이션 유형)이 '보관'인 데이터만 추출
             loc_type = str(t(row, "로케이션 유형", "")).strip()
             if loc_type != "보관":
                 continue
 
-            bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip().lower()
-            sku = str(t(row, "SKU", t(row, "상품명", ""))).strip().lower()
+            bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip()
+            sku = str(t(row, "SKU", t(row, "상품명", ""))).strip()
 
-            if query in bc or query in sku:
-                matches.append(row)
+            if query in bc.lower() or query in sku.lower():
+                grouped_results[bc].append(row)
 
-        if not matches:
+        if not grouped_results:
             self.grid.add_widget(
                 Label(
                     text=f"검색어 [{query}] 에 해당하는 '보관' 로케이션 재고가 없습니다.",
@@ -1727,29 +1722,26 @@ class SkuLocationSearchScreen(Screen):
             )
             return
 
-        # 결과 개수 헤더 표시
-        tot_qty = sum(safe_int(t(m, "로케이션 수량", 0)) for m in matches)
-        lbl_head = Label(
-            text=f"검색 결과 : [color=1E88E5]{len(matches)}개 로케이션[/color] (총 [color=D32F2F]{tot_qty}개[/color] 재고)",
-            font_name=FONT_NAME,
-            font_size=dp(14),
-            markup=True,
-            size_hint_y=None,
-            height=dp(25),
-        )
-        self.grid.add_widget(lbl_head)
+        # 바코드 그룹별로 1개의 카드(표) 생성
+        for bc, rows in grouped_results.items():
+            self.grid.add_widget(self._create_grouped_table_card(bc, rows))
 
-        for row in matches:
-            self.grid.add_widget(self._create_sku_loc_card(row))
+    def _create_grouped_table_card(self, barcode, rows):
+        sku_name = str(t(rows[0], "SKU", t(rows[0], "상품명", "N/A"))).strip()
+        tot_qty = sum(safe_int(t(r, "로케이션 수량", 0)) for r in rows)
 
-    def _create_sku_loc_card(self, row):
+        # 전체 카드 컨테이너
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(105),
-            padding=dp(10),
-            spacing=dp(3),
+            padding=dp(12),
+            spacing=dp(6),
         )
+        
+        # 동적 높이 계산 (헤더 45dp + 표 헤더 25dp + 각 행 22dp)
+        table_height = dp(45) + dp(25) + (len(rows) * dp(22)) + dp(24)
+        card.height = table_height
+
         with card.canvas.before:
             Color(1, 1, 1, 1)
             RoundedRectangle(
@@ -1760,8 +1752,7 @@ class SkuLocationSearchScreen(Screen):
             size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
         )
 
-        # 1. SKU명 (C열) - 말줄임표 처리
-        sku_name = str(t(row, "SKU", "N/A")).strip()
+        # 1. 헤더 - SKU명 (중복 제거)
         lbl_sku = Label(
             text=f"[b]{sku_name}[/b]",
             font_name=FONT_NAME,
@@ -1778,10 +1769,9 @@ class SkuLocationSearchScreen(Screen):
         lbl_sku.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_sku)
 
-        # 2. 바코드 (D열)
-        bc_val = str(t(row, "바코드", "N/A")).strip()
-        lbl_bc = Label(
-            text=f"바코드: [b][color=1E88E5]{bc_val}[/color][/b]",
+        # 2. 헤더 - 바코드 및 총 재고
+        lbl_bc_tot = Label(
+            text=f"바코드: [b][color=1E88E5]{barcode}[/color][/b]  |  총 보관재고: [b][color=D32F2F]{tot_qty}개[/color][/b]",
             font_name=FONT_NAME,
             font_size=dp(13),
             color=TEXT_DARK,
@@ -1791,41 +1781,102 @@ class SkuLocationSearchScreen(Screen):
             size_hint_y=None,
             height=dp(20),
         )
-        lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_bc)
+        lbl_bc_tot.bind(size=lambda i, s: setattr(i, "text_size", s))
+        card.add_widget(lbl_bc_tot)
 
-        # 3. 로케이션 (E열)
-        loc_val = str(t(row, "로케이션", "N/A")).strip()
-        lbl_loc = Label(
-            text=f"보관 위치: [b][color=D32F2F]{loc_val}[/color][/b]",
-            font_name=FONT_NAME,
-            font_size=dp(14),
-            color=TEXT_DARK,
-            markup=True,
-            halign="left",
-            valign="middle",
-            size_hint_y=None,
-            height=dp(22),
-        )
-        lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_loc)
+        # 💡 3. 표(Table) 구조 구성
+        table_grid = GridLayout(cols=2, size_hint_y=None, spacing=dp(1))
+        table_grid.height = dp(25) + (len(rows) * dp(22))
 
-        # 4. 수량 (H열 - 로케이션 수량)
-        loc_qty = safe_int(t(row, "로케이션 수량", 0))
-        lbl_qty = Label(
-            text=f"보관 재고 수량: [b][color=1E88E5]{loc_qty}개[/color][/b]",
+        # 표 컬럼 헤더
+        th_loc = Label(
+            text="[b]보관 로케이션 (F:보관)[/b]",
             font_name=FONT_NAME,
             font_size=dp(12),
-            color=TEXT_MUTED,
+            color=get_color_from_hex("#37474F"),
             markup=True,
-            halign="left",
+            halign="center",
             valign="middle",
             size_hint_y=None,
-            height=dp(18),
+            height=dp(25),
         )
-        lbl_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_qty)
+        with th_loc.canvas.before:
+            Color(0.9, 0.93, 0.95, 1)
+            Rectangle(pos=th_loc.pos, size=th_loc.size)
+        th_loc.bind(
+            pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+            size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+        )
 
+        th_qty = Label(
+            text="[b]재고 수량(H열)[/b]",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            color=get_color_from_hex("#37474F"),
+            markup=True,
+            halign="center",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(25),
+        )
+        with th_qty.canvas.before:
+            Color(0.9, 0.93, 0.95, 1)
+            Rectangle(pos=th_qty.pos, size=th_qty.size)
+        th_qty.bind(
+            pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+            size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+        )
+
+        table_grid.add_widget(th_loc)
+        table_grid.add_widget(th_qty)
+
+        # 표 행(Data Rows) 채우기
+        for idx, r in enumerate(rows):
+            loc_str = str(t(r, "로케이션", "N/A")).strip()
+            qty_val = safe_int(t(r, "로케이션 수량", 0))
+
+            bg_color = (0.97, 0.97, 0.97, 1) if idx % 2 == 1 else (1, 1, 1, 1)
+
+            td_loc = Label(
+                text=f"[b][color=D32F2F]{loc_str}[/color][/b]",
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                markup=True,
+                halign="center",
+                valign="middle",
+                size_hint_y=None,
+                height=dp(22),
+            )
+            with td_loc.canvas.before:
+                Color(*bg_color)
+                Rectangle(pos=td_loc.pos, size=td_loc.size)
+            td_loc.bind(
+                pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+                size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+            )
+
+            td_qty = Label(
+                text=f"[b][color=1E88E5]{qty_val} 개[/color][/b]",
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                markup=True,
+                halign="center",
+                valign="middle",
+                size_hint_y=None,
+                height=dp(22),
+            )
+            with td_qty.canvas.before:
+                Color(*bg_color)
+                Rectangle(pos=td_qty.pos, size=td_qty.size)
+            td_qty.bind(
+                pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+                size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+            )
+
+            table_grid.add_widget(td_loc)
+            table_grid.add_widget(td_qty)
+
+        card.add_widget(table_grid)
         return card
 
 
@@ -3865,7 +3916,7 @@ class MainApp(App):
         sm.add_widget(UnifiedReplenishScreen(name="unified_replenish"))
         sm.add_widget(TaskListScreen(name="task_list"))
         sm.add_widget(AdminDashboardScreen(name="admin_dashboard"))
-        sm.add_widget(SkuLocationSearchScreen(name="sku_location_search"))  # 💡 신규 화면 등록
+        sm.add_widget(SkuLocationSearchScreen(name="sku_location_search"))
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
 
