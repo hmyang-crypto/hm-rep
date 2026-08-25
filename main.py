@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.6.4"
+CURRENT_VERSION = "1.6.5"
 
 
 def check_and_apply_update():
@@ -2547,10 +2547,10 @@ class UnifiedReplenishScreen(Screen):
         # 💡 [핵심 수정] 긴급 수량을 빨간색([color=D32F2F]) 및 살짝 작은 글씨(12dp)로 적용
         urg_font_sz = int(dp(12))
         self.btn_tab_pending.markup = True
-        self.btn_tab_pending.text = f"대기 작업 [color=D32F2F][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
+        self.btn_tab_pending.text = f"대기 작업 [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
         
         self.btn_tab_my.markup = True
-        self.btn_tab_my.text = f"내 작업 [color=D32F2F][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
+        self.btn_tab_my.text = f"내 작업 [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
         
         self.btn_tab_pending.set_active_visual(self.active_main_tab == "PENDING")
         self.btn_tab_my.set_active_visual(self.active_main_tab == "MY")
