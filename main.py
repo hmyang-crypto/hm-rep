@@ -855,6 +855,7 @@ class SingleInputPopup(Popup):
 
 
 # 💡 [v1.6.5 신규] 최근 완료 이력 컴팩트 리스트 팝업 창
+# 💡 [v1.6.9] 로케이션 잘림 현상 완벽 해결 및 선명 노출 적용
 class RecentCompletedPopup(Popup):
 
     def __init__(self, **kwargs):
@@ -881,7 +882,7 @@ class RecentCompletedPopup(Popup):
             grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
             grid.bind(minimum_height=grid.setter("height"))
 
-            # 💡 최신순(역순)으로 리스트 생성
+            # 최신순(역순)으로 리스트 생성
             for item in reversed(g_recent_completed_tasks):
                 grid.add_widget(self._create_compact_history_row(item))
 
@@ -900,10 +901,11 @@ class RecentCompletedPopup(Popup):
         self.content = layout
 
     def _create_compact_history_row(self, task_data):
+        # 💡 [핵심 수정 1] 행 높이를 dp(68) -> dp(82)로 확대하여 잘림 방지
         row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(68),
+            height=dp(82),
             padding=dp(8),
             spacing=dp(6),
         )
@@ -925,7 +927,7 @@ class RecentCompletedPopup(Popup):
             comp_time = comp_time[-8:-3]
 
         lbl_top = Label(
-            text=f"[color=1E88E5][b][{equip_name}][/b][/color]  |  시간: {comp_time}",
+            text=f"[color=1E88E5][b][{equip_name}][/b][/color]  |  완료시간: [b]{comp_time}[/b]",
             font_name=FONT_NAME,
             font_size=dp(12),
             markup=True,
@@ -956,14 +958,28 @@ class RecentCompletedPopup(Popup):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_prod)
 
-        # 3행: 보관 ➔ 출고 위치 및 수량
+        # 💡 [핵심 수정 2] 3행: 보관 ➔ 출고 위치 전용 독립 라인
         from_loc = str(t(task_data, "기존로케이션", "-")).strip()
         to_loc = str(t(task_data, "보충로케이션", "-")).strip()
+        lbl_loc = Label(
+            text=f"위치: [color=D32F2F][b]{from_loc}[/b][/color] ➔ [color=1E88E5][b]{to_loc}[/b][/color]",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            color=TEXT_DARK,
+            markup=True,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(16),
+        )
+        lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_loc)
+
+        # 4행: 수량 정보
         req_q = t(task_data, "지시수량", 0)
         conf_q = t(task_data, "확인수량", 0)
-
-        lbl_loc_qty = Label(
-            text=f"위치: [color=D32F2F]{from_loc}[/color]➔[color=1E88E5]{to_loc}[/color] | 수량: 지시{req_q}/[color=2E7D32][b]확인{conf_q}[/b][/color]",
+        lbl_qty = Label(
+            text=f"수량: 지시 {req_q}개 / [color=2E7D32][b]확인 {conf_q}개[/b][/color]",
             font_name=FONT_NAME,
             font_size=dp(11),
             color=TEXT_MUTED,
@@ -971,19 +987,19 @@ class RecentCompletedPopup(Popup):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(16),
+            height=dp(14),
         )
-        lbl_loc_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
-        info_box.add_widget(lbl_loc_qty)
+        lbl_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_qty)
 
         row.add_widget(info_box)
 
         # 원터치 라벨 재인쇄 버튼
         btn_reprint = StyledButton(
-            text="🖨️\n재인쇄",
+            text="[인쇄]",
             size_hint_x=None,
             width=dp(55),
-            font_size=dp(11),
+            font_size=dp(12),
             bg_color=get_color_from_hex("#00897B"),
         )
         btn_reprint.bind(on_press=lambda x: self._reprint_label(task_data))
