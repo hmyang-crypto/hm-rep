@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.5.3"
+CURRENT_VERSION = "1.5.4"
 
 
 def check_and_apply_update():
@@ -2924,7 +2924,7 @@ class AdminDashboardScreen(Screen):
                 self.search_input.text = val
                 self.search_tasks()
 
-            # 💡 [편의성 개선] 재검색 시 초기값을 빈칸("")으로 전달하여 자동으로 리셋
+            # 💡 재검색 시 초기값을 빈칸("")으로 전달
             open_native_korean_input(
                 "검색어 입력", "바코드 또는 SKU 검색", "", set_query
             )
@@ -3030,9 +3030,9 @@ class AdminDashboardScreen(Screen):
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(105),
+            height=dp(115),
             padding=dp(10),
-            spacing=dp(4),
+            spacing=dp(3),
         )
         with card.canvas.before:
             Color(1, 1, 1, 1)
@@ -3066,7 +3066,7 @@ class AdminDashboardScreen(Screen):
         top_row.add_widget(lbl_status)
         card.add_widget(top_row)
 
-        # 2. 상품명 (SKU) - 길면 말줄임표 처리
+        # 2. 상품명 (SKU) - 말줄임표 처리
         product_name = str(t(task, "상품명", "N/A")).strip()
         lbl_prod = Label(
             text=f"[b]{product_name}[/b]",
@@ -3076,7 +3076,7 @@ class AdminDashboardScreen(Screen):
             markup=True,
             halign="left",
             valign="middle",
-            shorten=True,  # 💡 길이가 길 경우 자동 말줄임표(...) 처리
+            shorten=True,
             shorten_from="right",
             size_hint_y=None,
             height=dp(22),
@@ -3084,13 +3084,13 @@ class AdminDashboardScreen(Screen):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_prod)
 
-        # 3. 바코드 및 로케이션 정보
+        # 3. 바코드 및 로케이션 정보 (바코드 정보 명확히 표시)
         barcode_val = str(t(task, "상품바코드", t(task, "바코드", "N/A"))).strip()
         from_loc = str(t(task, "기존로케이션", "-")).strip()
         to_loc = str(t(task, "보충로케이션", "-")).strip()
 
         lbl_info = Label(
-            text=f"바코드: {barcode_val} | [color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]",
+            text=f"바코드: [b]{barcode_val}[/b] | [color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
             color=TEXT_DARK,
@@ -3103,14 +3103,21 @@ class AdminDashboardScreen(Screen):
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_info)
 
-        # 4. 수량 정보 (담당자 노출 제거)
+        # 4. 수량 정보 + 완료시간 복원
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
+        raw_time = str(t(task, "최종완료일시", t(task, "완료일시", ""))).strip()
+        
+        time_str = ""
+        if status in ["보충완료", "최종완료", "완료"] and raw_time:
+            time_str = f" | [color=2E7D32][b]완료시간: {raw_time}[/b][/color]"
+
         lbl_sub = Label(
-            text=f"지시수량: {req_qty} / 확인수량: {conf_qty}",
+            text=f"지시: {req_qty} / 확인: {conf_qty}{time_str}",
             font_name=FONT_NAME,
             font_size=dp(12),
             color=TEXT_MUTED,
+            markup=True,
             halign="left",
             valign="middle",
             size_hint_y=None,
