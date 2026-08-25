@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.5.6"
+CURRENT_VERSION = "1.5.7"
 
 
 def check_and_apply_update():
@@ -2924,6 +2924,7 @@ class AdminDashboardScreen(Screen):
                 self.search_input.text = val
                 self.search_tasks()
 
+            # 재검색 터치 시 검색창 자동 빈칸("") 처리
             open_native_korean_input(
                 "검색어 입력", "바코드 또는 SKU 검색", "", set_query
             )
@@ -2932,6 +2933,7 @@ class AdminDashboardScreen(Screen):
 
     def on_enter(self):
         app = App.get_running_app()
+        # 💡 [핵심 해결] 이름 유실 시 user_config.json에서 자동 복구하여 로그인 화면으로 튕김 방지
         if not app.user_real_name:
             app.user_real_name = app.load_saved_user_name() or ""
             if not app.user_real_name:
@@ -2997,7 +2999,7 @@ class AdminDashboardScreen(Screen):
 
         matches = []
         for task in self.all_tasks:
-            bc = get_barcode_from_task(task).lower()
+            bc = str(t(task, "상품바코드", t(task, "바코드", ""))).strip().lower()
             sku = str(t(task, "상품명", "")).strip().lower()
             if query in bc or query in sku:
                 matches.append(task)
@@ -3022,11 +3024,10 @@ class AdminDashboardScreen(Screen):
         status = str(t(task, "상태", "대기")).strip()
         is_urgent = t(task, "긴급여부") == "Y"
 
-        # 💡 [핵심 수정] 카드 높이를 dp(115) -> dp(135)로 넉넉하게 확장하여 잘림 방지
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(135),
+            height=dp(125),
             padding=dp(10),
             spacing=dp(3),
         )
@@ -3041,7 +3042,7 @@ class AdminDashboardScreen(Screen):
         )
 
         # 1. 상태값 및 긴급 배지
-        top_row = BoxLayout(size_hint_y=None, height=dp(22))
+        top_row = BoxLayout(size_hint_y=None, height=dp(20))
         st_color = (
             "[color=1E88E5]" if status == "작업중"
             else ("[color=00897B]" if status in ["보충완료", "최종완료"]
@@ -3053,7 +3054,7 @@ class AdminDashboardScreen(Screen):
         lbl_status = Label(
             text=f"{st_color}[b][{status}][/b][/color] {urg_tag}",
             font_name=FONT_NAME,
-            font_size=dp(14),
+            font_size=dp(13),
             markup=True,
             halign="left",
             valign="middle",
@@ -3080,9 +3081,9 @@ class AdminDashboardScreen(Screen):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_prod)
 
-        # 💡 [핵심 수정] 3. 바코드 전용 독립 라인으로 완전 분리 (시인성 100% 보장)
-        barcode_val = get_barcode_from_task(task)
-        lbl_barcode = Label(
+        # 3. F열 '상품바코드' 독립 라인
+        barcode_val = str(t(task, "상품바코드", t(task, "바코드", "N/A"))).strip()
+        lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{barcode_val}[/color][/b]",
             font_name=FONT_NAME,
             font_size=dp(13),
@@ -3093,13 +3094,13 @@ class AdminDashboardScreen(Screen):
             size_hint_y=None,
             height=dp(20),
         )
-        lbl_barcode.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_barcode)
+        lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
+        card.add_widget(lbl_bc)
 
-        # 4. 로케이션 이동 정보 라인
+        # 4. 로케이션 정보 라인
         from_loc = str(t(task, "기존로케이션", "-")).strip()
         to_loc = str(t(task, "보충로케이션", "-")).strip()
-        lbl_loc = Label(
+        lbl_info = Label(
             text=f"위치: [color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
@@ -3110,10 +3111,10 @@ class AdminDashboardScreen(Screen):
             size_hint_y=None,
             height=dp(20),
         )
-        lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_loc)
+        lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
+        card.add_widget(lbl_info)
 
-        # 5. 수량 정보 및 완료시간
+        # 5. 수량 정보 및 완료시간 복원 (담당자 표시 제외)
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
         raw_time = str(t(task, "최종완료일시", t(task, "완료일시", ""))).strip()
