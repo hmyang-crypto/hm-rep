@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.7.1"
+CURRENT_VERSION = "1.7.3"
 
 
 def check_and_apply_update():
@@ -109,6 +109,7 @@ from kivy.uix.dropdown import DropDown
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
+from kivy.uix.progressbar import ProgressBar
 from kivy.uix.recycleboxlayout import RecycleBoxLayout
 from kivy.uix.recycleview import RecycleView
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
@@ -205,7 +206,6 @@ def get_barcode_from_task(task_dict):
     return "N/A"
 
 
-# 💡 [v1.7.1] 최근 완료 이력 로컬 파일 입출력 및 새벽 4시 리셋 로직
 HISTORY_FILE_PATH = "recent_history.json"
 
 
@@ -946,6 +946,7 @@ class SingleInputPopup(Popup):
 
 # 최근 완료 이력 컴팩트 리스트 팝업 창
 class RecentCompletedPopup(Popup):
+    _is_opening = False
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -953,21 +954,45 @@ class RecentCompletedPopup(Popup):
         self.title_font = FONT_NAME
         self.size_hint = (0.95, 0.85)
 
-        layout = BoxLayout(
+        self.layout = BoxLayout(
             orientation="vertical", padding=dp(10), spacing=dp(8)
         )
 
+        self.loading_lbl = Label(
+            text="최근 완료 내역을 불러오는 중입니다...",
+            font_name=FONT_NAME,
+            font_size=dp(15),
+            color=PRIMARY_BLUE,
+        )
+        self.layout.add_widget(self.loading_lbl)
+
+        btn_close = StyledButton(
+            text="닫기",
+            size_hint_y=None,
+            height=dp(40),
+            bg_color=get_color_from_hex("#78909C"),
+        )
+        btn_close.bind(on_press=self.dismiss)
+        self.layout.add_widget(btn_close)
+
+        self.content = self.layout
+        self.bind(on_open=self._async_load_data)
+
+    def _async_load_data(self, *args):
+        Clock.schedule_once(lambda dt: self._render_content(), 0.1)
+
+    def _render_content(self):
         load_recent_history()
+        self.layout.remove_widget(self.loading_lbl)
 
         if not g_recent_completed_tasks:
-            layout.add_widget(
-                Label(
-                    text="최근 완료된 보충 작업 이력이 없습니다.",
-                    font_name=FONT_NAME,
-                    font_size=dp(15),
-                    color=TEXT_MUTED,
-                )
+            no_data_lbl = Label(
+                text="최근 완료된 보충 작업 이력이 없습니다.",
+                font_name=FONT_NAME,
+                font_size=dp(15),
+                color=TEXT_MUTED,
             )
+            self.layout.add_widget(no_data_lbl, index=len(self.layout.children))
         else:
             scroll = ScrollView()
             grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
@@ -977,18 +1002,19 @@ class RecentCompletedPopup(Popup):
                 grid.add_widget(self._create_compact_history_row(item))
 
             scroll.add_widget(grid)
-            layout.add_widget(scroll)
+            self.layout.add_widget(scroll, index=len(self.layout.children))
 
-        btn_close = StyledButton(
-            text="닫기",
-            size_hint_y=None,
-            height=dp(40),
-            bg_color=get_color_from_hex("#78909C"),
-        )
-        btn_close.bind(on_press=self.dismiss)
-        layout.add_widget(btn_close)
+    def dismiss(self, *args):
+        RecentCompletedPopup._is_opening = False
+        super().dismiss(*args)
 
-        self.content = layout
+    @classmethod
+    def open_safely(cls):
+        if cls._is_opening:
+            return
+        cls._is_opening = True
+        popup = cls()
+        popup.open()
 
     def _create_compact_history_row(self, task_data):
         row = BoxLayout(
@@ -1030,11 +1056,10 @@ class RecentCompletedPopup(Popup):
         lbl_top.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_top)
 
-        # 2행: 상품명 및 바코드
+        # 2행: 상품명
         prod_name = str(t(task_data, "상품명", "N/A")).strip()
-        bc_val = get_barcode_from_task(task_data)
         lbl_prod = Label(
-            text=f"[b]{prod_name}[/b] ({bc_val})",
+            text=f"[b]{prod_name}[/b]",
             font_name=FONT_NAME,
             font_size=dp(13),
             color=TEXT_DARK,
@@ -1049,28 +1074,30 @@ class RecentCompletedPopup(Popup):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_prod)
 
-        # 3행: 보관 ➔ 출고 위치 전용 라인
-        from_loc = str(t(task_data, "기존로케이션", "-")).strip()
-        to_loc = str(t(task_data, "보충로케이션", "-")).strip()
-        lbl_loc = Label(
-            text=f"위치: [color=D32F2F][b]{from_loc}[/b][/color] ➔ [color=1E88E5][b]{to_loc}[/b][/color]",
+        # 3행: 바코드
+        bc_val = get_barcode_from_task(task_data)
+        lbl_bc = Label(
+            text=f"바코드: [b][color=1E88E5]{bc_val}[/color][/b]",
             font_name=FONT_NAME,
-            font_size=dp(12),
+            font_size=dp(11),
             color=TEXT_DARK,
             markup=True,
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(16),
+            height=dp(14),
         )
-        lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
-        info_box.add_widget(lbl_loc)
+        lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_bc)
 
-        # 4행: 수량 정보
+        # 4행: 보관 ➔ 출고 로케이션 및 수량
+        from_loc = str(t(task_data, "기존로케이션", "-")).strip()
+        to_loc = str(t(task_data, "보충로케이션", "-")).strip()
         req_q = t(task_data, "지시수량", 0)
         conf_q = t(task_data, "확인수량", 0)
-        lbl_qty = Label(
-            text=f"수량: 지시 {req_q}개 / [color=2E7D32][b]확인 {conf_q}개[/b][/color]",
+
+        lbl_loc_qty = Label(
+            text=f"위치: [color=D32F2F]{from_loc}[/color]➔[color=1E88E5]{to_loc}[/color] | 수량: {req_q}/[color=2E7D32][b]{conf_q}[/b][/color]",
             font_name=FONT_NAME,
             font_size=dp(11),
             color=TEXT_MUTED,
@@ -1078,14 +1105,14 @@ class RecentCompletedPopup(Popup):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(14),
+            height=dp(16),
         )
-        lbl_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
-        info_box.add_widget(lbl_qty)
+        lbl_loc_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_loc_qty)
 
         row.add_widget(info_box)
 
-        # 원터치 라벨 재인쇄 버튼 (확인 팝업 연결)
+        # 원터치 라벨 재인쇄 버튼
         btn_reprint = StyledButton(
             text="[인쇄]",
             size_hint_x=None,
@@ -1462,7 +1489,6 @@ class NameEntryScreen(Screen):
             return
         app = App.get_running_app()
 
-        # 💡 작업자가 변경되면 기존 완료 이력 파일도 자동 초기화
         if app.user_real_name and app.user_real_name != name:
             clear_recent_history_file()
 
@@ -1476,19 +1502,13 @@ class MainMenuScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.layout = BoxLayout(
-            orientation="vertical", padding=dp(15), spacing=dp(10)
+            orientation="vertical", padding=dp(15), spacing=dp(8)
         )
         self.add_widget(self.layout)
 
     def on_enter(self, *args):
         self.layout.clear_widgets()
         app = App.get_running_app()
-
-        if not app.user_real_name:
-            app.user_real_name = app.load_saved_user_name() or ""
-            if not app.user_real_name:
-                self.manager.current = "name_entry"
-                return
 
         top_bar = BoxLayout(size_hint_y=None, height=dp(40))
         welcome_box = BoxLayout(orientation="vertical", size_hint_x=0.75)
@@ -1532,9 +1552,9 @@ class MainMenuScreen(Screen):
         dash_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(140),
+            height=dp(130),
             padding=dp(10),
-            spacing=dp(4),
+            spacing=dp(3),
         )
         with dash_card.canvas.before:
             Color(1, 1, 1, 1)
@@ -1685,13 +1705,85 @@ class MainMenuScreen(Screen):
         dash_card.add_widget(grid_tot)
 
         self.layout.add_widget(dash_card)
-        self.layout.add_widget(Widget(size_hint_y=None, height=dp(10)))
 
-        menu_box = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        # 💡 [v1.7.3] 폰트 깨짐 예방 나눔 기호(▶, ■, ●) 기반 2줄 정돈 레이아웃
+        perf_card = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            height=dp(52),
+            padding=(dp(10), dp(6)),
+            spacing=dp(2),
+        )
+        with perf_card.canvas.before:
+            Color(1, 1, 1, 1)
+            RoundedRectangle(
+                pos=perf_card.pos, size=perf_card.size, radius=[dp(10)]
+            )
+        perf_card.bind(
+            pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+            size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+        )
+
+        load_recent_history()
+        op_count = sum(
+            1
+            for task in g_recent_completed_tasks
+            if str(t(task, "장비", "")).strip() == "오더피커"
+        )
+        rc_count = sum(
+            1
+            for task in g_recent_completed_tasks
+            if str(t(task, "장비", "")).strip() == "리치"
+        )
+
+        # 1행: 오더피커 실적 및 페이스
+        op_speed = op_count
+        if op_speed < 30:
+            op_msg = f"시간당 {op_speed}개  [color=E65100]● 조금 더 높여볼까요?💪[/color]"
+        elif op_speed <= 34:
+            op_msg = f"시간당 {op_speed}개  [color=2E7D32]● 훌륭한 페이스![/color]"
+        else:
+            op_msg = f"시간당 {op_speed}개  [color=D32F2F]★ 최고의 속도! 완벽![/color]"
+
+        lbl_row1 = Label(
+            text=f"■ [b]오더피커[/b] : {op_count}건  │  {op_msg}",
+            font_name=FONT_NAME,
+            font_size=dp(11),
+            color=TEXT_DARK,
+            markup=True,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(18),
+        )
+        lbl_row1.bind(size=lambda i, s: setattr(i, "text_size", s))
+        perf_card.add_widget(lbl_row1)
+
+        # 2행: 리치 실적 및 페이스 (준비 라인)
+        lbl_row2 = Label(
+            text=f"■ [b]리    치[/b] : {rc_count}건  │  시간당 --개  [color=757575]● 기준 미설정[/color]",
+            font_name=FONT_NAME,
+            font_size=dp(11),
+            color=TEXT_DARK,
+            markup=True,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(18),
+        )
+        lbl_row2.bind(size=lambda i, s: setattr(i, "text_size", s))
+        perf_card.add_widget(lbl_row2)
+
+        self.layout.add_widget(perf_card)
+
+        # 메인 메뉴 버튼들
+        menu_box = BoxLayout(
+            orientation="vertical", spacing=dp(6), size_hint_y=None
+        )
         menu_box.bind(minimum_height=menu_box.setter("height"))
 
         def create_compact_menu_row(btn_widget):
-            row = BoxLayout(size_hint_y=None, height=dp(44))
+            row = BoxLayout(size_hint_y=None, height=dp(42))
             row.add_widget(Widget())
             row.add_widget(btn_widget)
             row.add_widget(Widget())
@@ -1751,20 +1843,20 @@ class MainMenuScreen(Screen):
             size_hint_x=None,
             width=dp(220),
         )
-        btn_recent.bind(on_press=lambda x: RecentCompletedPopup().open())
+        btn_recent.bind(on_press=lambda x: RecentCompletedPopup.open_safely())
         menu_box.add_widget(create_compact_menu_row(btn_recent))
 
         self.layout.add_widget(menu_box)
         self.layout.add_widget(Widget())
 
-        bottom_box = BoxLayout(size_hint_y=None, height=dp(36))
+        bottom_box = BoxLayout(size_hint_y=None, height=dp(34))
         bottom_box.add_widget(Widget())
         change_btn = StyledButton(
             text="작업자 이름 변경",
             size_hint_x=None,
-            width=dp(140),
+            width=dp(130),
             bg_color=get_color_from_hex("#FF7043"),
-            font_size=dp(12),
+            font_size=dp(11),
         )
         change_btn.bind(
             on_press=lambda x: setattr(self.manager, "current", "name_entry")
@@ -1852,7 +1944,9 @@ class SkuLocationSearchScreen(Screen):
                 text="< 메인",
                 size_hint_x=0.2,
                 bg_color=get_color_from_hex("#78909C"),
-                on_press=lambda x: setattr(self.manager, "current", "main_menu"),
+                on_press=lambda x: setattr(
+                    self.manager, "current", "main_menu"
+                ),
             )
         )
         top_bar.add_widget(
@@ -2013,7 +2107,7 @@ class SkuLocationSearchScreen(Screen):
             padding=dp(12),
             spacing=dp(6),
         )
-        
+
         table_height = dp(45) + dp(25) + (len(rows) * dp(22)) + dp(24)
         card.height = table_height
 
@@ -2184,7 +2278,11 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             display_tag = "[color=1E88E5][오더피커][/color]"
         else:
             display_tag = ""
-        self.ids.lbl_equip.text = f"[b]{display_tag}[/b]"
+
+        client_name = str(t(self.task_data, "고객사", t(self.task_data, "화주사", ""))).strip()
+        client_tag = f" [color=555555][{client_name}][/color]" if client_name else ""
+
+        self.ids.lbl_equip.text = f"[b]{display_tag}{client_tag}[/b]"
 
         existing_qty = safe_int(t(self.task_data, "기존수량", 0))
         req_qty = safe_int(t(self.task_data, "지시수량", 0))
@@ -2310,7 +2408,7 @@ class UnifiedReplenishScreen(Screen):
             font_size=dp(12),
             bg_color=get_color_from_hex("#43A047"),
         )
-        btn_recent.bind(on_press=lambda x: RecentCompletedPopup().open())
+        btn_recent.bind(on_press=lambda x: RecentCompletedPopup.open_safely())
 
         btn_refresh = StyledButton(
             text="갱신", size_hint_x=0.18, font_size=dp(12)
@@ -2483,7 +2581,7 @@ class UnifiedReplenishScreen(Screen):
 
         self.rv = RecycleView()
         self.rv_layout = RecycleBoxLayout(
-            default_size=(None, dp(205)),
+            default_size=(None, dp(218)),
             default_size_hint=(1, None),
             size_hint_y=None,
             orientation="vertical",
@@ -3392,6 +3490,7 @@ class TaskListScreen(Screen):
 
             label_info = {
                 "바코드": get_barcode_from_task(card_data),
+                "보관 로케이션": str(t(card_data, "기존로케이션", "N/A")),
                 "출고 로케이션": str(t(card_data, "보충로케이션", "N/A")),
                 "긴급여부": (t(card_data, "긴급여부") == "Y"),
                 "송장전용": is_invoice_only,
@@ -3448,7 +3547,6 @@ class TaskListScreen(Screen):
             "비고": updated_remarks,
         }
 
-        # 💡 [v1.7.1] 완료 처리 시 이력 파일 추가 및 로컬 영구 저장
         completed_record = dict(card.task_data)
         completed_record.update(updates)
         g_recent_completed_tasks.append(completed_record)
@@ -4124,6 +4222,7 @@ class BluetoothPrinter:
 
         try:
             barcode_suffix = label_info.get("바코드", "N/A")[-6:]
+            from_loc = label_info.get("보관 로케이션", "N/A")
             loc_raw = label_info.get("출고 로케이션", "N/A")
             loc1 = loc_raw.split("-", 1)[0] if "-" in loc_raw else loc_raw
             loc2 = loc_raw.split("-", 1)[1] if "-" in loc_raw else ""
@@ -4137,9 +4236,10 @@ class BluetoothPrinter:
             if is_invoice_only:
                 tag_str += "[송장만]"
 
-            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 20 50 {barcode_suffix}\r\n"
+            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 20 [보관] {from_loc}\r\n"
+            cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 60 {barcode_suffix}\r\n"
             if tag_str:
-                cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 50 {tag_str}\r\nLEFT\r\n"
+                cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 60 {tag_str}\r\nLEFT\r\n"
 
             cmd += f"LINE 20 150 556 150 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 220 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 410 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
@@ -4203,7 +4303,7 @@ Builder.load_string(
             id: task_list_rv
             viewclass: 'UnifiedTaskCard'
             RecycleBoxLayout:
-                default_size: None, dp(205)
+                default_size: None, dp(218)
                 default_size_hint: 1, None
                 size_hint_y: None
                 height: self.minimum_height
@@ -4235,7 +4335,7 @@ Builder.load_string(
             halign: 'left'
             valign: 'middle'
             markup: True
-            size_hint_x: 0.35
+            size_hint_x: 0.45
             text_size: self.width, None
         Label:
             id: lbl_stock_info
@@ -4245,7 +4345,7 @@ Builder.load_string(
             halign: 'right'
             valign: 'middle'
             markup: True
-            size_hint_x: 0.55
+            size_hint_x: 0.45
             text_size: self.width, None
         CheckBox:
             id: box_check
@@ -4378,8 +4478,7 @@ class MainApp(App):
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
 
-        if self.user_real_name:
-            sm.current = "main_menu"
+        sm.current = "name_entry"
 
         return sm
 
