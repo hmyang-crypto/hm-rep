@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.7.3"
+CURRENT_VERSION = "1.7.5"
 
 
 def check_and_apply_update():
@@ -184,7 +184,6 @@ DEFAULT_FONT_STYLE = {
 }
 Window.clearcolor = BG_GRAY
 
-# 내 최근 완료 이력 메모리 저장소
 g_recent_completed_tasks = []
 
 
@@ -1016,11 +1015,12 @@ class RecentCompletedPopup(Popup):
         popup = cls()
         popup.open()
 
+    # 💡 [v1.7.5] 세로 높이를 dp(110)으로 확대하여 잘림 원천 해결
     def _create_compact_history_row(self, task_data):
         row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(82),
+            height=dp(110),
             padding=dp(8),
             spacing=dp(6),
         )
@@ -1085,19 +1085,33 @@ class RecentCompletedPopup(Popup):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(14),
+            height=dp(16),
         )
         lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_bc)
 
-        # 4행: 보관 ➔ 출고 로케이션 및 수량
+        # 4행: 보관 ➔ 출고 로케이션
         from_loc = str(t(task_data, "기존로케이션", "-")).strip()
         to_loc = str(t(task_data, "보충로케이션", "-")).strip()
+        lbl_loc = Label(
+            text=f"위치: [color=D32F2F][b]{from_loc}[/b][/color] ➔ [color=1E88E5][b]{to_loc}[/b][/color]",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            color=TEXT_DARK,
+            markup=True,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(18),
+        )
+        lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_loc)
+
+        # 5행: 수량 정보
         req_q = t(task_data, "지시수량", 0)
         conf_q = t(task_data, "확인수량", 0)
-
-        lbl_loc_qty = Label(
-            text=f"위치: [color=D32F2F]{from_loc}[/color]➔[color=1E88E5]{to_loc}[/color] | 수량: {req_q}/[color=2E7D32][b]{conf_q}[/b][/color]",
+        lbl_qty = Label(
+            text=f"수량: 지시 {req_q}개 / [color=2E7D32][b]확인 {conf_q}개[/b][/color]",
             font_name=FONT_NAME,
             font_size=dp(11),
             color=TEXT_MUTED,
@@ -1107,8 +1121,8 @@ class RecentCompletedPopup(Popup):
             size_hint_y=None,
             height=dp(16),
         )
-        lbl_loc_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
-        info_box.add_widget(lbl_loc_qty)
+        lbl_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
+        info_box.add_widget(lbl_qty)
 
         row.add_widget(info_box)
 
@@ -1706,12 +1720,11 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(dash_card)
 
-        # 💡 [v1.7.3] 폰트 깨짐 예방 나눔 기호(▶, ■, ●) 기반 2줄 정돈 레이아웃
         perf_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
             height=dp(52),
-            padding=(dp(10), dp(6)),
+            padding=(dp(10), dp(4)),
             spacing=dp(2),
         )
         with perf_card.canvas.before:
@@ -1735,18 +1748,32 @@ class MainMenuScreen(Screen):
             for task in g_recent_completed_tasks
             if str(t(task, "장비", "")).strip() == "리치"
         )
+        tot_my_count = len(g_recent_completed_tasks)
 
-        # 1행: 오더피커 실적 및 페이스
+        lbl_title_row = Label(
+            text=f"▶ [b]{app.user_real_name}님의 오늘 누적 처리량 : 총 {tot_my_count}건[/b]",
+            font_name=FONT_NAME,
+            font_size=dp(11),
+            color=PRIMARY_BLUE,
+            markup=True,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(15),
+        )
+        lbl_title_row.bind(size=lambda i, s: setattr(i, "text_size", s))
+        perf_card.add_widget(lbl_title_row)
+
         op_speed = op_count
         if op_speed < 30:
-            op_msg = f"시간당 {op_speed}개  [color=E65100]● 조금 더 높여볼까요?💪[/color]"
+            op_msg = f"시간당 {op_speed}개 (목표 30개)  [color=E65100]● 조금 더 높여볼까요?💪[/color]"
         elif op_speed <= 34:
-            op_msg = f"시간당 {op_speed}개  [color=2E7D32]● 훌륭한 페이스![/color]"
+            op_msg = f"시간당 {op_speed}개 (목표 30개)  [color=2E7D32]● 훌륭한 페이스![/color]"
         else:
-            op_msg = f"시간당 {op_speed}개  [color=D32F2F]★ 최고의 속도! 완벽![/color]"
+            op_msg = f"시간당 {op_speed}개 (목표 30개)  [color=D32F2F]★ 최고의 속도! 완벽![/color]"
 
         lbl_row1 = Label(
-            text=f"■ [b]오더피커[/b] : {op_count}건  │  {op_msg}",
+            text=f"  ■ 오더피커 : {op_count}건  │  {op_msg}",
             font_name=FONT_NAME,
             font_size=dp(11),
             color=TEXT_DARK,
@@ -1754,14 +1781,13 @@ class MainMenuScreen(Screen):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(18),
+            height=dp(15),
         )
         lbl_row1.bind(size=lambda i, s: setattr(i, "text_size", s))
         perf_card.add_widget(lbl_row1)
 
-        # 2행: 리치 실적 및 페이스 (준비 라인)
         lbl_row2 = Label(
-            text=f"■ [b]리    치[/b] : {rc_count}건  │  시간당 --개  [color=757575]● 기준 미설정[/color]",
+            text=f"  ■ 리    치 : {rc_count}건  │  시간당 --개 (목표 미정)  [color=757575]● 기준 미설정[/color]",
             font_name=FONT_NAME,
             font_size=dp(11),
             color=TEXT_DARK,
@@ -1769,7 +1795,7 @@ class MainMenuScreen(Screen):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(18),
+            height=dp(15),
         )
         lbl_row2.bind(size=lambda i, s: setattr(i, "text_size", s))
         perf_card.add_widget(lbl_row2)
