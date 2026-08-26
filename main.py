@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.7.8"
+CURRENT_VERSION = "1.7.9"
 
 
 def check_and_apply_update():
@@ -1034,7 +1034,6 @@ class RecentCompletedPopup(Popup):
 
         info_box = BoxLayout(orientation="vertical", spacing=dp(2))
 
-        # 1행: 장비 / 완료시각
         equip_name = str(t(task_data, "장비", "N/A")).strip()
         comp_time = str(
             t(task_data, "완료일시", datetime.now().strftime("%H:%M"))
@@ -1055,7 +1054,6 @@ class RecentCompletedPopup(Popup):
         lbl_top.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_top)
 
-        # 2행: 상품명
         prod_name = str(t(task_data, "상품명", "N/A")).strip()
         lbl_prod = Label(
             text=f"[b]{prod_name}[/b]",
@@ -1073,7 +1071,6 @@ class RecentCompletedPopup(Popup):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_prod)
 
-        # 3행: 바코드
         bc_val = get_barcode_from_task(task_data)
         lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{bc_val}[/color][/b]",
@@ -1089,7 +1086,6 @@ class RecentCompletedPopup(Popup):
         lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_bc)
 
-        # 4행: 보관 ➔ 출고 로케이션
         from_loc = str(t(task_data, "기존로케이션", "-")).strip()
         to_loc = str(t(task_data, "보충로케이션", "-")).strip()
         lbl_loc = Label(
@@ -1106,7 +1102,6 @@ class RecentCompletedPopup(Popup):
         lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_loc)
 
-        # 5행: 수량 정보
         req_q = t(task_data, "지시수량", 0)
         conf_q = t(task_data, "확인수량", 0)
         lbl_qty = Label(
@@ -1125,7 +1120,6 @@ class RecentCompletedPopup(Popup):
 
         row.add_widget(info_box)
 
-        # 원터치 라벨 재인쇄 버튼
         btn_reprint = StyledButton(
             text="[인쇄]",
             size_hint_x=None,
@@ -1719,11 +1713,11 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(dash_card)
 
-        # 💡 [v1.7.8] 실적 단 높이를 dp(68)로 완벽 확보하여 잘림 및 오더피커 미출력 문제 원천 예방
+        # 💡 [v1.7.9] 가로 밀림 예방: 간결한 텍스트 및 한 줄 고정 라인
         perf_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(68),
+            height=dp(62),
             padding=(dp(10), dp(4)),
             spacing=dp(2),
         )
@@ -1738,17 +1732,25 @@ class MainMenuScreen(Screen):
         )
 
         load_recent_history()
-        op_count = sum(
-            1
-            for task in g_recent_completed_tasks
-            if "오더" in str(t(task, "장비", "")).strip() or "피커" in str(t(task, "장비", "")).strip() or str(t(task, "장비", "")).strip() == ""
-        )
-        rc_count = sum(
-            1
-            for task in g_recent_completed_tasks
-            if str(t(task, "장비", "")).strip() == "리치"
-        )
-        tot_my_count = len(g_recent_completed_tasks)
+        user_name_lower = str(app.user_real_name).strip().lower()
+
+        # 구글 시트 전체 실데이터 기반 완벽 집계 연동
+        all_sheet_tasks = get_sheet_data(TASK_SHEET_NAME, force_refresh=False)
+        op_count = 0
+        rc_count = 0
+
+        for task in all_sheet_tasks:
+            st = str(t(task, "상태")).strip()
+            worker = str(t(task, "보충담당자", t(task, "작업 담당자", ""))).strip().lower()
+            eq = str(t(task, "장비")).strip()
+
+            if st in ["보충완료", "최종완료", "완료"] and worker == user_name_lower:
+                if eq == "리치":
+                    rc_count += 1
+                else:
+                    op_count += 1
+
+        tot_my_count = op_count + rc_count
 
         self.lbl_title_row = Label(
             text=f"▶ [b]{app.user_real_name}님의 오늘 누적 처리량 : 총 {tot_my_count}건[/b]",
@@ -1766,20 +1768,22 @@ class MainMenuScreen(Screen):
 
         op_speed = op_count
         if op_speed < 30:
-            op_msg = f"시간당 {op_speed}개 (목표 30개)  [color=E65100]● 조금 더 높여볼까요?💪[/color]"
+            op_msg = f"{op_speed}개/h (목표30) [color=E65100]● 속도 UP!💪[/color]"
         elif op_speed <= 34:
-            op_msg = f"시간당 {op_speed}개 (목표 30개)  [color=2E7D32]● 훌륭한 페이스![/color]"
+            op_msg = f"{op_speed}개/h (목표30) [color=2E7D32]● 훌륭해요!👏[/color]"
         else:
-            op_msg = f"시간당 {op_speed}개 (목표 30개)  [color=D32F2F]★ 최고의 속도! 완벽![/color]"
+            op_msg = f"{op_speed}개/h (목표30) [color=D32F2F]★ 최고의 속도!⭐[/color]"
 
         self.lbl_row1 = Label(
-            text=f"  ■ 오더피커 : {op_count}건  │  {op_msg}",
+            text=f"  ■ 오더피커: {op_count}건 │ {op_msg}",
             font_name=FONT_NAME,
-            font_size=dp(11),
+            font_size=dp(10),
             color=TEXT_DARK,
             markup=True,
             halign="left",
             valign="middle",
+            shorten=True,
+            shorten_from="right",
             size_hint_y=None,
             height=dp(18),
         )
@@ -1787,13 +1791,15 @@ class MainMenuScreen(Screen):
         perf_card.add_widget(self.lbl_row1)
 
         self.lbl_row2 = Label(
-            text=f"  ■ 리    치 : {rc_count}건  │  시간당 --개 (목표 미정)  [color=757575]● 기준 미설정[/color]",
+            text=f"  ■ 리    치: {rc_count}건 │ --개/h (목표 미정) [color=757575]● 기준 미설정[/color]",
             font_name=FONT_NAME,
-            font_size=dp(11),
+            font_size=dp(10),
             color=TEXT_DARK,
             markup=True,
             halign="left",
             valign="middle",
+            shorten=True,
+            shorten_from="right",
             size_hint_y=None,
             height=dp(18),
         )
