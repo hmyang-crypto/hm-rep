@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.7.7"
+CURRENT_VERSION = "1.7.8"
 
 
 def check_and_apply_update():
@@ -607,7 +607,7 @@ class ZoneMultiSelectDropDown(DropDown):
                 )
             item_box.bind(
                 pos=lambda i, p, b=bg: setattr(b, "pos", p),
-                size=lambda i, s, b=bg: setattr(b, "size", s),
+                size=lambda i, s: setattr(b, "size", s),
             )
 
             lbl = Label(
@@ -1719,11 +1719,11 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(dash_card)
 
-        # 💡 [v1.7.6] 실적 단 높이를 dp(62)로 확충하여 오더피커 잘림 현상 해결
+        # 💡 [v1.7.8] 실적 단 높이를 dp(68)로 완벽 확보하여 잘림 및 오더피커 미출력 문제 원천 예방
         perf_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(62),
+            height=dp(68),
             padding=(dp(10), dp(4)),
             spacing=dp(2),
         )
@@ -1741,7 +1741,7 @@ class MainMenuScreen(Screen):
         op_count = sum(
             1
             for task in g_recent_completed_tasks
-            if str(t(task, "장비", "")).strip() == "오더피커"
+            if "오더" in str(t(task, "장비", "")).strip() or "피커" in str(t(task, "장비", "")).strip() or str(t(task, "장비", "")).strip() == ""
         )
         rc_count = sum(
             1
@@ -1750,7 +1750,7 @@ class MainMenuScreen(Screen):
         )
         tot_my_count = len(g_recent_completed_tasks)
 
-        lbl_title_row = Label(
+        self.lbl_title_row = Label(
             text=f"▶ [b]{app.user_real_name}님의 오늘 누적 처리량 : 총 {tot_my_count}건[/b]",
             font_name=FONT_NAME,
             font_size=dp(11),
@@ -1761,8 +1761,8 @@ class MainMenuScreen(Screen):
             size_hint_y=None,
             height=dp(18),
         )
-        lbl_title_row.bind(size=lambda i, s: setattr(i, "text_size", s))
-        perf_card.add_widget(lbl_title_row)
+        self.lbl_title_row.bind(size=lambda i, s: setattr(i, "text_size", s))
+        perf_card.add_widget(self.lbl_title_row)
 
         op_speed = op_count
         if op_speed < 30:
@@ -1772,7 +1772,7 @@ class MainMenuScreen(Screen):
         else:
             op_msg = f"시간당 {op_speed}개 (목표 30개)  [color=D32F2F]★ 최고의 속도! 완벽![/color]"
 
-        lbl_row1 = Label(
+        self.lbl_row1 = Label(
             text=f"  ■ 오더피커 : {op_count}건  │  {op_msg}",
             font_name=FONT_NAME,
             font_size=dp(11),
@@ -1783,10 +1783,10 @@ class MainMenuScreen(Screen):
             size_hint_y=None,
             height=dp(18),
         )
-        lbl_row1.bind(size=lambda i, s: setattr(i, "text_size", s))
-        perf_card.add_widget(lbl_row1)
+        self.lbl_row1.bind(size=lambda i, s: setattr(i, "text_size", s))
+        perf_card.add_widget(self.lbl_row1)
 
-        lbl_row2 = Label(
+        self.lbl_row2 = Label(
             text=f"  ■ 리    치 : {rc_count}건  │  시간당 --개 (목표 미정)  [color=757575]● 기준 미설정[/color]",
             font_name=FONT_NAME,
             font_size=dp(11),
@@ -1797,8 +1797,8 @@ class MainMenuScreen(Screen):
             size_hint_y=None,
             height=dp(18),
         )
-        lbl_row2.bind(size=lambda i, s: setattr(i, "text_size", s))
-        perf_card.add_widget(lbl_row2)
+        self.lbl_row2.bind(size=lambda i, s: setattr(i, "text_size", s))
+        perf_card.add_widget(self.lbl_row2)
 
         self.layout.add_widget(perf_card)
 
