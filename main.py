@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.7.5"
+CURRENT_VERSION = "1.7.6"
 
 
 def check_and_apply_update():
@@ -1015,7 +1015,6 @@ class RecentCompletedPopup(Popup):
         popup = cls()
         popup.open()
 
-    # 💡 [v1.7.5] 세로 높이를 dp(110)으로 확대하여 잘림 원천 해결
     def _create_compact_history_row(self, task_data):
         row = BoxLayout(
             orientation="horizontal",
@@ -1720,10 +1719,11 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(dash_card)
 
+        # 💡 [v1.7.6] 실적 단 높이를 dp(62)로 확충하여 오더피커 잘림 현상 해결
         perf_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(52),
+            height=dp(62),
             padding=(dp(10), dp(4)),
             spacing=dp(2),
         )
@@ -1759,7 +1759,7 @@ class MainMenuScreen(Screen):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(15),
+            height=dp(18),
         )
         lbl_title_row.bind(size=lambda i, s: setattr(i, "text_size", s))
         perf_card.add_widget(lbl_title_row)
@@ -1781,7 +1781,7 @@ class MainMenuScreen(Screen):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(15),
+            height=dp(18),
         )
         lbl_row1.bind(size=lambda i, s: setattr(i, "text_size", s))
         perf_card.add_widget(lbl_row1)
@@ -1795,7 +1795,7 @@ class MainMenuScreen(Screen):
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(15),
+            height=dp(18),
         )
         lbl_row2.bind(size=lambda i, s: setattr(i, "text_size", s))
         perf_card.add_widget(lbl_row2)
