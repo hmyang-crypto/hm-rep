@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.5"
+CURRENT_VERSION = "1.8.8"
 
 
 def check_and_apply_update():
@@ -544,7 +544,6 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
-# 💡 [v1.8.5] 터치 이벤트를 완전히 소비하여 화면 겹침/튕김 원천 예방하는 드롭다운
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -603,7 +602,7 @@ class ZoneMultiSelectDropDown(DropDown):
         for zone_name, count in zone_counts_dict.items():
             is_active = zone_name in selected_zones or "전체" in selected_zones
 
-            item_box = TouchableBox(
+            item_box = BoxLayout(
                 orientation="horizontal",
                 size_hint_y=None,
                 height=dp(34),
@@ -617,7 +616,7 @@ class ZoneMultiSelectDropDown(DropDown):
                 )
             item_box.bind(
                 pos=lambda i, p, b=bg: setattr(b, "pos", p),
-                size=lambda i, s, b=bg: setattr(b, "size", s),
+                size=lambda i, s: setattr(b, "size", s),
             )
 
             lbl = Label(
@@ -640,7 +639,6 @@ class ZoneMultiSelectDropDown(DropDown):
             item_box.add_widget(lbl)
             item_box.add_widget(chk)
 
-            # 터치 이벤트 완전 흡수 (Return True)
             item_box.bind(
                 on_release=lambda inst, c=chk: setattr(c, "active", not c.active)
             )
@@ -1030,6 +1028,7 @@ class RecentCompletedPopup(Popup):
         popup = cls()
         popup.open()
 
+    # 💡 [v1.8.8] N열(완료일시) 기준시간 가져오기 적용
     def _create_compact_history_row(self, task_data):
         row = BoxLayout(
             orientation="horizontal",
@@ -1049,7 +1048,7 @@ class RecentCompletedPopup(Popup):
 
         info_box = BoxLayout(orientation="vertical", spacing=dp(2))
 
-        # 1행: 장비 / 완료시각
+        # 1행: 장비 / 완료시각 (N열 기준)
         equip_name = str(t(task_data, "장비", "N/A")).strip()
         comp_time = str(
             t(task_data, "완료일시", datetime.now().strftime("%H:%M"))
@@ -3711,6 +3710,7 @@ class AdminDashboardScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.all_tasks = []
+        self.raw_inventory = []
         self.layout = BoxLayout(
             orientation="vertical", padding=dp(10), spacing=dp(10)
         )
@@ -3812,7 +3812,9 @@ class AdminDashboardScreen(Screen):
     def _async_fetch_all(self):
         try:
             tasks = get_sheet_data(TASK_SHEET_NAME, force_refresh=True)
+            inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
             self.all_tasks = tasks
+            self.raw_inventory = inventory
             Clock.schedule_once(lambda dt: self.search_tasks())
         except Exception as e:
             Clock.schedule_once(
@@ -3945,14 +3947,24 @@ class AdminDashboardScreen(Screen):
                 lambda dt: App.get_running_app().dismiss_loading_popup()
             )
 
+    # 💡 [v1.8.8] N열 완료일시 및 간결한 [10분 오차] 문구 적용
     def _create_dashboard_card(self, task):
         status = str(t(task, "상태", "대기")).strip()
         is_urgent = t(task, "긴급여부") == "Y"
+        barcode_val = get_barcode_from_task(task)
+
+        out_stock_qty = 0
+        if barcode_val != "N/A" and self.raw_inventory:
+            for row in self.raw_inventory:
+                loc_type = str(t(row, "로케이션 유형", "")).strip()
+                bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip()
+                if loc_type == "B2C출고" and bc == barcode_val:
+                    out_stock_qty += safe_int(t(row, "로케이션 수량", 0))
 
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(130),
+            height=dp(132),
             padding=dp(10),
             spacing=dp(3),
         )
@@ -4029,7 +4041,6 @@ class AdminDashboardScreen(Screen):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         card.add_widget(lbl_prod)
 
-        barcode_val = get_barcode_from_task(task)
         lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{barcode_val}[/color][/b]",
             font_name=FONT_NAME,
@@ -4046,9 +4057,9 @@ class AdminDashboardScreen(Screen):
 
         to_loc = str(t(task, "보충로케이션", "-")).strip()
         lbl_info = Label(
-            text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]",
+            text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]  │  📦 B2C출고재고: [b][color=D32F2F]{out_stock_qty}개[/color][/b] [color=757575](10분 오차)[/color]",
             font_name=FONT_NAME,
-            font_size=dp(13),
+            font_size=dp(11),
             color=TEXT_DARK,
             markup=True,
             halign="left",
@@ -4061,9 +4072,8 @@ class AdminDashboardScreen(Screen):
 
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
-        raw_time = str(
-            t(task, "최종완료일시", t(task, "완료일시", ""))
-        ).strip()
+        # N열 완료일시 우선 참조
+        raw_time = str(t(task, "완료일시", t(task, "최종완료일시", ""))).strip()
 
         time_str = ""
         if status in ["보충완료", "최종완료", "완료"] and raw_time:
