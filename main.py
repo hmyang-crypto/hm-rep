@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.1"
+CURRENT_VERSION = "1.8.9.2"
 
 
 def check_and_apply_update():
@@ -4076,7 +4076,7 @@ class AdminDashboardScreen(Screen):
 
         to_loc = str(t(task, "보충로케이션", "-")).strip()
         lbl_info = Label(
-            text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]  │  📦 B2C출고재고: [b][color=D32F2F]{out_stock_qty}개[/color][/b] [color=757575](10분 오차)[/color]",
+            text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]  │  📦 B2C출고재고: [b][color=D32F2F]{out_stock_qty}개[/color][/b] [color=757575](정확한 수량 X / 참고용)[/color]",
             font_name=FONT_NAME,
             font_size=dp(11),
             color=TEXT_DARK,
