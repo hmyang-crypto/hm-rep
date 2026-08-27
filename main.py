@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.4"
+CURRENT_VERSION = "1.8.5"
 
 
 def check_and_apply_update():
@@ -544,6 +544,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
+# 💡 [v1.8.5] 터치 이벤트를 완전히 소비하여 화면 겹침/튕김 원천 예방하는 드롭다운
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -602,7 +603,7 @@ class ZoneMultiSelectDropDown(DropDown):
         for zone_name, count in zone_counts_dict.items():
             is_active = zone_name in selected_zones or "전체" in selected_zones
 
-            item_box = BoxLayout(
+            item_box = TouchableBox(
                 orientation="horizontal",
                 size_hint_y=None,
                 height=dp(34),
@@ -616,7 +617,7 @@ class ZoneMultiSelectDropDown(DropDown):
                 )
             item_box.bind(
                 pos=lambda i, p, b=bg: setattr(b, "pos", p),
-                size=lambda i, s: setattr(b, "size", s),
+                size=lambda i, s, b=bg: setattr(b, "size", s),
             )
 
             lbl = Label(
@@ -639,10 +640,10 @@ class ZoneMultiSelectDropDown(DropDown):
             item_box.add_widget(lbl)
             item_box.add_widget(chk)
 
-            def _toggle_chk(chk_obj, *args):
-                chk_obj.active = not chk_obj.active
-
-            item_box.bind(on_touch_down=lambda inst, touch, c=chk: _toggle_chk(c) if inst.collide_point(*touch.pos) else False)
+            # 터치 이벤트 완전 흡수 (Return True)
+            item_box.bind(
+                on_release=lambda inst, c=chk: setattr(c, "active", not c.active)
+            )
             chk.bind(active=self._on_check_change)
 
             grid.add_widget(item_box)
@@ -669,6 +670,12 @@ class ZoneMultiSelectDropDown(DropDown):
         container.add_widget(btn_apply)
 
         self.add_widget(container)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            super().on_touch_down(touch)
+            return True
+        return super().on_touch_down(touch)
 
     def _on_check_change(self, checkbox, value):
         self._update_toggle_all_btn_text()
@@ -3466,7 +3473,6 @@ class TaskListScreen(Screen):
             is_number=True,
         )
 
-    # 💡 [v1.8.4] 비고 작성 시 메모리 임시 저장 (완료 시 일괄 구글 시트 반영)
     def prompt_for_remarks(self, card):
 
         def on_confirm_rem(text):
