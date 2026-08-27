@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.7.9"
+CURRENT_VERSION = "1.8.1"
 
 
 def check_and_apply_update():
@@ -535,6 +535,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
+# 💡 [v1.8.1] 안정화된 존 선택 드롭다운 (터치 이벤트 오류 원천 차단)
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -593,7 +594,7 @@ class ZoneMultiSelectDropDown(DropDown):
         for zone_name, count in zone_counts_dict.items():
             is_active = zone_name in selected_zones or "전체" in selected_zones
 
-            item_box = TouchableBox(
+            item_box = BoxLayout(
                 orientation="horizontal",
                 size_hint_y=None,
                 height=dp(34),
@@ -607,7 +608,7 @@ class ZoneMultiSelectDropDown(DropDown):
                 )
             item_box.bind(
                 pos=lambda i, p, b=bg: setattr(b, "pos", p),
-                size=lambda i, s: setattr(b, "size", s),
+                size=lambda i, s, b=bg: setattr(b, "size", s),
             )
 
             lbl = Label(
@@ -630,11 +631,11 @@ class ZoneMultiSelectDropDown(DropDown):
             item_box.add_widget(lbl)
             item_box.add_widget(chk)
 
-            item_box.bind(
-                on_press=lambda instance, c=chk: setattr(
-                    c, "active", not c.active
-                )
-            )
+            # 안전한 토글 처리
+            def _toggle_chk(chk_obj, *args):
+                chk_obj.active = not chk_obj.active
+
+            item_box.bind(on_touch_down=lambda inst, touch, c=chk: _toggle_chk(c) if inst.collide_point(*touch.pos) else False)
             chk.bind(active=self._on_check_change)
 
             grid.add_widget(item_box)
@@ -1034,6 +1035,7 @@ class RecentCompletedPopup(Popup):
 
         info_box = BoxLayout(orientation="vertical", spacing=dp(2))
 
+        # 1행: 장비 / 완료시각
         equip_name = str(t(task_data, "장비", "N/A")).strip()
         comp_time = str(
             t(task_data, "완료일시", datetime.now().strftime("%H:%M"))
@@ -1054,6 +1056,7 @@ class RecentCompletedPopup(Popup):
         lbl_top.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_top)
 
+        # 2행: 상품명
         prod_name = str(t(task_data, "상품명", "N/A")).strip()
         lbl_prod = Label(
             text=f"[b]{prod_name}[/b]",
@@ -1071,6 +1074,7 @@ class RecentCompletedPopup(Popup):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_prod)
 
+        # 3행: 바코드
         bc_val = get_barcode_from_task(task_data)
         lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{bc_val}[/color][/b]",
@@ -1086,6 +1090,7 @@ class RecentCompletedPopup(Popup):
         lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_bc)
 
+        # 4행: 보관 ➔ 출고 로케이션
         from_loc = str(t(task_data, "기존로케이션", "-")).strip()
         to_loc = str(t(task_data, "보충로케이션", "-")).strip()
         lbl_loc = Label(
@@ -1102,6 +1107,7 @@ class RecentCompletedPopup(Popup):
         lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_loc)
 
+        # 5행: 수량 정보
         req_q = t(task_data, "지시수량", 0)
         conf_q = t(task_data, "확인수량", 0)
         lbl_qty = Label(
@@ -1120,6 +1126,7 @@ class RecentCompletedPopup(Popup):
 
         row.add_widget(info_box)
 
+        # 원터치 라벨 재인쇄 버튼
         btn_reprint = StyledButton(
             text="[인쇄]",
             size_hint_x=None,
@@ -1713,11 +1720,10 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(dash_card)
 
-        # 💡 [v1.7.9] 가로 밀림 예방: 간결한 텍스트 및 한 줄 고정 라인
         perf_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(62),
+            height=dp(68),
             padding=(dp(10), dp(4)),
             spacing=dp(2),
         )
@@ -1734,7 +1740,6 @@ class MainMenuScreen(Screen):
         load_recent_history()
         user_name_lower = str(app.user_real_name).strip().lower()
 
-        # 구글 시트 전체 실데이터 기반 완벽 집계 연동
         all_sheet_tasks = get_sheet_data(TASK_SHEET_NAME, force_refresh=False)
         op_count = 0
         rc_count = 0
@@ -1752,6 +1757,22 @@ class MainMenuScreen(Screen):
 
         tot_my_count = op_count + rc_count
 
+        now = datetime.now()
+        if now.hour < 4:
+            shift_start = (now - timedelta(days=1)).replace(hour=19, minute=0, second=0, microsecond=0)
+        elif now.hour >= 18:
+            shift_start = now.replace(hour=19, minute=0, second=0, microsecond=0)
+        else:
+            shift_start = now.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        elapsed_seconds = (now - shift_start).total_seconds()
+        if elapsed_seconds <= 0:
+            elapsed_hours = 0.5
+        else:
+            elapsed_hours = max(0.5, elapsed_seconds / 3600.0)
+
+        op_pace = round(op_count / elapsed_hours, 1)
+
         self.lbl_title_row = Label(
             text=f"▶ [b]{app.user_real_name}님의 오늘 누적 처리량 : 총 {tot_my_count}건[/b]",
             font_name=FONT_NAME,
@@ -1766,13 +1787,12 @@ class MainMenuScreen(Screen):
         self.lbl_title_row.bind(size=lambda i, s: setattr(i, "text_size", s))
         perf_card.add_widget(self.lbl_title_row)
 
-        op_speed = op_count
-        if op_speed < 30:
-            op_msg = f"{op_speed}개/h (목표30) [color=E65100]● 속도 UP!💪[/color]"
-        elif op_speed <= 34:
-            op_msg = f"{op_speed}개/h (목표30) [color=2E7D32]● 훌륭해요!👏[/color]"
+        if op_pace < 30.0:
+            op_msg = f"{op_pace}개/h (목표30) [color=E65100]● 속도 UP!💪[/color]"
+        elif op_pace <= 34.0:
+            op_msg = f"{op_pace}개/h (목표30) [color=2E7D32]● 훌륭해요!👏[/color]"
         else:
-            op_msg = f"{op_speed}개/h (목표30) [color=D32F2F]★ 최고의 속도!⭐[/color]"
+            op_msg = f"{op_pace}개/h (목표30) [color=D32F2F]★ 최고의 속도!⭐[/color]"
 
         self.lbl_row1 = Label(
             text=f"  ■ 오더피커: {op_count}건 │ {op_msg}",
@@ -2657,71 +2677,78 @@ class UnifiedReplenishScreen(Screen):
         self.sort_asc = True
         self.btn_sort.text = "▲"
 
+    # 💡 [v1.8.1] 예외 처리 강화된 안전한 존 선택 팝업 오픈
     def open_from_zone_popup(self, instance):
-        app = App.get_running_app()
-        user_name = str(app.user_real_name).strip().lower()
+        try:
+            app = App.get_running_app()
+            user_name = str(app.user_real_name).strip().lower()
 
-        from_counts = Counter()
-        for task in self.raw_all_tasks:
-            status = str(t(task, "상태")).strip()
-            assignee = str(t(task, "작업 담당자")).strip().lower()
-            if self.active_main_tab == "PENDING":
-                if status != "대기" or assignee != "":
-                    continue
-            else:
-                if status != "작업중" or assignee != user_name:
-                    continue
+            from_counts = Counter()
+            for task in self.raw_all_tasks:
+                status = str(t(task, "상태")).strip()
+                assignee = str(t(task, "작업 담당자")).strip().lower()
+                if self.active_main_tab == "PENDING":
+                    if status != "대기" or assignee != "":
+                        continue
+                else:
+                    if status != "작업중" or assignee != user_name:
+                        continue
 
-            loc = str(t(task, "기존로케이션")).strip().upper()
-            if loc:
-                from_counts[f"{loc[0]}존"] += 1
+                loc = str(t(task, "기존로케이션")).strip().upper()
+                if loc:
+                    from_counts[f"{loc[0]}존"] += 1
 
-        def apply_from_zones(selected_set):
-            self.selected_from_zones = selected_set
-            if "전체" in selected_set or not selected_set:
-                self.btn_from_zone.text = "보관: 전체"
-            else:
-                zones_str = ",".join(sorted(selected_set)).replace("존", "")
-                self.btn_from_zone.text = f"보관: {zones_str}"
-            self.apply_filters_and_render()
+            def apply_from_zones(selected_set):
+                self.selected_from_zones = selected_set
+                if "전체" in selected_set or not selected_set:
+                    self.btn_from_zone.text = "보관: 전체"
+                else:
+                    zones_str = ",".join(sorted(selected_set)).replace("존", "")
+                    self.btn_from_zone.text = f"보관: {zones_str}"
+                self.apply_filters_and_render()
 
-        dropdown = ZoneMultiSelectDropDown(
-            dict(sorted(from_counts.items())), self.selected_from_zones, apply_from_zones
-        )
-        dropdown.open(instance)
+            dropdown = ZoneMultiSelectDropDown(
+                dict(sorted(from_counts.items())), self.selected_from_zones, apply_from_zones
+            )
+            dropdown.open(instance)
+        except Exception as e:
+            print(f"⚠️ 보관 존 드롭다운 오픈 에러: {e}")
 
     def open_to_zone_popup(self, instance):
-        app = App.get_running_app()
-        user_name = str(app.user_real_name).strip().lower()
+        try:
+            app = App.get_running_app()
+            user_name = str(app.user_real_name).strip().lower()
 
-        to_counts = Counter()
-        for task in self.raw_all_tasks:
-            status = str(t(task, "상태")).strip()
-            assignee = str(t(task, "작업 담당자")).strip().lower()
-            if self.active_main_tab == "PENDING":
-                if status != "대기" or assignee != "":
-                    continue
-            else:
-                if status != "작업중" or assignee != user_name:
-                    continue
+            to_counts = Counter()
+            for task in self.raw_all_tasks:
+                status = str(t(task, "상태")).strip()
+                assignee = str(t(task, "작업 담당자")).strip().lower()
+                if self.active_main_tab == "PENDING":
+                    if status != "대기" or assignee != "":
+                        continue
+                else:
+                    if status != "작업중" or assignee != user_name:
+                        continue
 
-            loc = str(t(task, "보충로케이션")).strip().upper()
-            if loc:
-                to_counts[f"{loc[0]}존"] += 1
+                loc = str(t(task, "보충로케이션")).strip().upper()
+                if loc:
+                    to_counts[f"{loc[0]}존"] += 1
 
-        def apply_to_zones(selected_set):
-            self.selected_to_zones = selected_set
-            if "전체" in selected_set or not selected_set:
-                self.btn_to_zone.text = "이동: 전체"
-            else:
-                zones_str = ",".join(sorted(selected_set)).replace("존", "")
-                self.btn_to_zone.text = f"이동: {zones_str}"
-            self.apply_filters_and_render()
+            def apply_to_zones(selected_set):
+                self.selected_to_zones = selected_set
+                if "전체" in selected_set or not selected_set:
+                    self.btn_to_zone.text = "이동: 전체"
+                else:
+                    zones_str = ",".join(sorted(selected_set)).replace("존", "")
+                    self.btn_to_zone.text = f"이동: {zones_str}"
+                self.apply_filters_and_render()
 
-        dropdown = ZoneMultiSelectDropDown(
-            dict(sorted(to_counts.items())), self.selected_to_zones, apply_to_zones
-        )
-        dropdown.open(instance)
+            dropdown = ZoneMultiSelectDropDown(
+                dict(sorted(to_counts.items())), self.selected_to_zones, apply_to_zones
+            )
+            dropdown.open(instance)
+        except Exception as e:
+            print(f"⚠️ 이동 존 드롭다운 오픈 에러: {e}")
 
     def toggle_sort_order(self, instance):
         self.sort_asc = not self.sort_asc
