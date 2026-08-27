@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.8"
+CURRENT_VERSION = "1.8.9"
 
 
 def check_and_apply_update():
@@ -1028,7 +1028,6 @@ class RecentCompletedPopup(Popup):
         popup = cls()
         popup.open()
 
-    # 💡 [v1.8.8] N열(완료일시) 기준시간 가져오기 적용
     def _create_compact_history_row(self, task_data):
         row = BoxLayout(
             orientation="horizontal",
@@ -1048,7 +1047,6 @@ class RecentCompletedPopup(Popup):
 
         info_box = BoxLayout(orientation="vertical", spacing=dp(2))
 
-        # 1행: 장비 / 완료시각 (N열 기준)
         equip_name = str(t(task_data, "장비", "N/A")).strip()
         comp_time = str(
             t(task_data, "완료일시", datetime.now().strftime("%H:%M"))
@@ -1069,7 +1067,6 @@ class RecentCompletedPopup(Popup):
         lbl_top.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_top)
 
-        # 2행: 상품명
         prod_name = str(t(task_data, "상품명", "N/A")).strip()
         lbl_prod = Label(
             text=f"[b]{prod_name}[/b]",
@@ -1087,7 +1084,6 @@ class RecentCompletedPopup(Popup):
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_prod)
 
-        # 3행: 바코드
         bc_val = get_barcode_from_task(task_data)
         lbl_bc = Label(
             text=f"바코드: [b][color=1E88E5]{bc_val}[/color][/b]",
@@ -1103,7 +1099,6 @@ class RecentCompletedPopup(Popup):
         lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_bc)
 
-        # 4행: 보관 ➔ 출고 로케이션
         from_loc = str(t(task_data, "기존로케이션", "-")).strip()
         to_loc = str(t(task_data, "보충로케이션", "-")).strip()
         lbl_loc = Label(
@@ -1120,7 +1115,6 @@ class RecentCompletedPopup(Popup):
         lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
         info_box.add_widget(lbl_loc)
 
-        # 5행: 수량 정보
         req_q = t(task_data, "지시수량", 0)
         conf_q = t(task_data, "확인수량", 0)
         lbl_qty = Label(
@@ -3507,7 +3501,7 @@ class TaskListScreen(Screen):
             }
             app.show_loading_popup()
             threading.Thread(
-                target=self._perform_update,
+                target=self._perform_update_and_log,
                 args=(card, updates, "보충 실패 처리 되었습니다."),
                 daemon=True,
             ).start()
@@ -3587,6 +3581,7 @@ class TaskListScreen(Screen):
         except Exception as e:
             print(f"🔴 블루투스 인쇄 실패: {e}")
 
+    # 💡 [v1.8.9] 보충완료 시점에 구글 시트 업데이트 및 작업완료_로그 적재
     def _finalize_task_processing(
         self, card, final_qty, split_qty, final_location, updated_remarks
     ):
@@ -3603,7 +3598,7 @@ class TaskListScreen(Screen):
             }
             app.show_loading_popup()
             threading.Thread(
-                target=self._perform_update,
+                target=self._perform_update_and_log,
                 args=(card, updates, "검수 작업이 '최종완료' 처리 되었습니다."),
                 daemon=True,
             ).start()
@@ -3611,9 +3606,9 @@ class TaskListScreen(Screen):
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         updates = {
-            "상태": "보충완료",
+            "상태": "보충완료", # 💡 보충완료 시점에 완료 처리 및 로그 기록
             "보충담당자": app.user_real_name,
-            "완료일시": now_str,
+            "완료일시": now_str, # N열 저장
             "확인수량": str(final_qty),
             "비고": updated_remarks,
         }
@@ -3629,7 +3624,7 @@ class TaskListScreen(Screen):
         def run_sheet_update():
             app.show_loading_popup()
             threading.Thread(
-                target=self._perform_update,
+                target=self._perform_update_and_log,
                 args=(card, updates, "보충완료 처리 되었습니다."),
                 daemon=True,
             ).start()
@@ -3648,7 +3643,8 @@ class TaskListScreen(Screen):
             on_no=run_sheet_update,
         )
 
-    def _perform_update(self, card, updates, msg):
+    # 💡 지시서 업데이트 및 작업완료_로그 시트 동시 기록 비동기 함수
+    def _perform_update_and_log(self, card, updates, msg):
         try:
             sheet = get_worksheet(TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
@@ -3673,7 +3669,20 @@ class TaskListScreen(Screen):
             if cells:
                 sheet.update_cells(cells)
 
+            # 보충작업_지시서의 최신 통합 행 데이터 생성 후 로그 시트에 추가
+            updated_task_data = dict(card.task_data)
+            updated_task_data.update(updates)
+            
+            try:
+                log_sheet = get_worksheet(LOG_SHEET_NAME)
+                log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
+                log_row = [str(updated_task_data.get(h, "")) for h in log_headers]
+                log_sheet.append_row(log_row)
+            except Exception as log_err:
+                print(f"⚠️ 로그 시트 기록 중 경고 (지시서는 업데이트됨): {log_err}")
+
             invalidate_cache(TASK_SHEET_NAME)
+            invalidate_cache(LOG_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
         except Exception as e:
             Clock.schedule_once(
@@ -3947,7 +3956,6 @@ class AdminDashboardScreen(Screen):
                 lambda dt: App.get_running_app().dismiss_loading_popup()
             )
 
-    # 💡 [v1.8.8] N열 완료일시 및 간결한 [10분 오차] 문구 적용
     def _create_dashboard_card(self, task):
         status = str(t(task, "상태", "대기")).strip()
         is_urgent = t(task, "긴급여부") == "Y"
@@ -4072,7 +4080,6 @@ class AdminDashboardScreen(Screen):
 
         req_qty = t(task, "지시수량", 0)
         conf_qty = t(task, "확인수량", 0)
-        # N열 완료일시 우선 참조
         raw_time = str(t(task, "완료일시", t(task, "최종완료일시", ""))).strip()
 
         time_str = ""
