@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.1"
+CURRENT_VERSION = "1.8.3"
 
 
 def check_and_apply_update():
@@ -58,6 +58,15 @@ def check_and_apply_update():
                                 )
 
                             print("✅ updated_main.py 최신 스크립트 저장 완료!")
+                else:
+                    app_dir = os.path.dirname(os.path.abspath(__file__))
+                    old_script = os.path.join(app_dir, "updated_main.py")
+                    if os.path.exists(old_script):
+                        try:
+                            os.remove(old_script)
+                            print("🧹 과거 업데이트 임시파일 정리 완료")
+                        except Exception:
+                            pass
     except Exception as e:
         print(f"⚠️ 업데이트 확인 중 오류 (무시하고 앱 실행): {e}")
 
@@ -535,7 +544,6 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
-# 💡 [v1.8.1] 안정화된 존 선택 드롭다운 (터치 이벤트 오류 원천 차단)
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -631,7 +639,6 @@ class ZoneMultiSelectDropDown(DropDown):
             item_box.add_widget(lbl)
             item_box.add_widget(chk)
 
-            # 안전한 토글 처리
             def _toggle_chk(chk_obj, *args):
                 chk_obj.active = not chk_obj.active
 
@@ -2677,7 +2684,6 @@ class UnifiedReplenishScreen(Screen):
         self.sort_asc = True
         self.btn_sort.text = "▲"
 
-    # 💡 [v1.8.1] 예외 처리 강화된 안전한 존 선택 팝업 오픈
     def open_from_zone_popup(self, instance):
         try:
             app = App.get_running_app()
@@ -3461,6 +3467,7 @@ class TaskListScreen(Screen):
             is_number=True,
         )
 
+    # 💡 [v1.8.3] 비고 입력 시 구글 시트 즉시 연동 반영
     def prompt_for_remarks(self, card):
 
         def on_confirm_rem(text):
@@ -3472,10 +3479,17 @@ class TaskListScreen(Screen):
             curr = card.task_data.get(
                 "remarks_text", t(card.task_data, "비고", "")
             )
-            card.task_data["remarks_text"] = (
-                f"{curr}\n{formatted}" if curr else formatted
-            )
-            app.show_toast("비고가 추가되었습니다.")
+            updated_text = f"{curr}\n{formatted}" if curr else formatted
+            card.task_data["remarks_text"] = updated_text
+            card.task_data["비고"] = updated_text
+
+            # 구글 시트에 비고 즉시 반영
+            app.show_loading_popup()
+            threading.Thread(
+                target=self._perform_update,
+                args=(card, {"비고": updated_text}, "비고가 시트에 저장되었습니다."),
+                daemon=True,
+            ).start()
 
         open_native_korean_input(
             "비고 추가", "비고 내용 입력", "", on_confirm_rem
@@ -4295,12 +4309,12 @@ class BluetoothPrinter:
             if is_invoice_only:
                 tag_str += "[송장만]"
 
-            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 20 [보관] {from_loc}\r\n"
-            cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 60 {barcode_suffix}\r\n"
+            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 [보관] {from_loc}\r\n"
+            cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 75 {barcode_suffix}\r\n"
             if tag_str:
-                cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 60 {tag_str}\r\nLEFT\r\n"
+                cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 75 {tag_str}\r\nLEFT\r\n"
 
-            cmd += f"LINE 20 150 556 150 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 220 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 410 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
