@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.3"
+CURRENT_VERSION = "1.8.4"
 
 
 def check_and_apply_update():
@@ -616,7 +616,7 @@ class ZoneMultiSelectDropDown(DropDown):
                 )
             item_box.bind(
                 pos=lambda i, p, b=bg: setattr(b, "pos", p),
-                size=lambda i, s, b=bg: setattr(b, "size", s),
+                size=lambda i, s: setattr(b, "size", s),
             )
 
             lbl = Label(
@@ -1133,7 +1133,6 @@ class RecentCompletedPopup(Popup):
 
         row.add_widget(info_box)
 
-        # 원터치 라벨 재인쇄 버튼
         btn_reprint = StyledButton(
             text="[인쇄]",
             size_hint_x=None,
@@ -3467,7 +3466,7 @@ class TaskListScreen(Screen):
             is_number=True,
         )
 
-    # 💡 [v1.8.3] 비고 입력 시 구글 시트 즉시 연동 반영
+    # 💡 [v1.8.4] 비고 작성 시 메모리 임시 저장 (완료 시 일괄 구글 시트 반영)
     def prompt_for_remarks(self, card):
 
         def on_confirm_rem(text):
@@ -3483,13 +3482,7 @@ class TaskListScreen(Screen):
             card.task_data["remarks_text"] = updated_text
             card.task_data["비고"] = updated_text
 
-            # 구글 시트에 비고 즉시 반영
-            app.show_loading_popup()
-            threading.Thread(
-                target=self._perform_update,
-                args=(card, {"비고": updated_text}, "비고가 시트에 저장되었습니다."),
-                daemon=True,
-            ).start()
+            app.show_toast("비고가 임시 저장되었습니다. 완료 시 시트에 기재됩니다.")
 
         open_native_korean_input(
             "비고 추가", "비고 내용 입력", "", on_confirm_rem
