@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9"
+CURRENT_VERSION = "1.8.9.1"
 
 
 def check_and_apply_update():
@@ -544,6 +544,7 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
+# 💡 [v1.8.9.1] 터치 전파(Bubbling) 완벽 격리 처리
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -602,7 +603,7 @@ class ZoneMultiSelectDropDown(DropDown):
         for zone_name, count in zone_counts_dict.items():
             is_active = zone_name in selected_zones or "전체" in selected_zones
 
-            item_box = BoxLayout(
+            item_box = TouchableBox(
                 orientation="horizontal",
                 size_hint_y=None,
                 height=dp(34),
@@ -616,7 +617,7 @@ class ZoneMultiSelectDropDown(DropDown):
                 )
             item_box.bind(
                 pos=lambda i, p, b=bg: setattr(b, "pos", p),
-                size=lambda i, s: setattr(b, "size", s),
+                size=lambda i, s, b=bg: setattr(b, "size", s),
             )
 
             lbl = Label(
@@ -669,11 +670,24 @@ class ZoneMultiSelectDropDown(DropDown):
 
         self.add_widget(container)
 
+    # 💡 모든 터치 이벤트 완전 흡수 (바깥 화면으로 터치 전달 방지)
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             super().on_touch_down(touch)
             return True
         return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if self.collide_point(*touch.pos):
+            super().on_touch_move(touch)
+            return True
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if self.collide_point(*touch.pos):
+            super().on_touch_up(touch)
+            return True
+        return super().on_touch_up(touch)
 
     def _on_check_change(self, checkbox, value):
         self._update_toggle_all_btn_text()
@@ -2471,7 +2485,7 @@ class UnifiedReplenishScreen(Screen):
         btn_refresh = StyledButton(
             text="갱신", size_hint_x=0.18, font_size=dp(12)
         )
-        btn_refresh.bind(on_press=lambda x: self.fetch_data())
+        btn_refresh.bind(on_press=self.fetch_data)
 
         header.add_widget(btn_back)
         header.add_widget(lbl_title)
@@ -3581,7 +3595,6 @@ class TaskListScreen(Screen):
         except Exception as e:
             print(f"🔴 블루투스 인쇄 실패: {e}")
 
-    # 💡 [v1.8.9] 보충완료 시점에 구글 시트 업데이트 및 작업완료_로그 적재
     def _finalize_task_processing(
         self, card, final_qty, split_qty, final_location, updated_remarks
     ):
@@ -3606,9 +3619,9 @@ class TaskListScreen(Screen):
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         updates = {
-            "상태": "보충완료", # 💡 보충완료 시점에 완료 처리 및 로그 기록
+            "상태": "보충완료",
             "보충담당자": app.user_real_name,
-            "완료일시": now_str, # N열 저장
+            "완료일시": now_str,
             "확인수량": str(final_qty),
             "비고": updated_remarks,
         }
@@ -3643,7 +3656,6 @@ class TaskListScreen(Screen):
             on_no=run_sheet_update,
         )
 
-    # 💡 지시서 업데이트 및 작업완료_로그 시트 동시 기록 비동기 함수
     def _perform_update_and_log(self, card, updates, msg):
         try:
             sheet = get_worksheet(TASK_SHEET_NAME)
@@ -3669,7 +3681,6 @@ class TaskListScreen(Screen):
             if cells:
                 sheet.update_cells(cells)
 
-            # 보충작업_지시서의 최신 통합 행 데이터 생성 후 로그 시트에 추가
             updated_task_data = dict(card.task_data)
             updated_task_data.update(updates)
             
