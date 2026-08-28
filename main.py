@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.2"
+CURRENT_VERSION = "1.8.9.3"
 
 
 def check_and_apply_update():
@@ -544,7 +544,6 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
 
 
-# 💡 [v1.8.9.1] 터치 전파(Bubbling) 완벽 격리 처리
 class ZoneMultiSelectDropDown(DropDown):
 
     def __init__(self, zone_counts_dict, selected_zones, on_apply, **kwargs):
@@ -670,7 +669,6 @@ class ZoneMultiSelectDropDown(DropDown):
 
         self.add_widget(container)
 
-    # 💡 모든 터치 이벤트 완전 흡수 (바깥 화면으로 터치 전달 방지)
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             super().on_touch_down(touch)
@@ -2485,7 +2483,7 @@ class UnifiedReplenishScreen(Screen):
         btn_refresh = StyledButton(
             text="갱신", size_hint_x=0.18, font_size=dp(12)
         )
-        btn_refresh.bind(on_press=self.fetch_data)
+        btn_refresh.bind(on_press=self.refresh_button_click) # 💡 전용 갱신 버튼 이벤트 바인딩
 
         header.add_widget(btn_back)
         header.add_widget(lbl_title)
@@ -2869,6 +2867,10 @@ class UnifiedReplenishScreen(Screen):
                     "스캔 오류",
                     f"스캔한 바코드 [{clean_bc}] 에 해당하는 작업을 찾을 수 없습니다.",
                 )
+
+    # 💡 [v1.8.9.3] 갱신 버튼 전용 안전 갱신 메서드
+    def refresh_button_click(self, instance=None):
+        self.fetch_data()
 
     def fetch_data(self):
         App.get_running_app().show_loading_popup()
