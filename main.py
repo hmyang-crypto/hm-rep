@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.0"
+CURRENT_VERSION = "2.0.1.0"
 
 
 def check_and_apply_update():
@@ -170,7 +170,6 @@ LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
 # 구글 드라이브 원복 사진 저장 전용 폴더 ID
 RETURN_DRIVE_FOLDER_ID = "1_EafaL8qZ-g8nYGxDvhhpROIUHZmwFRJ"
 
-# 💡 시트 조회 및 기록 범위 A:Z 적용
 SHEET_RANGES = {
     USER_SHEET_NAME: "A:AZ",
     TASK_SHEET_NAME: "A:AZ",
@@ -583,7 +582,6 @@ def upload_photo_to_drive_async(file_path, file_name, task_id, sheet_name, callb
             file_id = uploaded_file.get("id")
             web_link = uploaded_file.get("webViewLink", f"https://drive.google.com/file/d/{file_id}/view")
             
-            # 구글 시트 Q열(사진)에 URL 업데이트
             sheet = get_worksheet(sheet_name)
             headers = [str(h).strip() for h in sheet.row_values(1)]
             if "사진" in headers and "작업ID" in headers:
@@ -697,9 +695,12 @@ class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
         self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
 
-        from_loc = str(t(self.task_data, "기존로케이션", "-")) or "(미지정)"
-        to_loc = str(t(self.task_data, "원복로케이션", "-"))
-        self.ids.lbl_loc.text = f"목표: [color=D32F2F]{from_loc}[/color] ➔ 실제: [color=1E88E5]{to_loc}[/color]"
+        # 💡 [핵심 교정] 미지정 건일 경우 자율적치 안내 문구 표시
+        raw_target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
+        target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
+        actual_scanned_loc = str(t(self.task_data, "최종적치", "")).strip() or "-"
+
+        self.ids.lbl_loc.text = f"목표: [color=D32F2F]{target_loc}[/color] ➔ 실적: [color=1E88E5]{actual_scanned_loc}[/color]"
 
         conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
         active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
@@ -908,7 +909,7 @@ class ReturnReplenishScreen(Screen):
         filtered_list = []
         for task in self.raw_all_tasks:
             status = str(t(task, "상태")).strip()
-            assignee = str(t(task, "작업자", t(task, "작업 담당자", ""))).strip().lower()
+            assignee = str(t(task, "보충담당자", t(task, "작업자", t(task, "작업 담당자", "")))).strip().lower()
 
             if self.active_main_tab == "PENDING":
                 if status != "대기" or assignee != "":
@@ -955,11 +956,16 @@ class ReturnReplenishScreen(Screen):
         try:
             app = App.get_running_app()
             sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
-            # 💡 시트 업데이트 범위 A:Z 설정
             all_rows = execute_with_retry(sheet.get, "A:Z")
             headers = [str(h).strip() for h in all_rows[0]]
-            assignee_col = headers.index("작업자") + 1 if "작업자" in headers else 15
-            status_col = headers.index("상태") + 1
+            
+            assignee_col = 14
+            for target_name in ["보충담당자", "작업자", "작업 담당자"]:
+                if target_name in headers:
+                    assignee_col = headers.index(target_name) + 1
+                    break
+
+            status_col = headers.index("상태") + 1 if "상태" in headers else 2
 
             cells_to_update = []
             for row_idx, row in enumerate(all_rows[1:], start=2):
@@ -994,11 +1000,16 @@ class ReturnReplenishScreen(Screen):
     def _async_batch_return(self):
         try:
             sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
-            # 💡 시트 업데이트 범위 A:Z 설정
             all_rows = execute_with_retry(sheet.get, "A:Z")
             headers = [str(h).strip() for h in all_rows[0]]
-            assignee_col = headers.index("작업자") + 1 if "작업자" in headers else 15
-            status_col = headers.index("상태") + 1
+            
+            assignee_col = 14
+            for target_name in ["보충담당자", "작업자", "작업 담당자"]:
+                if target_name in headers:
+                    assignee_col = headers.index(target_name) + 1
+                    break
+
+            status_col = headers.index("상태") + 1 if "상태" in headers else 2
 
             cells_to_update = []
             for row_idx, row in enumerate(all_rows[1:], start=2):
@@ -1048,7 +1059,8 @@ class ReturnExecutionPopup(Popup):
         prod_name = t(task_data, "상품명", "N/A")
         client_name = t(task_data, "고객사", "")
         assign_type = t(task_data, "지정구분", "지정")
-        target_loc = t(task_data, "기존로케이션", "") or "미지정 (빈 파렛트 랙)"
+        raw_target_loc = str(t(task_data, "원복로케이션", "")).strip()
+        target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
 
         lbl_info = Label(
             text=f"[b][{client_name}] {prod_name}[/b]\n목표 로케이션: [color=D32F2F][b]{target_loc}[/b][/color] ({assign_type})",
@@ -1181,7 +1193,7 @@ class ReturnExecutionPopup(Popup):
     def submit_completion(self, instance):
         app = App.get_running_app()
         target_bc = get_barcode_from_task(self.task_data)
-        target_loc = str(t(self.task_data, "기존로케이션", "")).strip()
+        target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
         assign_type = t(self.task_data, "지정구분", "지정")
 
         if not self.scanned_barcode:
@@ -1219,10 +1231,10 @@ class ReturnExecutionPopup(Popup):
 
         updates = {
             "상태": "원복완료",
-            "작업자": app.user_real_name,
-            "완료일시": now_str,
-            "원복로케이션": self.scanned_location,
+            "보충담당자": app.user_real_name,
+            "최종적치": self.scanned_location,
             "확인수량": conf_qty,
+            "완료일시": now_str,
         }
 
         app.show_loading_popup()
@@ -1440,7 +1452,6 @@ class MainMenuScreen(Screen):
         dash_card.add_widget(grid)
         self.layout.add_widget(dash_card)
 
-        # 메인 메뉴 버튼들
         menu_box = BoxLayout(
             orientation="vertical", spacing=dp(6), size_hint_y=None
         )
@@ -1488,7 +1499,6 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_dashboard))
 
-        # [원복] 원복 작업 메뉴 버튼
         btn_return = StyledButton(
             text="[원복] 원복 작업",
             bg_color=get_color_from_hex("#D32F2F"),
