@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.3"
+CURRENT_VERSION = "1.8.9.4"
 
 
 def check_and_apply_update():
@@ -166,10 +166,10 @@ FCM_TOKEN_SHEET_NAME = "FCM_토큰"
 LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
 
 SHEET_RANGES = {
-    USER_SHEET_NAME: "A:AA",
-    TASK_SHEET_NAME: "A:AA",
-    LOG_SHEET_NAME: "A:AA",
-    FCM_TOKEN_SHEET_NAME: "A:AA",
+    USER_SHEET_NAME: "A:AZ",
+    TASK_SHEET_NAME: "A:AZ",
+    LOG_SHEET_NAME: "A:AZ",
+    FCM_TOKEN_SHEET_NAME: "A:AZ",
     LOCATION_CAPA_SHEET_NAME: "A:J",
 }
 
