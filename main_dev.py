@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from functools import partial
 
 # 💡 GitHub Raw 주소
-UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
-UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.4"
+UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version_dev.txt"
+UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main_dev.py"
+CURRENT_VERSION = "2.0.0"
 
 
 def check_and_apply_update():
