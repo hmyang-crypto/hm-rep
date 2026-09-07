@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.0"
+CURRENT_VERSION = "2.0.2.0"
 
 
 def check_and_apply_update():
@@ -170,7 +170,6 @@ LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
 # 구글 드라이브 원복 사진 저장 전용 폴더 ID
 RETURN_DRIVE_FOLDER_ID = "1_EafaL8qZ-g8nYGxDvhhpROIUHZmwFRJ"
 
-# 💡 시트 조회 및 기록 범위 A:Z 적용
 SHEET_RANGES = {
     USER_SHEET_NAME: "A:AZ",
     TASK_SHEET_NAME: "A:AZ",
@@ -583,7 +582,6 @@ def upload_photo_to_drive_async(file_path, file_name, task_id, sheet_name, callb
             file_id = uploaded_file.get("id")
             web_link = uploaded_file.get("webViewLink", f"https://drive.google.com/file/d/{file_id}/view")
             
-            # 구글 시트 Q열(사진)에 URL 업데이트
             sheet = get_worksheet(sheet_name)
             headers = [str(h).strip() for h in sheet.row_values(1)]
             if "사진" in headers and "작업ID" in headers:
@@ -652,6 +650,76 @@ class InfoPopup(Popup):
         self.content = content
 
 
+# 💡 [복구] 작업자 이름 입력/변경 화면 클래스
+class NameEntryScreen(Screen):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        layout = BoxLayout(orientation="vertical", padding=dp(25), spacing=dp(15))
+
+        lbl_title = Label(
+            text="📱 PDA 작업자 설정",
+            font_name=FONT_NAME,
+            font_size=dp(20),
+            bold=True,
+            color=PRIMARY_BLUE,
+            size_hint_y=None,
+            height=dp(40),
+        )
+        layout.add_widget(lbl_title)
+
+        lbl_guide = Label(
+            text="작업을 진행할 실명 이름을 입력해 주세요.",
+            font_name=FONT_NAME,
+            font_size=dp(14),
+            color=TEXT_MUTED,
+            size_hint_y=None,
+            height=dp(30),
+        )
+        layout.add_widget(lbl_guide)
+
+        self.input_name = TextInput(
+            hint_text="이름 입력 (예: 홍길동)",
+            multiline=False,
+            font_name=FONT_NAME,
+            font_size=dp(18),
+            size_hint_y=None,
+            height=dp(50),
+            halign="center",
+        )
+        layout.add_widget(self.input_name)
+
+        btn_save = StyledButton(
+            text="확인 및 시작",
+            size_hint_y=None,
+            height=dp(50),
+            bg_color=PRIMARY_BLUE,
+            font_size=dp(16),
+        )
+        btn_save.bind(on_press=self.save_name_and_start)
+        layout.add_widget(btn_save)
+
+        layout.add_widget(Widget())
+        self.add_widget(layout)
+
+    def on_enter(self, *args):
+        app = App.get_running_app()
+        if app.user_real_name:
+            self.input_name.text = app.user_real_name
+
+    def save_name_and_start(self, instance):
+        name = self.input_name.text.strip()
+        if not name:
+            App.get_running_app().show_info_popup("알림", "작업자 이름을 입력해 주세요.")
+            return
+
+        app = App.get_running_app()
+        app.user_real_name = name
+        app.save_user_name(name)
+        app.show_toast(f"'{name}'님 환영합니다!")
+        self.manager.current = "main_menu"
+
+
 # --- 원복 작업 전용 카드 뷰어 ---
 class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
     index = NumericProperty(0)
@@ -697,9 +765,12 @@ class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
         self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
 
-        from_loc = str(t(self.task_data, "기존로케이션", "-")) or "(미지정)"
-        to_loc = str(t(self.task_data, "원복로케이션", "-"))
-        self.ids.lbl_loc.text = f"목표: [color=D32F2F]{from_loc}[/color] ➔ 실제: [color=1E88E5]{to_loc}[/color]"
+        # 💡 미지정 건 자율적치 문구 적용
+        raw_target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
+        target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
+        actual_scanned_loc = str(t(self.task_data, "최종적치", "")).strip() or "-"
+
+        self.ids.lbl_loc.text = f"목표: [color=D32F2F]{target_loc}[/color] ➔ 실적: [color=1E88E5]{actual_scanned_loc}[/color]"
 
         conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
         active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
@@ -908,7 +979,7 @@ class ReturnReplenishScreen(Screen):
         filtered_list = []
         for task in self.raw_all_tasks:
             status = str(t(task, "상태")).strip()
-            assignee = str(t(task, "작업자", t(task, "작업 담당자", ""))).strip().lower()
+            assignee = str(t(task, "보충담당자", t(task, "작업자", t(task, "작업 담당자", "")))).strip().lower()
 
             if self.active_main_tab == "PENDING":
                 if status != "대기" or assignee != "":
@@ -955,11 +1026,16 @@ class ReturnReplenishScreen(Screen):
         try:
             app = App.get_running_app()
             sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
-            # 💡 시트 업데이트 범위 A:Z 설정
             all_rows = execute_with_retry(sheet.get, "A:Z")
             headers = [str(h).strip() for h in all_rows[0]]
-            assignee_col = headers.index("작업자") + 1 if "작업자" in headers else 15
-            status_col = headers.index("상태") + 1
+            
+            assignee_col = 14
+            for target_name in ["보충담당자", "작업자", "작업 담당자"]:
+                if target_name in headers:
+                    assignee_col = headers.index(target_name) + 1
+                    break
+
+            status_col = headers.index("상태") + 1 if "상태" in headers else 2
 
             cells_to_update = []
             for row_idx, row in enumerate(all_rows[1:], start=2):
@@ -994,11 +1070,16 @@ class ReturnReplenishScreen(Screen):
     def _async_batch_return(self):
         try:
             sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
-            # 💡 시트 업데이트 범위 A:Z 설정
             all_rows = execute_with_retry(sheet.get, "A:Z")
             headers = [str(h).strip() for h in all_rows[0]]
-            assignee_col = headers.index("작업자") + 1 if "작업자" in headers else 15
-            status_col = headers.index("상태") + 1
+            
+            assignee_col = 14
+            for target_name in ["보충담당자", "작업자", "작업 담당자"]:
+                if target_name in headers:
+                    assignee_col = headers.index(target_name) + 1
+                    break
+
+            status_col = headers.index("상태") + 1 if "상태" in headers else 2
 
             cells_to_update = []
             for row_idx, row in enumerate(all_rows[1:], start=2):
@@ -1048,7 +1129,8 @@ class ReturnExecutionPopup(Popup):
         prod_name = t(task_data, "상품명", "N/A")
         client_name = t(task_data, "고객사", "")
         assign_type = t(task_data, "지정구분", "지정")
-        target_loc = t(task_data, "기존로케이션", "") or "미지정 (빈 파렛트 랙)"
+        raw_target_loc = str(t(task_data, "원복로케이션", "")).strip()
+        target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
 
         lbl_info = Label(
             text=f"[b][{client_name}] {prod_name}[/b]\n목표 로케이션: [color=D32F2F][b]{target_loc}[/b][/color] ({assign_type})",
@@ -1181,7 +1263,7 @@ class ReturnExecutionPopup(Popup):
     def submit_completion(self, instance):
         app = App.get_running_app()
         target_bc = get_barcode_from_task(self.task_data)
-        target_loc = str(t(self.task_data, "기존로케이션", "")).strip()
+        target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
         assign_type = t(self.task_data, "지정구분", "지정")
 
         if not self.scanned_barcode:
@@ -1219,10 +1301,10 @@ class ReturnExecutionPopup(Popup):
 
         updates = {
             "상태": "원복완료",
-            "작업자": app.user_real_name,
-            "완료일시": now_str,
-            "원복로케이션": self.scanned_location,
+            "보충담당자": app.user_real_name,
+            "최종적치": self.scanned_location,
             "확인수량": conf_qty,
+            "완료일시": now_str,
         }
 
         app.show_loading_popup()
@@ -1440,7 +1522,6 @@ class MainMenuScreen(Screen):
         dash_card.add_widget(grid)
         self.layout.add_widget(dash_card)
 
-        # 메인 메뉴 버튼들
         menu_box = BoxLayout(
             orientation="vertical", spacing=dp(6), size_hint_y=None
         )
@@ -1488,7 +1569,6 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_dashboard))
 
-        # [원복] 원복 작업 메뉴 버튼
         btn_return = StyledButton(
             text="[원복] 원복 작업",
             bg_color=get_color_from_hex("#D32F2F"),
@@ -1549,9 +1629,6 @@ class MainMenuScreen(Screen):
 
 
 # --- 기타 보조 스크린 클래스들 ---
-class NameEntryScreen(Screen):
-    pass
-
 class UnifiedReplenishScreen(Screen):
     pass
 
@@ -1690,13 +1767,20 @@ class MainApp(App):
         Window.bind(on_key_down=self._on_keyboard_down)
 
         sm = ScreenManager(transition=FadeTransition())
+        
+        # 💡 [핵심] 등록된 이름이 없으면 로그인/이름입력 화면으로 먼저 진입하도록 분기
+        sm.add_widget(NameEntryScreen(name="name_entry"))
         sm.add_widget(MainMenuScreen(name="main_menu"))
         sm.add_widget(ReturnReplenishScreen(name="return_replenish"))
         sm.add_widget(AdminDashboardScreen(name="admin_dashboard"))
         sm.add_widget(SkuLocationSearchScreen(name="sku_location_search"))
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
 
-        sm.current = "main_menu"
+        if self.user_real_name:
+            sm.current = "main_menu"
+        else:
+            sm.current = "name_entry"
+
         return sm
 
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
