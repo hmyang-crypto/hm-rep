@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1"
+CURRENT_VERSION = "2.0.2"
 
 
 def check_and_apply_update():
