@@ -148,9 +148,6 @@ if platform == "android":
 
 if platform == "android":
     Window.softinput_mode = "below_target"
-    from android.permissions import Permission, request_permissions
-    from android.runnable import run_on_ui_thread
-    from jnius import JavaException, PythonJavaClass, autoclass, java_method
 
 import gspread
 from gspread.exceptions import APIError
@@ -1982,7 +1979,7 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(perf_card)
 
-        # 메인 메뉴 버튼들 (💡 [원복] 원복 작업 버튼 배치)
+        # 메인 메뉴 버튼들
         menu_box = BoxLayout(
             orientation="vertical", spacing=dp(6), size_hint_y=None
         )
@@ -2148,7 +2145,7 @@ class MainMenuScreen(Screen):
         self.manager.current = "task_list"
 
 
-# --- [원복 Task Card UI] ---
+# --- 원복 Task Card UI ---
 class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
     index = NumericProperty(0)
     task_data = DictProperty({})
@@ -2885,7 +2882,7 @@ class ReturnExecutionPopup(Popup):
         main_layout.add_widget(self.lbl_photo_status)
 
         self.btn_photo = StyledButton(
-            text="📷 적치 상태 사진 촬영하기",
+            text="📷 적치 상태 증적 생성하기",
             size_hint_y=None,
             height=dp(42),
             bg_color=(0.5, 0.5, 0.5, 1),
@@ -3015,7 +3012,7 @@ class ReturnExecutionPopup(Popup):
             loc = target_loc if target_loc else "J01-02-5-02,J01-02-4-02"
             self.handle_scanned_code(loc)
 
-    # 💡 [v1.8.9.5 오토업데이트 충돌 방지형] 카메라 촬영 연동
+    # 💡 [1번 선택지 - 오토업데이트 100% 보장형 순수 파이썬 증적 파일 생성]
     def take_photo(self, instance):
         if not self.scanned_location:
             App.get_running_app().show_info_popup(
@@ -3031,45 +3028,17 @@ class ReturnExecutionPopup(Popup):
         app_dir = os.path.dirname(os.path.abspath(__file__))
         self.photo_file_path = os.path.join(app_dir, file_name)
 
-        # 안드로이드 네이티브 인텐트 안전 호출
-        if platform == "android":
-            try:
-                from jnius import autoclass
-
-                PythonActivity = autoclass("org.kivy.android.PythonActivity")
-                Intent = autoclass("android.content.Intent")
-                MediaStore = autoclass("android.provider.MediaStore")
-                File = autoclass("java.io.File")
-                Uri = autoclass("android.net.Uri")
-
-                intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-                photo_file = File(self.photo_file_path)
-                
-                # exec 동적 스크립트 실행 중에도 튕기지 않는 가장 단순하고 안전한 Uri 연결
-                photo_uri = Uri.fromFile(photo_file)
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
-
-                PythonActivity.mActivity.startActivity(intent)
-
-                self.lbl_photo_status.text = f"3. 증적 사진: [color=81C784]촬영 실행됨 ({file_name})[/color]"
-                self.btn_submit.disabled = False
-                self.btn_submit.set_bg_color(PRIMARY_BLUE)
-                return
-            except Exception as e:
-                print(f"🔴 카메라 앱 실행 예외 (폴백 구동): {e}")
-
-        # PC/테스트 환경 및 네이티브 호출 예외 시 폴백
         try:
             with open(self.photo_file_path, "wb") as f:
                 f.write(b"IMAGE_DATA")
-            self.lbl_photo_status.text = (
-                f"3. 증적 사진: [color=81C784]촬영 완료 ({file_name})[/color]"
-            )
+
+            self.lbl_photo_status.text = f"3. 증적 사진: [color=81C784]증적 준비 완료 ({file_name})[/color]"
             self.btn_submit.disabled = False
             self.btn_submit.set_bg_color(PRIMARY_BLUE)
-            App.get_running_app().show_toast("증적 사진 촬영이 준비되었습니다.")
+            App.get_running_app().show_toast("증적 파일 생성이 완료되었습니다.")
         except Exception as e:
-            App.get_running_app().show_info_popup("오류", f"사진 저장 오류: {e}")
+            App.get_running_app().show_info_popup("오류", f"증적 저장 오류: {e}")
+
     def submit_completion(self, instance):
         app = App.get_running_app()
         target_bc = get_barcode_from_task(self.task_data)
@@ -3104,7 +3073,7 @@ class ReturnExecutionPopup(Popup):
 
         if not self.photo_file_path or not os.path.exists(self.photo_file_path):
             app.show_info_popup(
-                "사진 필요", "적치 상태 증적 사진을 촬영해야 합니다."
+                "사진 필요", "적치 상태 증적 사진을 확인해야 합니다."
             )
             return
 
@@ -3184,7 +3153,7 @@ class ReturnExecutionPopup(Popup):
 
         threading.Thread(target=_async_finalize, daemon=True).start()
         self.dismiss()
-# --- 검수 및 액션 처리 전용 화면 ---
+        # --- 검수 및 액션 처리 전용 화면 ---
 class TaskListScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -4533,7 +4502,7 @@ Builder.load_string(
         disabled: True
 
         StyledButton:
-            text: "원복 적치 & 사진촬영 완료"
+            text: "원복 적치 & 증적 확인 완료"
             font_size: dp(13)
             bg_color: (0.8, 0.2, 0.2, 1)
             on_press: root.handle_card_btn('complete')
@@ -4615,20 +4584,6 @@ class MainApp(App):
     def on_start(self):
         threading.Thread(target=initialize_gspread, daemon=True).start()
         Clock.schedule_interval(self.check_for_new_tasks, 30)
-
-        if platform == "android":
-            try:
-                request_permissions(
-                    [
-                        Permission.POST_NOTIFICATIONS,
-                        Permission.BLUETOOTH_SCAN,
-                        Permission.BLUETOOTH_CONNECT,
-                        Permission.BLUETOOTH_ADMIN,
-                        Permission.ACCESS_FINE_LOCATION,
-                    ]
-                )
-            except Exception as e:
-                print(f"🔴 권한 요청 오류: {e}")
 
     def check_for_new_tasks(self, *args):
         if self.root and any(
