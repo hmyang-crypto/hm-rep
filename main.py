@@ -10,10 +10,9 @@ import urllib.request
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-# 💡 메인 운영 Raw 주소 및 버전 세팅
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "2.0.1"
 
 
 def check_and_apply_update():
@@ -175,7 +174,6 @@ TEXT_DARK = get_color_from_hex("#212121")
 TEXT_MUTED = get_color_from_hex("#757575")
 
 Window.clearcolor = BG_GRAY
-g_recent_completed_tasks = []
 
 
 def safe_int(val, default=0):
@@ -459,6 +457,82 @@ class InfoPopup(Popup):
         ok_button.bind(on_press=self.dismiss)
         content.add_widget(ok_button)
         self.content = content
+
+
+# --- 💡 이름 입력 화면 (NameEntryScreen) 추가 ---
+class NameEntryScreen(Screen):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        layout = BoxLayout(
+            orientation="vertical",
+            padding=dp(30),
+            spacing=dp(20),
+            pos_hint={"center_x": 0.5, "center_y": 0.5},
+            size_hint=(0.9, None),
+        )
+        layout.bind(minimum_height=layout.setter("height"))
+
+        title_label = Label(
+            text="보충 업무 자동화",
+            font_name=FONT_NAME,
+            font_size=dp(26),
+            bold=True,
+            color=PRIMARY_BLUE,
+            size_hint_y=None,
+            height=dp(50),
+        )
+
+        sub_label = Label(
+            text="작업자 이름을 입력해주세요",
+            font_name=FONT_NAME,
+            font_size=dp(16),
+            color=TEXT_DARK,
+            size_hint_y=None,
+            height=dp(30),
+        )
+
+        self.name_input = TextInput(
+            hint_text="이름 입력 (예: 홍길동)",
+            multiline=False,
+            font_name=FONT_NAME,
+            font_size=dp(18),
+            size_hint_y=None,
+            height=dp(50),
+            halign="center",
+            padding=[dp(10), dp(12)],
+        )
+
+        btn_start = StyledButton(
+            text="작업 시작하기",
+            size_hint_y=None,
+            height=dp(50),
+            font_size=dp(16),
+            bold=True,
+        )
+        btn_start.bind(on_press=self.save_name_and_continue)
+
+        layout.add_widget(title_label)
+        layout.add_widget(sub_label)
+        layout.add_widget(self.name_input)
+        layout.add_widget(btn_start)
+        self.add_widget(layout)
+
+    def on_enter(self, *args):
+        app = App.get_running_app()
+        if app.user_real_name:
+            self.name_input.text = app.user_real_name
+
+    def save_name_and_continue(self, instance):
+        name = self.name_input.text.strip()
+        if not name:
+            App.get_running_app().show_info_popup("알림", "이름을 입력해주세요.")
+            return
+
+        app = App.get_running_app()
+        app.user_real_name = name
+        app.save_user_name(name)
+        self.manager.current = "main_menu"
 
 
 # --- 원복 전용 카드 UI ---
@@ -1395,14 +1469,40 @@ class MainApp(App):
     FONT_NAME = FONT_NAME
 
     def build(self):
-        self.user_real_name = "테스트작업자"
+        self.user_real_name = self.load_saved_user_name() or ""
         self.loading_popup = LoadingPopup()
 
         sm = ScreenManager(transition=FadeTransition())
+        sm.add_widget(NameEntryScreen(name="name_entry"))
         sm.add_widget(MainMenuScreen(name="main_menu"))
         sm.add_widget(ReturnReplenishScreen(name="return_replenish"))
-        sm.current = "main_menu"
+
+        if self.user_real_name:
+            sm.current = "main_menu"
+        else:
+            sm.current = "name_entry"
+
         return sm
+
+    def get_config_path(self):
+        return "user_config.json"
+
+    def save_user_name(self, name):
+        try:
+            with open(self.get_config_path(), "w") as f:
+                json.dump({"user_name": name}, f)
+        except Exception:
+            pass
+
+    def load_saved_user_name(self):
+        path = self.get_config_path()
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    return json.load(f).get("user_name")
+            except Exception:
+                pass
+        return None
 
     def show_loading_popup(self):
         if not self.loading_popup.parent:
