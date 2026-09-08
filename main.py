@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.7"
+CURRENT_VERSION = "2.0.9"
 
 
 def check_and_apply_update():
@@ -2558,7 +2558,7 @@ class ReturnReplenishScreen(Screen):
             ).open()
 
 
-# --- 💡 [v2.0.7] 어두운 배경에 맞춘 시가성/상단 여백 완벽 수정 팝업 ---
+# --- 💡 [v2.0.9] 공백 제거 & '미지정' 전용 추천 가이드 가변 높이 팝업 ---
 class ReturnExecutionPopup(Popup):
 
     def __init__(self, task_data, return_screen, **kwargs):
@@ -2568,7 +2568,9 @@ class ReturnExecutionPopup(Popup):
         self.title = "원복 적치 & 사진 촬영"
         self.title_font = FONT_NAME
         self.title_size = dp(16)
-        self.size_hint = (0.95, 0.85)
+        
+        # 💡 고정 비율(0.85) 대신 가변 높이 세팅 (상단 공백 원천 차단)
+        self.size_hint = (0.95, None)
         self.auto_dismiss = False
 
         self.scanned_barcode = ""
@@ -2576,7 +2578,13 @@ class ReturnExecutionPopup(Popup):
         self.photo_file_path = None
 
         main_layout = BoxLayout(
-            orientation="vertical", padding=dp(12), spacing=dp(10)
+            orientation="vertical", padding=dp(15), spacing=dp(10), size_hint_y=None
+        )
+        main_layout.bind(minimum_height=main_layout.setter("height"))
+        
+        # 팝업 전체 높이를 내부 레이아웃 높이 + 타이틀바 높이(dp(60))에 맞게 자동 동기화
+        main_layout.bind(
+            height=lambda instance, value: setattr(self, "height", value + dp(60))
         )
 
         prod_name = t(task_data, "상품명", "N/A")
@@ -2585,7 +2593,6 @@ class ReturnExecutionPopup(Popup):
         raw_target_loc = str(t(task_data, "원복로케이션", "")).strip()
         target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
 
-        # 💡 밝은 흰색 글씨로 시가성 확보
         lbl_info = Label(
             text=f"[color=FFFFFF][b][{client_name}] {prod_name}[/b]\n목표 로케이션: [color=FF5252][b]{target_loc}[/b][/color] ({assign_type})[/color]",
             font_name=FONT_NAME,
@@ -2598,6 +2605,7 @@ class ReturnExecutionPopup(Popup):
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         main_layout.add_widget(lbl_info)
 
+        # 💡 [핵심] '미지정' 작업일 때만 추천 가이드 영역 생성
         if assign_type == "미지정":
             dist_text = self._get_client_location_distribution(client_name)
             lbl_guide = Label(
