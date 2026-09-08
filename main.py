@@ -11,9 +11,18 @@ import urllib.request
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
+# 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.1.6"
+CURRENT_VERSION = "2.1.7"
+
+
+# 💡 [v2.1.7 수정] 버전 문자열을 정수 튜플로 변환하여 정확히 비교하는 함수
+def parse_version(ver_str):
+    try:
+        return tuple(map(int, re.findall(r"\d+", str(ver_str))))
+    except Exception:
+        return (0, 0, 0)
 
 
 def check_and_apply_update():
@@ -28,11 +37,12 @@ def check_and_apply_update():
             req, timeout=5, context=ssl_context
         ) as response:
             if response.status == 200:
-                server_version = response.read().decode("utf-8").strip()
-
-                if server_version > CURRENT_VERSION:
+                server_ver_raw = response.read().decode("utf-8").strip()
+                
+                # 💡 올바른 버전 숫자 비교 (예: (2, 1, 7) > (2, 1, 6))
+                if parse_version(server_ver_raw) > parse_version(CURRENT_VERSION):
                     print(
-                        f"🚀 새 버전 발견 ({server_version})! 코드를 다운로드합니다."
+                        f"🚀 새 버전 발견 ({server_ver_raw})! 코드를 다운로드합니다."
                     )
                     code_req = urllib.request.Request(
                         UPDATE_CODE_URL, headers={"User-Agent": "Mozilla/5.0"}
@@ -3017,7 +3027,7 @@ class ReturnExecutionPopup(Popup):
             loc = target_loc if target_loc else "J01-02-5-02,J01-02-4-02"
             self.handle_scanned_code(loc)
 
-    # 💡 [v2.1.6 보완] 카메라 앱 연동 및 예외 알림 처리
+    # 💡 [v2.1.7 안전성 강화] 안드로이드 사진 촬영 연동
     def take_photo(self, instance):
         if not self.scanned_location:
             App.get_running_app().show_info_popup(
@@ -3035,7 +3045,7 @@ class ReturnExecutionPopup(Popup):
 
         if platform == "android":
             try:
-                from jnius import autoclass
+                from jnius import autoclass, cast
 
                 PythonActivity = autoclass("org.kivy.android.PythonActivity")
                 Intent = autoclass("android.content.Intent")
@@ -3045,25 +3055,33 @@ class ReturnExecutionPopup(Popup):
 
                 intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                 photo_file = File(self.photo_file_path)
-                photo_uri = Uri.fromFile(photo_file)
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
 
-                # 안드로이드 카메라 앱 가동
+                try:
+                    FileProvider = autoclass("androidx.core.content.FileProvider")
+                    context = PythonActivity.mActivity.getApplicationContext()
+                    package_name = context.getPackageName()
+                    photo_uri = FileProvider.getUriForFile(
+                        context, f"{package_name}.fileprovider", photo_file
+                    )
+                except Exception:
+                    photo_uri = Uri.fromFile(photo_file)
+
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, cast("android.os.Parcelable", photo_uri))
+                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+
                 PythonActivity.mActivity.startActivity(intent)
 
-                self.lbl_photo_status.text = f"3. 증적 사진: [color=81C784]촬영 완료 ({file_name})[/color]"
+                self.lbl_photo_status.text = f"3. 증적 사진: [color=81C784]촬영 실행됨 ({file_name})[/color]"
                 self.btn_submit.disabled = False
                 self.btn_submit.set_bg_color(PRIMARY_BLUE)
                 return
             except Exception as e:
-                # 🚨 예외 발생 시 구체적인 에러 팝업을 출력하여 원인 확인 가능
                 App.get_running_app().show_info_popup(
-                    "카메라 실행 에러 🚨",
-                    f"스마트폰 카메라 호출 중 오류가 발생했습니다.\n\n[오류 내용]\n{e}\n\n* 디바이스의 카메라/저장소 권한을 확인해 주세요.",
+                    "카메라 실행 오류 🚨",
+                    f"카메라 앱을 호출하지 못했습니다.\n\n[에러 내용]\n{e}",
                 )
                 return
 
-        # PC 및 에뮬레이터 환경 폴백
         try:
             with open(self.photo_file_path, "wb") as f:
                 f.write(b"IMAGE_DATA")
@@ -3072,7 +3090,7 @@ class ReturnExecutionPopup(Popup):
             )
             self.btn_submit.disabled = False
             self.btn_submit.set_bg_color(PRIMARY_BLUE)
-            App.get_running_app().show_toast("테스트 사진 촬영이 준비되었습니다.")
+            App.get_running_app().show_toast("테스트 환경 사진 촬영 완료")
         except Exception as e:
             App.get_running_app().show_info_popup("오류", f"사진 저장 오류: {e}")
 
@@ -3562,7 +3580,6 @@ class MainApp(App):
         threading.Thread(target=initialize_gspread, daemon=True).start()
         Clock.schedule_interval(self.check_for_new_tasks, 30)
 
-        # 💡 [v2.1.6 추가] 카메라 및 외부 저장소 읽기/쓰기 권한 자동 요청
         if platform == "android":
             try:
                 request_permissions(
