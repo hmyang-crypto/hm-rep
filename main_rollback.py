@@ -13,12 +13,12 @@ from datetime import datetime, timedelta
 from functools import partial
 
 # 💡 GitHub Raw 주소
-#  UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
-#  UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-#  CURRENT_VERSION = "1.8.9.4"
+#UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
+#UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
+#CURRENT_VERSION = "1.8.9.4"
 
 
-# def check_and_apply_update():
+#def check_and_apply_update():
     try:
         print("🔍 서버에서 최신 업데이트 확인 중...")
         ssl_context = ssl._create_unverified_context()
