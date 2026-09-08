@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.1.1"
+CURRENT_VERSION = "2.1.2"
 
 
 def check_and_apply_update():
@@ -2184,12 +2184,13 @@ class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
                 action_name, self.task_data
             )
 
-# --- 💡 [신규 병합] 원복 작업 메인 컨트롤 화면 ---
+# --- 💡 [v2.1.2] 오더피커 / 리치 장비 필터가 추가된 원복 작업 컨트롤 화면 ---
 class ReturnReplenishScreen(Screen):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.active_main_tab = "PENDING"
+        self.active_equip_filter = "ORDERPICKER"  # 기본값: 오더피커
         self.raw_all_tasks = []
         self.raw_inventory = []
         self.checked_task_ids = set()
@@ -2198,6 +2199,7 @@ class ReturnReplenishScreen(Screen):
             orientation="vertical", padding=dp(8), spacing=dp(4)
         )
 
+        # 1. 헤더 영역
         header = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(6))
         btn_back = StyledButton(
             text="< 메인",
@@ -2226,6 +2228,7 @@ class ReturnReplenishScreen(Screen):
         header.add_widget(btn_refresh)
         self.layout.add_widget(header)
 
+        # 2. 메인 탭 (원복 대기 / 내 원복작업)
         main_tab_box = BoxLayout(
             size_hint_y=None, height=dp(36), spacing=dp(5)
         )
@@ -2245,11 +2248,42 @@ class ReturnReplenishScreen(Screen):
         main_tab_box.add_widget(self.btn_tab_my)
         self.layout.add_widget(main_tab_box)
 
+        # 3. 💡 [신규] 장비 필터 탭 (오더피커 / 리치)
+        equip_filter_box = BoxLayout(
+            size_hint_y=None, height=dp(32), spacing=dp(5)
+        )
+        self.btn_eq_op = StyledToggleButton(
+            text="오더피커",
+            group="return_equip_filter",
+            state="down",
+            size_hint_x=0.5,
+            font_size=dp(12),
+        )
+        self.btn_eq_op.bind(
+            on_press=lambda x: self.switch_equip_filter("ORDERPICKER")
+        )
+
+        self.btn_eq_reach = StyledToggleButton(
+            text="리치",
+            group="return_equip_filter",
+            state="normal",
+            size_hint_x=0.5,
+            font_size=dp(12),
+        )
+        self.btn_eq_reach.bind(
+            on_press=lambda x: self.switch_equip_filter("REACH")
+        )
+
+        equip_filter_box.add_widget(self.btn_eq_op)
+        equip_filter_box.add_widget(self.btn_eq_reach)
+        self.layout.add_widget(equip_filter_box)
+
+        # 4. 목록 상태 헤더 및 전체선택
         list_header = BoxLayout(
             size_hint_y=None, height=dp(26), padding=(dp(5), 0)
         )
         self.lbl_status_count = Label(
-            text="원복 대기 : 0건",
+            text="원복 대기 (오더피커) : 0건",
             font_name=FONT_NAME,
             font_size=dp(13),
             color=TEXT_MUTED,
@@ -2277,6 +2311,7 @@ class ReturnReplenishScreen(Screen):
         list_header.add_widget(lbl_chk_all)
         self.layout.add_widget(list_header)
 
+        # 5. 리사이클 뷰 목록
         self.rv = RecycleView()
         self.rv_layout = RecycleBoxLayout(
             default_size=(None, dp(218)),
@@ -2290,6 +2325,7 @@ class ReturnReplenishScreen(Screen):
         self.rv.viewclass = "ReturnTaskCard"
         self.layout.add_widget(self.rv)
 
+        # 6. 하단 액션 바
         self.action_bar = BoxLayout(
             size_hint_y=None, height=dp(42), padding=(dp(5), 0)
         )
@@ -2350,6 +2386,12 @@ class ReturnReplenishScreen(Screen):
 
         self.apply_filters_and_render()
 
+    def switch_equip_filter(self, eq_mode):
+        self.active_equip_filter = eq_mode
+        self.btn_eq_op.set_active_visual(eq_mode == "ORDERPICKER")
+        self.btn_eq_reach.set_active_visual(eq_mode == "REACH")
+        self.apply_filters_and_render()
+
     def toggle_card_check(self, task_data, is_checked):
         task_id = t(task_data, "작업ID")
         if is_checked:
@@ -2388,7 +2430,10 @@ class ReturnReplenishScreen(Screen):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
-        filtered_list = []
+        eq_op_tot, eq_op_urg = 0, 0
+        eq_reach_tot, eq_reach_urg = 0, 0
+
+        # 장비별 건수 및 긴급 건수 집계
         for task in self.raw_all_tasks:
             status = str(t(task, "상태")).strip()
             assignee = (
@@ -2410,6 +2455,56 @@ class ReturnReplenishScreen(Screen):
                 if status != "작업중" or assignee != user_name:
                     continue
 
+            equip = str(t(task, "장비")).strip()
+            is_urg = t(task, "긴급여부") == "Y"
+
+            if equip == "오더피커":
+                eq_op_tot += 1
+                if is_urg:
+                    eq_op_urg += 1
+            elif equip == "리치":
+                eq_reach_tot += 1
+                if is_urg:
+                    eq_reach_urg += 1
+
+        self.btn_eq_op.markup = True
+        self.btn_eq_op.text = f"오더피커 ({eq_op_tot} / [color=D32F2F]{eq_op_urg}[/color])"
+
+        self.btn_eq_reach.markup = True
+        self.btn_eq_reach.text = f"리치 ({eq_reach_tot} / [color=D32F2F]{eq_reach_urg}[/color])"
+
+        # 최종 리스트 필터링
+        filtered_list = []
+        for task in self.raw_all_tasks:
+            status = str(t(task, "상태")).strip()
+            assignee = (
+                str(
+                    t(
+                        task,
+                        "보충담당자",
+                        t(task, "작업자", t(task, "작업 담당자", "")),
+                    )
+                )
+                .strip()
+                .lower()
+            )
+            equip = str(t(task, "장비")).strip()
+
+            if self.active_main_tab == "PENDING":
+                if status != "대기" or assignee != "":
+                    continue
+            else:
+                if status != "작업중" or assignee != user_name:
+                    continue
+
+            if (
+                self.active_equip_filter == "ORDERPICKER"
+                and equip != "오더피커"
+            ):
+                continue
+            if self.active_equip_filter == "REACH" and equip != "리치":
+                continue
+
             filtered_list.append(task)
 
         rv_items = []
@@ -2429,7 +2524,8 @@ class ReturnReplenishScreen(Screen):
         self.rv.refresh_from_data()
 
         tab_name = "원복 대기" if not is_my_mode else "내 원복작업"
-        self.lbl_status_count.text = f"{tab_name} : {len(filtered_list)}건"
+        eq_name = "오더피커" if self.active_equip_filter == "ORDERPICKER" else "리치"
+        self.lbl_status_count.text = f"{tab_name} ({eq_name}) : {len(filtered_list)}건"
 
     def handle_main_action(self, instance):
         if self.active_main_tab == "PENDING":
