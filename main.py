@@ -3015,7 +3015,7 @@ class ReturnExecutionPopup(Popup):
             loc = target_loc if target_loc else "J01-02-5-02,J01-02-4-02"
             self.handle_scanned_code(loc)
 
-    # 💡 [안전 보완] 카메라 앱 연동 예외 처리 (오류 시 앱 중단 차단)
+    # 💡 [v1.8.9.5 오토업데이트 충돌 방지형] 카메라 촬영 연동
     def take_photo(self, instance):
         if not self.scanned_location:
             App.get_running_app().show_info_popup(
@@ -3031,9 +3031,10 @@ class ReturnExecutionPopup(Popup):
         app_dir = os.path.dirname(os.path.abspath(__file__))
         self.photo_file_path = os.path.join(app_dir, file_name)
 
+        # 안드로이드 네이티브 인텐트 안전 호출
         if platform == "android":
             try:
-                from jnius import autoclass, cast
+                from jnius import autoclass
 
                 PythonActivity = autoclass("org.kivy.android.PythonActivity")
                 Intent = autoclass("android.content.Intent")
@@ -3043,19 +3044,10 @@ class ReturnExecutionPopup(Popup):
 
                 intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                 photo_file = File(self.photo_file_path)
-
-                try:
-                    FileProvider = autoclass("androidx.core.content.FileProvider")
-                    context = PythonActivity.mActivity.getApplicationContext()
-                    package_name = context.getPackageName()
-                    photo_uri = FileProvider.getUriForFile(
-                        context, f"{package_name}.fileprovider", photo_file
-                    )
-                except Exception:
-                    photo_uri = Uri.fromFile(photo_file)
-
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, cast("android.os.Parcelable", photo_uri))
-                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                
+                # exec 동적 스크립트 실행 중에도 튕기지 않는 가장 단순하고 안전한 Uri 연결
+                photo_uri = Uri.fromFile(photo_file)
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
 
                 PythonActivity.mActivity.startActivity(intent)
 
@@ -3064,9 +3056,9 @@ class ReturnExecutionPopup(Popup):
                 self.btn_submit.set_bg_color(PRIMARY_BLUE)
                 return
             except Exception as e:
-                print(f"🔴 카메라 실행 예외 발생 (폴백 진행): {e}")
+                print(f"🔴 카메라 앱 실행 예외 (폴백 구동): {e}")
 
-        # PC/테스트 환경 및 권한 미승인 기기용 폴백
+        # PC/테스트 환경 및 네이티브 호출 예외 시 폴백
         try:
             with open(self.photo_file_path, "wb") as f:
                 f.write(b"IMAGE_DATA")
@@ -3078,7 +3070,6 @@ class ReturnExecutionPopup(Popup):
             App.get_running_app().show_toast("증적 사진 촬영이 준비되었습니다.")
         except Exception as e:
             App.get_running_app().show_info_popup("오류", f"사진 저장 오류: {e}")
-
     def submit_completion(self, instance):
         app = App.get_running_app()
         target_bc = get_barcode_from_task(self.task_data)
