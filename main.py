@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.9"
+CURRENT_VERSION = "2.1.0"
 
 
 def check_and_apply_update():
@@ -2734,21 +2734,42 @@ class ReturnExecutionPopup(Popup):
             return "[color=B0BEC5]재고 데이터를 로딩 중입니다...[/color]"
 
         zone_counts = Counter()
-        target_client = client_name.strip().lower()
+        clean_client = re.sub(r"[^\w]", "", client_name).lower()
 
         for row in self.return_screen.raw_inventory:
-            c = str(t(row, "고객사", t(row, "화주사", ""))).strip().lower()
-            loc = str(t(row, "로케이션", t(row, "보관로케이션", ""))).strip().upper()
+            # 💡 B열 헤더인 '파트너명'을 우선 조회하도록 수정
+            sheet_client = str(
+                t(row, "파트너명", t(row, "고객사", t(row, "화주사", t(row, "파트너", ""))))
+            ).strip()
+            
+            clean_sheet_client = re.sub(r"[^\w]", "", sheet_client).lower()
 
-            if c == target_client and loc and loc != "N/A":
-                zone_name = f"{loc[0]}존" if loc[0].isalpha() else "기타존"
-                zone_counts[zone_name] += safe_int(t(row, "로케이션 수량", 1))
+            loc = str(
+                t(row, "로케이션", t(row, "보관로케이션", ""))
+            ).strip().upper()
+            loc_type = str(t(row, "로케이션 유형", "보관")).strip()
+
+            # B열 파트너명("메디큐브") 키워드 매칭 및 보관 재고 필터링
+            if (
+                clean_client and clean_sheet_client
+                and (clean_client in clean_sheet_client or clean_sheet_client in clean_client)
+            ):
+                if loc and loc != "N/A" and loc_type in ["보관", ""]:
+                    zone_name = f"{loc[0]}존" if loc[0].isalpha() else "기타존"
+                    zone_counts[zone_name] += safe_int(
+                        t(row, "로케이션 수량", 1)
+                    )
 
         top_zones = zone_counts.most_common(2)
         if not top_zones:
-            return f"[color=B0BEC5]'{client_name}'의 기존 보관 정보가 없습니다.[/color]"
+            return f"[color=B0BEC5]'{client_name}'의 B열(파트너명) 기준 보관 재고가 없습니다.[/color]"
 
-        result_str = " / ".join([f"[color=81C784][b]{z}[/b]({cnt}개)[/color]" for z, cnt in top_zones])
+        result_str = " / ".join(
+            [
+                f"[color=81C784][b]{z}[/b]({cnt}개)[/color]"
+                for z, cnt in top_zones
+            ]
+        )
         return result_str
 
     def simulate_scan(self, scan_type):
