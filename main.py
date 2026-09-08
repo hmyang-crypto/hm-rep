@@ -14,20 +14,12 @@ from datetime import datetime, timedelta
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.1.8"
+CURRENT_VERSION = "2.1.2"
 
 
-def parse_version(ver_str):
-    try:
-        return tuple(map(int, re.findall(r"\d+", str(ver_str))))
-    except Exception:
-        return (0, 0, 0)
-
-
-# 💡 [v2.1.8 전면 개편] 안정적인 오토 업데이트 및 원본 코드 교체 로직
 def check_and_apply_update():
     try:
-        print(f"🔍 서버에서 최신 업데이트 확인 중... (현재 버전: v{CURRENT_VERSION})")
+        print("🔍 서버에서 최신 업데이트 확인 중...")
         ssl_context = ssl._create_unverified_context()
         req = urllib.request.Request(
             UPDATE_CHECK_URL, headers={"User-Agent": "Mozilla/5.0"}
@@ -37,11 +29,12 @@ def check_and_apply_update():
             req, timeout=5, context=ssl_context
         ) as response:
             if response.status == 200:
-                server_ver_raw = response.read().decode("utf-8").strip()
-                print(f"📡 서버 최신 버전: v{server_ver_raw}")
+                server_version = response.read().decode("utf-8").strip()
 
-                if parse_version(server_ver_raw) > parse_version(CURRENT_VERSION):
-                    print(f"🚀 새 버전 발견 (v{server_ver_raw})! 최신 코드를 다운로드합니다.")
+                if server_version > CURRENT_VERSION:
+                    print(
+                        f"🚀 새 버전 발견 ({server_version})! 코드를 다운로드합니다."
+                    )
                     code_req = urllib.request.Request(
                         UPDATE_CODE_URL, headers={"User-Agent": "Mozilla/5.0"}
                     )
@@ -49,37 +42,34 @@ def check_and_apply_update():
                         code_req, timeout=10, context=ssl_context
                     ) as new_code_response:
                         if new_code_response.status == 200:
-                            new_code = new_code_response.read().decode("utf-8")
-                            app_dir = os.path.dirname(os.path.abspath(__file__))
-                            main_file_path = os.path.join(app_dir, "main.py")
-                            updated_file_path = os.path.join(app_dir, "updated_main.py")
+                            app_dir = os.path.dirname(
+                                os.path.abspath(__file__)
+                            )
+                            updated_file_path = os.path.join(
+                                app_dir, "updated_main.py"
+                            )
 
-                            # 1. updated_main.py 로컬 저장
-                            with open(updated_file_path, "w", encoding="utf-8") as f:
-                                f.write(new_code)
+                            with open(
+                                updated_file_path, "w", encoding="utf-8"
+                            ) as f:
+                                f.write(
+                                    new_code_response.read().decode("utf-8")
+                                )
 
-                            # 2. main.py 자체도 덮어쓰기 저장 (다음 구동 시 원본 실행 보장)
-                            try:
-                                with open(main_file_path, "w", encoding="utf-8") as f:
-                                    f.write(new_code)
-                            except Exception as write_err:
-                                print(f"⚠️ main.py 직접 대체 중 예외 (updated_main.py로 실행): {write_err}")
-
-                            print("✅ 최신 코드 저장 완료!")
+                            print("✅ updated_main.py 최신 스크립트 저장 완료!")
                 else:
                     app_dir = os.path.dirname(os.path.abspath(__file__))
                     old_script = os.path.join(app_dir, "updated_main.py")
                     if os.path.exists(old_script):
                         try:
                             os.remove(old_script)
-                            print("🧹 구버전 임시 파일 정리 완료")
+                            print("🧹 과거 업데이트 임시파일 정리 완료")
                         except Exception:
                             pass
     except Exception as e:
-        print(f"⚠️ 업데이트 확인 중 오류 (무시하고 실행): {e}")
+        print(f"⚠️ 업데이트 확인 중 오류 (무시하고 앱 실행): {e}")
 
 
-# 💡 스크립트 실행부
 if "updated_main.py" not in os.path.basename(__file__):
     check_and_apply_update()
 
@@ -97,7 +87,9 @@ if "updated_main.py" not in os.path.basename(__file__):
             )
             sys.exit(0)
         except Exception as _exec_err:
-            print(f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}")
+            print(
+                f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}"
+            )
 
 from kivy.animation import Animation
 from kivy.app import App
@@ -142,7 +134,9 @@ if platform == "android":
     try:
         from jnius import autoclass
 
-        current_app = autoclass("android.app.ActivityThread").currentApplication()
+        current_app = autoclass(
+            "android.app.ActivityThread"
+        ).currentApplication()
         context = current_app.getApplicationContext()
         user_data_dir = context.getFilesDir().getAbsolutePath()
         kivy_home_dir = os.path.join(user_data_dir, ".kivy")
@@ -305,7 +299,9 @@ def open_native_korean_input(
             AlertDialog = autoclass("android.app.AlertDialog$Builder")
             EditText = autoclass("android.widget.EditText")
             InputType = autoclass("android.text.InputType")
-            WindowManager = autoclass("android.view.WindowManager$LayoutParams")
+            WindowManager = autoclass(
+                "android.view.WindowManager$LayoutParams"
+            )
 
             context = PythonActivity.mActivity
             builder = AlertDialog(context)
@@ -350,7 +346,9 @@ def open_native_korean_input(
             dialog.show()
             return
         except Exception as e:
-            print(f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}")
+            print(
+                f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}"
+            )
 
     SingleInputPopup(
         title=title,
@@ -949,66 +947,6 @@ class InfoPopup(Popup):
         ok_button.bind(on_press=self.dismiss)
         content.add_widget(ok_button)
         self.content = content
-
-
-class LocationSelectPopup(Popup):
-
-    def __init__(self, location_list, on_select, **kwargs):
-        super().__init__(**kwargs)
-        self.title = "적치 로케이션 선택"
-        self.title_font = FONT_NAME
-        self.size_hint = (0.9, 0.6)
-        self.auto_dismiss = False
-
-        main_layout = BoxLayout(
-            orientation="vertical", padding=dp(10), spacing=dp(8)
-        )
-        main_layout.add_widget(
-            Label(
-                text="스캔한 QR에 복수 로케이션이 들어있습니다.\n[실제 적치할 로케이션]을 선택해 주세요.",
-                font_name=FONT_NAME,
-                font_size=dp(14),
-                size_hint_y=None,
-                height=dp(40),
-                halign="center",
-            )
-        )
-
-        scroll = ScrollView()
-        grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
-        grid.bind(minimum_height=grid.setter("height"))
-
-        for loc in location_list:
-            clean_loc = str(loc).strip()
-            if not clean_loc:
-                continue
-            btn = StyledButton(
-                text=f"📍 {clean_loc}",
-                size_hint_y=None,
-                height=dp(45),
-                bg_color=PRIMARY_BLUE,
-            )
-            btn.bind(
-                on_release=lambda instance, l=clean_loc: (
-                    on_select(l),
-                    self.dismiss(),
-                )
-            )
-            grid.add_widget(btn)
-
-        scroll.add_widget(grid)
-        main_layout.add_widget(scroll)
-
-        btn_cancel = StyledButton(
-            text="취소",
-            size_hint_y=None,
-            height=dp(40),
-            bg_color=(0.6, 0.6, 0.6, 1),
-        )
-        btn_cancel.bind(on_press=self.dismiss)
-        main_layout.add_widget(btn_cancel)
-
-        self.content = main_layout
 
 
 class SingleInputPopup(Popup):
@@ -1975,7 +1913,7 @@ class MainMenuScreen(Screen):
             halign="left",
             valign="middle",
             shorten=True,
-            shorten_from="right",
+Shorten_from="right",
             size_hint_y=None,
             height=dp(18),
         )
@@ -2150,99 +2088,7 @@ class MainMenuScreen(Screen):
         self.manager.current = "task_list"
 
 
-# --- 원복 Task Card UI ---
-class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
-    index = NumericProperty(0)
-    task_data = DictProperty({})
-    is_claimed = BooleanProperty(False)
-    is_checked = BooleanProperty(False)
-    card_screen = ObjectProperty(None)
-    card_bg_color = ListProperty([1, 1, 1, 1])
-
-    def refresh_view_attrs(self, rv, index, data):
-        super().refresh_view_attrs(rv, index, data)
-        self.index = index
-        self.task_data = data.get("task_data", {})
-        self.is_claimed = data.get("is_claimed", False)
-        self.is_checked = data.get("is_checked", False)
-        self.card_screen = data.get("card_screen", None)
-
-        is_urgent = self.task_data.get("긴급여부") == "Y"
-        is_unassigned = t(self.task_data, "지정구분", "") == "미지정"
-
-        if is_urgent:
-            self.card_bg_color = get_color_from_hex("#FFCDD2")
-        elif is_unassigned:
-            self.card_bg_color = get_color_from_hex("#FFF9C4")
-        else:
-            self.card_bg_color = [1, 1, 1, 1]
-
-        raw_equip = str(t(self.task_data, "장비", ""))
-        display_tag = (
-            f"[color=D32F2F][{raw_equip}][/color]" if raw_equip else ""
-        )
-        client_name = str(t(self.task_data, "고객사", "")).strip()
-        client_tag = (
-            f" [color=212121][{client_name}][/color]" if client_name else ""
-        )
-
-        self.ids.lbl_equip.text = f"[b]{display_tag}{client_tag}[/b]"
-
-        req_qty = safe_int(t(self.task_data, "지시수량", 0))
-        product_name = t(self.task_data, "상품명", "N/A")
-        assign_type = t(self.task_data, "지정구분", "지정")
-
-        tag_prefix = f"[color=2E7D32][원복-{assign_type}][/color] "
-        if is_urgent:
-            tag_prefix += "[color=D32F2F][긴급][/color] "
-
-        self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
-        self.ids.lbl_barcode.text = (
-            f"바코드: {get_barcode_from_task(self.task_data)}"
-        )
-
-        raw_target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
-        target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
-
-        self.ids.lbl_loc.text = f"[color=212121]원복 목표 위치:[/color] [color=D32F2F][b]{target_loc}[/b][/color]"
-
-        conf_qty_val = self.task_data.get(
-            "confirmed_quantity", t(self.task_data, "확인수량", "")
-        )
-        active_count = (
-            safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
-        )
-
-        if self.is_claimed:
-            self.ids.lbl_main_qty.text = f"[color=212121]원복지시: {req_qty} / [/color][color=D32F2F]확인 {active_count}[/color]"
-        else:
-            self.ids.lbl_main_qty.text = (
-                f"[color=212121]원복지시: [b]{req_qty}[/b][/color]"
-            )
-
-        self.ids.box_check.active = self.is_checked
-
-        if self.is_claimed:
-            self.ids.btn_action_box.height = dp(40)
-            self.ids.btn_action_box.opacity = 1
-            self.ids.btn_action_box.disabled = False
-        else:
-            self.ids.btn_action_box.height = 0
-            self.ids.btn_action_box.opacity = 0
-            self.ids.btn_action_box.disabled = True
-
-    def on_checkbox_active(self, checkbox, value):
-        if self.card_screen:
-            self.card_screen.toggle_card_check(self.task_data, value)
-
-    def handle_card_btn(self, action_name):
-        if self.card_screen:
-            self.card_screen.handle_return_task_action(
-                action_name, self.task_data
-            )
-
-
-# --- 원복 작업 컨트롤 화면 ---
+# --- [v2.1.2] 오더피커 / 리치 장비 필터가 추가된 원복 작업 컨트롤 화면 ---
 class ReturnReplenishScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -2396,39 +2242,6 @@ class ReturnReplenishScreen(Screen):
         self.layout.add_widget(self.action_bar)
 
         self.add_widget(self.layout)
-
-    def handle_barcode_scan(self, barcode):
-        clean_bc = str(barcode).strip()
-        app = App.get_running_app()
-
-        for child in Window.children:
-            if isinstance(child, ReturnExecutionPopup):
-                child.handle_scanned_code(clean_bc)
-                return
-
-        user_name = str(app.user_real_name).strip().lower()
-        my_matches = [
-            t_item
-            for t_item in self.raw_all_tasks
-            if str(t(t_item, "상태")).strip() == "작업중"
-            and str(t(t_item, "보충담당자", t(t_item, "작업자", "")))
-            .strip()
-            .lower()
-            == user_name
-            and get_barcode_from_task(t_item) == clean_bc
-        ]
-
-        if my_matches:
-            if self.active_main_tab != "MY":
-                self.switch_main_tab("MY")
-            ReturnExecutionPopup(
-                task_data=my_matches[0], return_screen=self
-            ).open()
-        else:
-            app.show_info_popup(
-                "스캔 오류 🚨",
-                f"스캔한 바코드 [{clean_bc}] 에 해당하는 내 원복 작업을 찾을 수 없습니다.",
-            )
 
     def on_enter(self):
         self.fetch_data()
@@ -2608,9 +2421,7 @@ class ReturnReplenishScreen(Screen):
 
         tab_name = "원복 대기" if not is_my_mode else "내 원복작업"
         eq_name = "오더피커" if self.active_equip_filter == "ORDERPICKER" else "리치"
-        self.lbl_status_count.text = (
-            f"{tab_name} ({eq_name}) : {len(filtered_list)}건"
-        )
+        self.lbl_status_count.text = f"{tab_name} ({eq_name}) : {len(filtered_list)}건"
 
     def handle_main_action(self, instance):
         if self.active_main_tab == "PENDING":
@@ -2804,7 +2615,6 @@ class ReturnExecutionPopup(Popup):
             lbl_guide.bind(size=lambda i, s: setattr(i, "text_size", s))
             main_layout.add_widget(lbl_guide)
 
-        # 1단계: 바코드 스캔
         bc_box = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(5))
         self.lbl_bc_status = Label(
             text="1. 상품 바코드: [color=FF5252]미스캔[/color]",
@@ -2825,7 +2635,6 @@ class ReturnExecutionPopup(Popup):
         bc_box.add_widget(self.btn_scan_bc)
         main_layout.add_widget(bc_box)
 
-        # 2단계: 로케이션 스캔
         loc_box = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(5))
         self.lbl_loc_status = Label(
             text="2. 적치 로케이션 QR: [color=B0BEC5]대기중 (바코드 스캔 후 가능)[/color]",
@@ -2873,7 +2682,6 @@ class ReturnExecutionPopup(Popup):
         qty_box.add_widget(self.input_qty)
         main_layout.add_widget(qty_box)
 
-        # 3단계: 사진 촬영
         self.lbl_photo_status = Label(
             text="3. 증적 사진: [color=B0BEC5]대기중 (로케이션 스캔 완료 후 가능)[/color]",
             font_name=FONT_NAME,
@@ -2918,52 +2726,7 @@ class ReturnExecutionPopup(Popup):
 
         self.content = main_layout
 
-    def handle_scanned_code(self, scanned_code):
-        clean_code = str(scanned_code).strip()
-        target_bc = get_barcode_from_task(self.task_data)
-
-        if not self.scanned_barcode:
-            if clean_code == target_bc:
-                self.scanned_barcode = clean_code
-                self.lbl_bc_status.text = f"1. 상품 바코드: [color=81C784]{clean_code} (스캔완료)[/color]"
-                self.btn_scan_loc.disabled = False
-                self.btn_scan_loc.set_bg_color(PRIMARY_BLUE)
-                self.lbl_loc_status.text = (
-                    "2. 적치 로케이션 QR: [color=FF5252]미스캔[/color]"
-                )
-                App.get_running_app().show_toast("상품 바코드가 일치합니다.")
-            else:
-                App.get_running_app().show_info_popup(
-                    "바코드 불일치 🚨",
-                    f"스캔한 바코드 [{clean_code}]\n대상 바코드 [{target_bc}]\n\n타 SKU 바코드가 스캔되었습니다!",
-                )
-        else:
-            if "," in clean_code:
-                loc_list = [
-                    l.strip() for l in clean_code.split(",") if l.strip()
-                ]
-
-                def set_selected_loc(chosen_loc):
-                    self.scanned_location = chosen_loc
-                    self.lbl_loc_status.text = f"2. 적치 로케이션 QR: [color=81C784]{chosen_loc} (스캔완료)[/color]"
-                    self.btn_photo.disabled = False
-                    self.btn_photo.set_bg_color(get_color_from_hex("#00897B"))
-                    self.lbl_photo_status.text = (
-                        "3. 증적 사진: [color=FF5252]미촬영[/color]"
-                    )
-
-                LocationSelectPopup(
-                    location_list=loc_list, on_select=set_selected_loc
-                ).open()
-            else:
-                self.scanned_location = clean_code
-                self.lbl_loc_status.text = f"2. 적치 로케이션 QR: [color=81C784]{clean_code} (스캔완료)[/color]"
-                self.btn_photo.disabled = False
-                self.btn_photo.set_bg_color(get_color_from_hex("#00897B"))
-                self.lbl_photo_status.text = (
-                    "3. 증적 사진: [color=FF5252]미촬영[/color]"
-                )
-
+    # 💡 [v2.1.1] 행(Row) 개수 = PLT(파렛트) 수 기준으로 집계
     def _get_client_location_distribution(self, client_name):
         if not client_name or not self.return_screen.raw_inventory:
             return "[color=B0BEC5]재고 데이터를 로딩 중입니다...[/color]"
@@ -2972,36 +2735,34 @@ class ReturnExecutionPopup(Popup):
         clean_client = re.sub(r"[^\w]", "", client_name).lower()
 
         for row in self.return_screen.raw_inventory:
+            # B열(파트너명) 우선 추출
             sheet_client = str(
-                t(
-                    row,
-                    "파트너명",
-                    t(row, "고객사", t(row, "화주사", t(row, "파트너", ""))),
-                )
+                t(row, "파트너명", t(row, "고객사", t(row, "화주사", t(row, "파트너", ""))))
             ).strip()
             clean_sheet_client = re.sub(r"[^\w]", "", sheet_client).lower()
 
             loc = str(
                 t(row, "로케이션", t(row, "보관로케이션", ""))
             ).strip().upper()
+            
+            # F열(로케이션 유형) 추출
             loc_type = str(t(row, "로케이션 유형", "")).strip()
 
+            # B열(파트너명) 일치 & F열(로케이션 유형)이 '보관'인 행만 필터링
             if (
-                clean_client
-                and clean_sheet_client
-                and (
-                    clean_client in clean_sheet_client
-                    or clean_sheet_client in clean_client
-                )
+                clean_client and clean_sheet_client
+                and (clean_client in clean_sheet_client or clean_sheet_client in clean_client)
             ):
                 if loc and loc != "N/A" and loc_type == "보관":
                     zone_name = f"{loc[0]}존" if loc[0].isalpha() else "기타존"
+                    # 수량 합산이 아닌, 행 개수(1개 행 = 1 PLT) 카운팅 (+1)
                     zone_counts[zone_name] += 1
 
         top_zones = zone_counts.most_common(2)
         if not top_zones:
             return f"[color=B0BEC5]'{client_name}'의 보관 로케이션 PLT 재고가 없습니다.[/color]"
 
+        # PLT 단위로 표기
         result_str = " / ".join(
             [
                 f"[color=81C784][b]{z}[/b]({cnt} PLT)[/color]"
@@ -3015,18 +2776,19 @@ class ReturnExecutionPopup(Popup):
         target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
 
         if scan_type == "barcode":
-            self.handle_scanned_code(target_bc)
+            self.scanned_barcode = target_bc
+            self.lbl_bc_status.text = f"1. 상품 바코드: [color=81C784]{target_bc} (스캔완료)[/color]"
+            self.btn_scan_loc.disabled = False
+            self.btn_scan_loc.set_bg_color(PRIMARY_BLUE)
+            self.lbl_loc_status.text = "2. 적치 로케이션 QR: [color=FF5252]미스캔[/color]"
         elif scan_type == "location":
-            loc = target_loc if target_loc else "J01-02-5-02,J01-02-4-02"
-            self.handle_scanned_code(loc)
+            self.scanned_location = target_loc if target_loc else "J01-02-5-02"
+            self.lbl_loc_status.text = f"2. 적치 로케이션 QR: [color=81C784]{self.scanned_location} (스캔완료)[/color]"
+            self.btn_photo.disabled = False
+            self.btn_photo.set_bg_color(get_color_from_hex("#00897B"))
+            self.lbl_photo_status.text = "3. 증적 사진: [color=FF5252]미촬영[/color]"
 
     def take_photo(self, instance):
-        if not self.scanned_location:
-            App.get_running_app().show_info_popup(
-                "순서 오류 🚨", "적치 로케이션 QR을 먼저 스캔해야 합니다."
-            )
-            return
-
         date_str = datetime.now().strftime("%Y%m%d")
         bc = get_barcode_from_task(self.task_data)
         loc = self.scanned_location or "NOLOC"
@@ -3035,54 +2797,14 @@ class ReturnExecutionPopup(Popup):
         app_dir = os.path.dirname(os.path.abspath(__file__))
         self.photo_file_path = os.path.join(app_dir, file_name)
 
-        if platform == "android":
-            try:
-                from jnius import autoclass, cast
-
-                PythonActivity = autoclass("org.kivy.android.PythonActivity")
-                Intent = autoclass("android.content.Intent")
-                MediaStore = autoclass("android.provider.MediaStore")
-                File = autoclass("java.io.File")
-                Uri = autoclass("android.net.Uri")
-
-                intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-                photo_file = File(self.photo_file_path)
-
-                try:
-                    FileProvider = autoclass("androidx.core.content.FileProvider")
-                    context = PythonActivity.mActivity.getApplicationContext()
-                    package_name = context.getPackageName()
-                    photo_uri = FileProvider.getUriForFile(
-                        context, f"{package_name}.fileprovider", photo_file
-                    )
-                except Exception:
-                    photo_uri = Uri.fromFile(photo_file)
-
-                intent.putExtra(MediaStore.EXTRA_OUTPUT, cast("android.os.Parcelable", photo_uri))
-                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-
-                PythonActivity.mActivity.startActivity(intent)
-
-                self.lbl_photo_status.text = f"3. 증적 사진: [color=81C784]촬영 실행됨 ({file_name})[/color]"
-                self.btn_submit.disabled = False
-                self.btn_submit.set_bg_color(PRIMARY_BLUE)
-                return
-            except Exception as e:
-                App.get_running_app().show_info_popup(
-                    "카메라 실행 오류 🚨",
-                    f"카메라 앱을 호출하지 못했습니다.\n\n[에러 내용]\n{e}",
-                )
-                return
-
         try:
             with open(self.photo_file_path, "wb") as f:
                 f.write(b"IMAGE_DATA")
-            self.lbl_photo_status.text = (
-                f"3. 증적 사진: [color=81C784]촬영 완료 ({file_name})[/color]"
-            )
+
+            self.lbl_photo_status.text = f"3. 증적 사진: [color=81C784]촬영 완료 ({file_name})[/color]"
             self.btn_submit.disabled = False
             self.btn_submit.set_bg_color(PRIMARY_BLUE)
-            App.get_running_app().show_toast("테스트 환경 사진 촬영 완료")
+            App.get_running_app().show_toast("사진 촬영이 완료되었습니다.")
         except Exception as e:
             App.get_running_app().show_info_popup("오류", f"사진 저장 오류: {e}")
 
@@ -3097,31 +2819,19 @@ class ReturnExecutionPopup(Popup):
             return
 
         if self.scanned_barcode != target_bc:
-            app.show_info_popup(
-                "바코드 불일치 🚨",
-                f"스캔한 바코드[{self.scanned_barcode}]가 대상[{target_bc}]과 일치하지 않습니다.",
-            )
+            app.show_info_popup("바코드 불일치 🚨", f"스캔한 바코드[{self.scanned_barcode}]가 대상[{target_bc}]과 일치하지 않습니다.")
             return
 
         if not self.scanned_location:
             app.show_info_popup("검증 오류", "적치 로케이션 QR을 스캔해주세요.")
             return
 
-        if (
-            assign_type == "지정"
-            and target_loc
-            and self.scanned_location != target_loc
-        ):
-            app.show_info_popup(
-                "로케이션 불일치 🚨",
-                f"지정된 위치[{target_loc}]와 스캔한 위치[{self.scanned_location}]가 다릅니다!",
-            )
+        if assign_type == "지정" and target_loc and self.scanned_location != target_loc:
+            app.show_info_popup("로케이션 불일치 🚨", f"지정된 위치[{target_loc}]와 스캔한 위치[{self.scanned_location}]가 다릅니다!")
             return
 
         if not self.photo_file_path or not os.path.exists(self.photo_file_path):
-            app.show_info_popup(
-                "사진 필요", "적치 상태 증적 사진을 촬영해야 합니다."
-            )
+            app.show_info_popup("사진 필요", "적치 상태 증적 사진을 촬영해야 합니다.")
             return
 
         conf_qty = self.input_qty.text.strip()
@@ -3164,9 +2874,7 @@ class ReturnExecutionPopup(Popup):
 
                 try:
                     log_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
-                    log_headers = [
-                        str(h).strip() for h in log_sheet.row_values(1)
-                    ]
+                    log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
                     full_task = dict(self.task_data)
                     full_task.update(updates)
                     log_row = [str(full_task.get(h, "")) for h in log_headers]
@@ -3185,9 +2893,7 @@ class ReturnExecutionPopup(Popup):
                 )
 
                 Clock.schedule_once(
-                    lambda dt: app.show_toast(
-                        "원복 작업이 최종 완료되었습니다!"
-                    )
+                    lambda dt: app.show_toast("원복 작업이 최종 완료되었습니다!")
                 )
                 Clock.schedule_once(lambda dt: self.return_screen.fetch_data())
 
@@ -3525,7 +3231,10 @@ class MainApp(App):
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
 
-        sm.current = "name_entry"
+        if self.user_real_name:
+            sm.current = "main_menu"
+        else:
+            sm.current = "name_entry"
 
         return sm
 
@@ -3576,9 +3285,6 @@ class MainApp(App):
             try:
                 request_permissions(
                     [
-                        Permission.CAMERA,
-                        Permission.READ_EXTERNAL_STORAGE,
-                        Permission.WRITE_EXTERNAL_STORAGE,
                         Permission.POST_NOTIFICATIONS,
                         Permission.BLUETOOTH_SCAN,
                         Permission.BLUETOOTH_CONNECT,
