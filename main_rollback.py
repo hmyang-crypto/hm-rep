@@ -18,7 +18,7 @@ from functools import partial
 #  CURRENT_VERSION = "1.8.9.4"
 
 
-def check_and_apply_update():
+# def check_and_apply_update():
     try:
         print("🔍 서버에서 최신 업데이트 확인 중...")
         ssl_context = ssl._create_unverified_context()
