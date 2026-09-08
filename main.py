@@ -459,7 +459,7 @@ class InfoPopup(Popup):
         self.content = content
 
 
-# --- 💡 이름 입력 화면 (NameEntryScreen) 추가 ---
+# --- 이름 입력 화면 ---
 class NameEntryScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -1217,7 +1217,7 @@ class ReturnExecutionPopup(Popup):
         updates = {
             "상태": "원복완료",
             "보충담당자": app.user_real_name,
-            "작업자": app.user_real_name,  # X열(작업자) 업데이트
+            "작업자": app.user_real_name,
             "최종적치": self.scanned_location,
             "확인수량": conf_qty,
             "완료일시": now_str,
@@ -1297,7 +1297,7 @@ class MainMenuScreen(Screen):
         app = App.get_running_app()
 
         top_bar = BoxLayout(size_hint_y=None, height=dp(40))
-        welcome_box = BoxLayout(orientation="vertical", size_hint_x=0.75)
+        welcome_box = BoxLayout(orientation="vertical", size_hint_x=0.7)
         welcome_box.add_widget(
             Label(
                 text=f'"{app.user_real_name}"님',
@@ -1317,7 +1317,20 @@ class MainMenuScreen(Screen):
                 halign="left",
             )
         )
+
+        # 💡 [버전 표시 레이아웃]
+        lbl_version = Label(
+            text=f"v{CURRENT_VERSION}",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            color=TEXT_MUTED,
+            halign="right",
+            valign="top",
+            size_hint_x=0.3,
+        )
+
         top_bar.add_widget(welcome_box)
+        top_bar.add_widget(lbl_version)
         self.layout.add_widget(top_bar)
 
         menu_box = BoxLayout(
@@ -1345,7 +1358,6 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_replenish))
 
-        # 💡 [신규] 원복 작업 버튼
         btn_return = StyledButton(
             text="[원복] 원복 작업",
             bg_color=get_color_from_hex("#D32F2F"),
