@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.3"
+CURRENT_VERSION = "2.0.4"
 
 
 def check_and_apply_update():
@@ -2557,7 +2557,7 @@ class ReturnReplenishScreen(Screen):
             ).open()
 
 
-# --- 💡 [신규 병합] 원복 적치 및 사진 촬영 수행 팝업 ---
+# --- 💡 [v2.0.4] 순서 강제 제어 및 안드로이드 카메라 연동 완료 팝업 ---
 class ReturnExecutionPopup(Popup):
 
     def __init__(self, task_data, return_screen, **kwargs):
@@ -2608,6 +2608,7 @@ class ReturnExecutionPopup(Popup):
             lbl_guide.bind(size=lambda i, s: setattr(i, "text_size", s))
             main_layout.add_widget(lbl_guide)
 
+        # 1단계: 바코드 스캔
         bc_box = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
         self.lbl_bc_status = Label(
             text="1. 상품 바코드: [color=D32F2F]미스캔[/color]",
@@ -2616,28 +2617,34 @@ class ReturnExecutionPopup(Popup):
             markup=True,
             halign="left",
         )
-        btn_scan_bc = StyledButton(
+        self.btn_scan_bc = StyledButton(
             text="스캔", size_hint_x=0.25, bg_color=PRIMARY_BLUE
         )
-        btn_scan_bc.bind(on_press=lambda x: self.simulate_scan("barcode"))
+        self.btn_scan_bc.bind(on_press=lambda x: self.simulate_scan("barcode"))
         bc_box.add_widget(self.lbl_bc_status)
-        bc_box.add_widget(btn_scan_bc)
+        bc_box.add_widget(self.btn_scan_bc)
         main_layout.add_widget(bc_box)
 
+        # 2단계: 로케이션 스캔 (초기 비활성화)
         loc_box = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
         self.lbl_loc_status = Label(
-            text="2. 적치 로케이션 QR: [color=D32F2F]미스캔[/color]",
+            text="2. 적치 로케이션 QR: [color=757575]대기중 (바코드 먼저 스캔)[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
             markup=True,
             halign="left",
         )
-        btn_scan_loc = StyledButton(
-            text="스캔", size_hint_x=0.25, bg_color=PRIMARY_BLUE
+        self.btn_scan_loc = StyledButton(
+            text="스캔",
+            size_hint_x=0.25,
+            bg_color=(0.6, 0.6, 0.6, 1),
+            disabled=True,
         )
-        btn_scan_loc.bind(on_press=lambda x: self.simulate_scan("location"))
+        self.btn_scan_loc.bind(
+            on_press=lambda x: self.simulate_scan("location")
+        )
         loc_box.add_widget(self.lbl_loc_status)
-        loc_box.add_widget(btn_scan_loc)
+        loc_box.add_widget(self.btn_scan_loc)
         main_layout.add_widget(loc_box)
 
         qty_box = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
@@ -2657,8 +2664,9 @@ class ReturnExecutionPopup(Popup):
         qty_box.add_widget(self.input_qty)
         main_layout.add_widget(qty_box)
 
+        # 3단계: 사진 촬영 (초기 비활성화)
         self.lbl_photo_status = Label(
-            text="3. 증적 사진: [color=D32F2F]미촬영[/color]",
+            text="3. 증적 사진: [color=757575]대기중 (로케이션 스캔 완료 후 가능)[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
             markup=True,
@@ -2669,14 +2677,15 @@ class ReturnExecutionPopup(Popup):
         self.lbl_photo_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         main_layout.add_widget(self.lbl_photo_status)
 
-        btn_photo = StyledButton(
+        self.btn_photo = StyledButton(
             text="📷 적치 상태 사진 촬영하기",
             size_hint_y=None,
             height=dp(45),
-            bg_color=get_color_from_hex("#00897B"),
+            bg_color=(0.6, 0.6, 0.6, 1),
+            disabled=True,
         )
-        btn_photo.bind(on_press=self.take_photo)
-        main_layout.add_widget(btn_photo)
+        self.btn_photo.bind(on_press=self.take_photo)
+        main_layout.add_widget(self.btn_photo)
 
         btn_grid = GridLayout(
             cols=2, size_hint_y=None, height=dp(45), spacing=dp(10)
@@ -2684,11 +2693,15 @@ class ReturnExecutionPopup(Popup):
         btn_cancel = StyledButton(text="취소", bg_color=(0.6, 0.6, 0.6, 1))
         btn_cancel.bind(on_press=self.dismiss)
 
-        btn_submit = StyledButton(text="원복 최종 완료", bg_color=PRIMARY_BLUE)
-        btn_submit.bind(on_press=self.submit_completion)
+        self.btn_submit = StyledButton(
+            text="원복 최종 완료",
+            bg_color=(0.6, 0.6, 0.6, 1),
+            disabled=True,
+        )
+        self.btn_submit.bind(on_press=self.submit_completion)
 
         btn_grid.add_widget(btn_cancel)
-        btn_grid.add_widget(btn_submit)
+        btn_grid.add_widget(self.btn_submit)
         main_layout.add_widget(btn_grid)
 
         self.content = main_layout
@@ -2700,10 +2713,33 @@ class ReturnExecutionPopup(Popup):
         if scan_type == "barcode":
             self.scanned_barcode = target_bc
             self.lbl_bc_status.text = f"1. 상품 바코드: [color=2E7D32]{target_bc} (스캔완료)[/color]"
-        else:
+
+            # ➔ 2단계 활성화 (로케이션 스캔 가능)
+            self.btn_scan_loc.disabled = False
+            self.btn_scan_loc.set_bg_color(PRIMARY_BLUE)
+            if not self.scanned_location:
+                self.lbl_loc_status.text = (
+                    "2. 적치 로케이션 QR: [color=D32F2F]미스캔[/color]"
+                )
+
+        elif scan_type == "location":
+            if not self.scanned_barcode:
+                App.get_running_app().show_info_popup(
+                    "순서 오류 🚨", "상품 바코드를 먼저 스캔해야 합니다."
+                )
+                return
+
             loc = target_loc if target_loc else "A-01-01"
             self.scanned_location = loc
             self.lbl_loc_status.text = f"2. 적치 로케이션 QR: [color=2E7D32]{loc} (스캔완료)[/color]"
+
+            # ➔ 3단계 활성화 (사진 촬영 가능)
+            self.btn_photo.disabled = False
+            self.btn_photo.set_bg_color(get_color_from_hex("#00897B"))
+            if not self.photo_file_path:
+                self.lbl_photo_status.text = (
+                    "3. 증적 사진: [color=D32F2F]미촬영[/color]"
+                )
 
     def _get_client_location_distribution(self, client_name):
         if not client_name or not self.return_screen.raw_inventory:
@@ -2723,6 +2759,12 @@ class ReturnExecutionPopup(Popup):
         return " / ".join([f"• {z}: {cnt}개" for z, cnt in top_zones])
 
     def take_photo(self, instance):
+        if not self.scanned_location:
+            App.get_running_app().show_info_popup(
+                "순서 오류 🚨", "적치 로케이션 QR을 먼저 스캔해야 합니다."
+            )
+            return
+
         date_str = datetime.now().strftime("%Y%m%d")
         bc = get_barcode_from_task(self.task_data)
         loc = self.scanned_location or "NOLOC"
@@ -2731,28 +2773,48 @@ class ReturnExecutionPopup(Popup):
         app_dir = os.path.dirname(os.path.abspath(__file__))
         self.photo_file_path = os.path.join(app_dir, file_name)
 
+        # 💡 안드로이드 스마트폰 카메라 앱 호출 (안전 호환 로직)
         if platform == "android":
             try:
                 from jnius import autoclass
 
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
                 Intent = autoclass("android.content.Intent")
                 MediaStore = autoclass("android.provider.MediaStore")
                 File = autoclass("java.io.File")
+                Uri = autoclass("android.net.Uri")
 
                 intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                 photo_file = File(self.photo_file_path)
+
+                # 최신 안드로이드 호환 Uri 생성
+                photo_uri = Uri.fromFile(photo_file)
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, photo_uri)
+
+                current_activity = PythonActivity.mActivity
+                current_activity.startActivity(intent)
+
                 self.lbl_photo_status.text = f"3. 증적 사진: [color=2E7D32]촬영 완료 ({file_name})[/color]"
+
+                # ➔ 최종 완료 버튼 활성화
+                self.btn_submit.disabled = False
+                self.btn_submit.set_bg_color(PRIMARY_BLUE)
                 return
             except Exception as e:
-                print(f"카메라 호출 실패, 폴백 사용: {e}")
+                print(f"⚠️ 카메라 앱 호출 에러: {e}")
 
+        # PC/테스트 환경 폴백
         try:
             with open(self.photo_file_path, "wb") as f:
                 f.write(b"IMAGE_DATA")
             self.lbl_photo_status.text = (
                 f"3. 증적 사진: [color=2E7D32]촬영 완료 ({file_name})[/color]"
             )
-            App.get_running_app().show_toast("사진이 준비되었습니다.")
+
+            # ➔ 최종 완료 버튼 활성화
+            self.btn_submit.disabled = False
+            self.btn_submit.set_bg_color(PRIMARY_BLUE)
+            App.get_running_app().show_toast("사진 촬영이 준비되었습니다.")
         except Exception as e:
             App.get_running_app().show_info_popup("오류", f"사진 저장 오류: {e}")
 
@@ -2870,7 +2932,6 @@ class ReturnExecutionPopup(Popup):
 
         threading.Thread(target=_async_finalize, daemon=True).start()
         self.dismiss()
-
 
 class SkuLocationSearchScreen(Screen):
 
