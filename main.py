@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.1.0"
+CURRENT_VERSION = "2.1.1"
 
 
 def check_and_apply_update():
@@ -2729,6 +2729,7 @@ class ReturnExecutionPopup(Popup):
 
         self.content = main_layout
 
+    # 💡 [v2.1.1] 행(Row) 개수 = PLT(파렛트) 수 기준으로 집계 방식 수정
     def _get_client_location_distribution(self, client_name):
         if not client_name or not self.return_screen.raw_inventory:
             return "[color=B0BEC5]재고 데이터를 로딩 중입니다...[/color]"
@@ -2737,36 +2738,37 @@ class ReturnExecutionPopup(Popup):
         clean_client = re.sub(r"[^\w]", "", client_name).lower()
 
         for row in self.return_screen.raw_inventory:
-            # 💡 B열 헤더인 '파트너명'을 우선 조회하도록 수정
+            # B열(파트너명) 우선 추출
             sheet_client = str(
                 t(row, "파트너명", t(row, "고객사", t(row, "화주사", t(row, "파트너", ""))))
             ).strip()
-            
             clean_sheet_client = re.sub(r"[^\w]", "", sheet_client).lower()
 
             loc = str(
                 t(row, "로케이션", t(row, "보관로케이션", ""))
             ).strip().upper()
-            loc_type = str(t(row, "로케이션 유형", "보관")).strip()
+            
+            # F열(로케이션 유형) 추출
+            loc_type = str(t(row, "로케이션 유형", "")).strip()
 
-            # B열 파트너명("메디큐브") 키워드 매칭 및 보관 재고 필터링
+            # B열(파트너명) 일치 & F열(로케이션 유형)이 '보관'인 행만 필터링
             if (
                 clean_client and clean_sheet_client
                 and (clean_client in clean_sheet_client or clean_sheet_client in clean_client)
             ):
-                if loc and loc != "N/A" and loc_type in ["보관", ""]:
+                if loc and loc != "N/A" and loc_type == "보관":
                     zone_name = f"{loc[0]}존" if loc[0].isalpha() else "기타존"
-                    zone_counts[zone_name] += safe_int(
-                        t(row, "로케이션 수량", 1)
-                    )
+                    # 💡 수량 합산이 아닌, 행 개수(1개 행 = 1 PLT) 카운팅 (+1)
+                    zone_counts[zone_name] += 1
 
         top_zones = zone_counts.most_common(2)
         if not top_zones:
-            return f"[color=B0BEC5]'{client_name}'의 B열(파트너명) 기준 보관 재고가 없습니다.[/color]"
+            return f"[color=B0BEC5]'{client_name}'의 보관 로케이션 PLT 재고가 없습니다.[/color]"
 
+        # PLT 단위로 명확하게 표시
         result_str = " / ".join(
             [
-                f"[color=81C784][b]{z}[/b]({cnt}개)[/color]"
+                f"[color=81C784][b]{z}[/b]({cnt} PLT)[/color]"
                 for z, cnt in top_zones
             ]
         )
