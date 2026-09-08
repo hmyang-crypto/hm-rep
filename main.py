@@ -14,10 +14,9 @@ from datetime import datetime, timedelta
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.1.7"
+CURRENT_VERSION = "2.1.8"
 
 
-# 💡 [v2.1.7 수정] 버전 문자열을 정수 튜플로 변환하여 정확히 비교하는 함수
 def parse_version(ver_str):
     try:
         return tuple(map(int, re.findall(r"\d+", str(ver_str))))
@@ -25,9 +24,10 @@ def parse_version(ver_str):
         return (0, 0, 0)
 
 
+# 💡 [v2.1.8 전면 개편] 안정적인 오토 업데이트 및 원본 코드 교체 로직
 def check_and_apply_update():
     try:
-        print("🔍 서버에서 최신 업데이트 확인 중...")
+        print(f"🔍 서버에서 최신 업데이트 확인 중... (현재 버전: v{CURRENT_VERSION})")
         ssl_context = ssl._create_unverified_context()
         req = urllib.request.Request(
             UPDATE_CHECK_URL, headers={"User-Agent": "Mozilla/5.0"}
@@ -38,12 +38,10 @@ def check_and_apply_update():
         ) as response:
             if response.status == 200:
                 server_ver_raw = response.read().decode("utf-8").strip()
-                
-                # 💡 올바른 버전 숫자 비교 (예: (2, 1, 7) > (2, 1, 6))
+                print(f"📡 서버 최신 버전: v{server_ver_raw}")
+
                 if parse_version(server_ver_raw) > parse_version(CURRENT_VERSION):
-                    print(
-                        f"🚀 새 버전 발견 ({server_ver_raw})! 코드를 다운로드합니다."
-                    )
+                    print(f"🚀 새 버전 발견 (v{server_ver_raw})! 최신 코드를 다운로드합니다.")
                     code_req = urllib.request.Request(
                         UPDATE_CODE_URL, headers={"User-Agent": "Mozilla/5.0"}
                     )
@@ -51,34 +49,37 @@ def check_and_apply_update():
                         code_req, timeout=10, context=ssl_context
                     ) as new_code_response:
                         if new_code_response.status == 200:
-                            app_dir = os.path.dirname(
-                                os.path.abspath(__file__)
-                            )
-                            updated_file_path = os.path.join(
-                                app_dir, "updated_main.py"
-                            )
+                            new_code = new_code_response.read().decode("utf-8")
+                            app_dir = os.path.dirname(os.path.abspath(__file__))
+                            main_file_path = os.path.join(app_dir, "main.py")
+                            updated_file_path = os.path.join(app_dir, "updated_main.py")
 
-                            with open(
-                                updated_file_path, "w", encoding="utf-8"
-                            ) as f:
-                                f.write(
-                                    new_code_response.read().decode("utf-8")
-                                )
+                            # 1. updated_main.py 로컬 저장
+                            with open(updated_file_path, "w", encoding="utf-8") as f:
+                                f.write(new_code)
 
-                            print("✅ updated_main.py 최신 스크립트 저장 완료!")
+                            # 2. main.py 자체도 덮어쓰기 저장 (다음 구동 시 원본 실행 보장)
+                            try:
+                                with open(main_file_path, "w", encoding="utf-8") as f:
+                                    f.write(new_code)
+                            except Exception as write_err:
+                                print(f"⚠️ main.py 직접 대체 중 예외 (updated_main.py로 실행): {write_err}")
+
+                            print("✅ 최신 코드 저장 완료!")
                 else:
                     app_dir = os.path.dirname(os.path.abspath(__file__))
                     old_script = os.path.join(app_dir, "updated_main.py")
                     if os.path.exists(old_script):
                         try:
                             os.remove(old_script)
-                            print("🧹 과거 업데이트 임시파일 정리 완료")
+                            print("🧹 구버전 임시 파일 정리 완료")
                         except Exception:
                             pass
     except Exception as e:
-        print(f"⚠️ 업데이트 확인 중 오류 (무시하고 앱 실행): {e}")
+        print(f"⚠️ 업데이트 확인 중 오류 (무시하고 실행): {e}")
 
 
+# 💡 스크립트 실행부
 if "updated_main.py" not in os.path.basename(__file__):
     check_and_apply_update()
 
@@ -96,9 +97,7 @@ if "updated_main.py" not in os.path.basename(__file__):
             )
             sys.exit(0)
         except Exception as _exec_err:
-            print(
-                f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}"
-            )
+            print(f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}")
 
 from kivy.animation import Animation
 from kivy.app import App
@@ -143,9 +142,7 @@ if platform == "android":
     try:
         from jnius import autoclass
 
-        current_app = autoclass(
-            "android.app.ActivityThread"
-        ).currentApplication()
+        current_app = autoclass("android.app.ActivityThread").currentApplication()
         context = current_app.getApplicationContext()
         user_data_dir = context.getFilesDir().getAbsolutePath()
         kivy_home_dir = os.path.join(user_data_dir, ".kivy")
@@ -308,9 +305,7 @@ def open_native_korean_input(
             AlertDialog = autoclass("android.app.AlertDialog$Builder")
             EditText = autoclass("android.widget.EditText")
             InputType = autoclass("android.text.InputType")
-            WindowManager = autoclass(
-                "android.view.WindowManager$LayoutParams"
-            )
+            WindowManager = autoclass("android.view.WindowManager$LayoutParams")
 
             context = PythonActivity.mActivity
             builder = AlertDialog(context)
@@ -355,9 +350,7 @@ def open_native_korean_input(
             dialog.show()
             return
         except Exception as e:
-            print(
-                f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}"
-            )
+            print(f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}")
 
     SingleInputPopup(
         title=title,
@@ -3027,7 +3020,6 @@ class ReturnExecutionPopup(Popup):
             loc = target_loc if target_loc else "J01-02-5-02,J01-02-4-02"
             self.handle_scanned_code(loc)
 
-    # 💡 [v2.1.7 안전성 강화] 안드로이드 사진 촬영 연동
     def take_photo(self, instance):
         if not self.scanned_location:
             App.get_running_app().show_info_popup(
