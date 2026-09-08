@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.6"
+CURRENT_VERSION = "2.0.7"
 
 
 def check_and_apply_update():
@@ -2090,7 +2090,7 @@ class MainMenuScreen(Screen):
         self.manager.current = "task_list"
 
 
-# --- 💡 [v2.0.7] 명칭 보완 (목표 / 실적치) 카드 UI ---
+# --- 💡 [v2.0.8] 불필요한 '실적치' 제거 및 목표 위치 가독성 최적화 카드 UI ---
 class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
     index = NumericProperty(0)
     task_data = DictProperty({})
@@ -2143,12 +2143,10 @@ class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
 
         raw_target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
         target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
-        actual_scanned_loc = str(t(self.task_data, "최종적치", "")).strip() or "-"
 
-        # 💡 명칭: 목표 / 실적치 적용
+        # 💡 불필요한 '실적치' 항목을 지우고 깔끔하게 원복 목표 위치만 강조
         self.ids.lbl_loc.text = (
-            f"[color=212121]목표:[/color] [color=D32F2F][b]{target_loc}[/b][/color] "
-            f"[color=212121]➔ 실적치:[/color] [color=1E88E5][b]{actual_scanned_loc}[/b][/color]"
+            f"[color=212121]원복 목표 위치:[/color] [color=D32F2F][b]{target_loc}[/b][/color]"
         )
 
         conf_qty_val = self.task_data.get(
@@ -2185,7 +2183,6 @@ class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
             self.card_screen.handle_return_task_action(
                 action_name, self.task_data
             )
-
 
 # --- 💡 [신규 병합] 원복 작업 메인 컨트롤 화면 ---
 class ReturnReplenishScreen(Screen):
