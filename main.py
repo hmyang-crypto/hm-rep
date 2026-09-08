@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.1.2"
+CURRENT_VERSION = "1.0.8"
 
 
 def check_and_apply_update():
