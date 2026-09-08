@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.5"
+CURRENT_VERSION = "2.0.6"
 
 
 def check_and_apply_update():
@@ -2090,7 +2090,7 @@ class MainMenuScreen(Screen):
         self.manager.current = "task_list"
 
 
-# --- 💡 [v2.0.5] 가독성 개선 및 추천 로직 보완된 원복 Task Card ---
+# --- 💡 [v2.0.7] 명칭 보완 (목표 / 실적치) 카드 UI ---
 class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
     index = NumericProperty(0)
     task_data = DictProperty({})
@@ -2145,8 +2145,11 @@ class ReturnTaskCard(RecycleDataViewBehavior, BoxLayout):
         target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
         actual_scanned_loc = str(t(self.task_data, "최종적치", "")).strip() or "-"
 
-        # 💡 [글자색 보완] 검은색 기본 바탕에 명확한 컬러 구분 적용
-        self.ids.lbl_loc.text = f"[color=212121]목표:[/color] [color=D32F2F][b]{target_loc}[/b][/color] [color=212121]➔ 실적:[/color] [color=1E88E5][b]{actual_scanned_loc}[/b][/color]"
+        # 💡 명칭: 목표 / 실적치 적용
+        self.ids.lbl_loc.text = (
+            f"[color=212121]목표:[/color] [color=D32F2F][b]{target_loc}[/b][/color] "
+            f"[color=212121]➔ 실적치:[/color] [color=1E88E5][b]{actual_scanned_loc}[/b][/color]"
+        )
 
         conf_qty_val = self.task_data.get(
             "confirmed_quantity", t(self.task_data, "확인수량", "")
@@ -2558,7 +2561,7 @@ class ReturnReplenishScreen(Screen):
             ).open()
 
 
-# --- 💡 [v2.0.5] 상단 공백 제거 & 추천 로직 완비된 원복 적치 팝업 ---
+# --- 💡 [v2.0.7] 어두운 배경에 맞춘 시가성/상단 여백 완벽 수정 팝업 ---
 class ReturnExecutionPopup(Popup):
 
     def __init__(self, task_data, return_screen, **kwargs):
@@ -2568,7 +2571,7 @@ class ReturnExecutionPopup(Popup):
         self.title = "원복 적치 & 사진 촬영"
         self.title_font = FONT_NAME
         self.title_size = dp(16)
-        self.size_hint = (0.95, 0.9)
+        self.size_hint = (0.95, 0.85)
         self.auto_dismiss = False
 
         self.scanned_barcode = ""
@@ -2576,7 +2579,7 @@ class ReturnExecutionPopup(Popup):
         self.photo_file_path = None
 
         main_layout = BoxLayout(
-            orientation="vertical", padding=dp(10), spacing=dp(6)
+            orientation="vertical", padding=dp(12), spacing=dp(10)
         )
 
         prod_name = t(task_data, "상품명", "N/A")
@@ -2585,41 +2588,43 @@ class ReturnExecutionPopup(Popup):
         raw_target_loc = str(t(task_data, "원복로케이션", "")).strip()
         target_loc = raw_target_loc if raw_target_loc else "[자율적치/QR스캔]"
 
+        # 💡 밝은 흰색 글씨로 시가성 확보
         lbl_info = Label(
-            text=f"[color=212121][b][{client_name}] {prod_name}[/b]\n목표 로케이션: [color=D32F2F][b]{target_loc}[/b][/color] ({assign_type})[/color]",
+            text=f"[color=FFFFFF][b][{client_name}] {prod_name}[/b]\n목표 로케이션: [color=FF5252][b]{target_loc}[/b][/color] ({assign_type})[/color]",
             font_name=FONT_NAME,
             font_size=dp(14),
             markup=True,
             size_hint_y=None,
-            height=dp(40),
+            height=dp(42),
             halign="left",
         )
         lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
         main_layout.add_widget(lbl_info)
 
-        # 💡 [추천 로직 강화] 고객사별 모여있는 존(Zone) 및 보관 로케이션 분포 안내
         if assign_type == "미지정":
             dist_text = self._get_client_location_distribution(client_name)
             lbl_guide = Label(
-                text=f"💡 [color=1E88E5][b]{client_name}[/b] 주요 보관 존 추천:[/color]\n{dist_text}",
+                text=f"💡 [color=64B5F6][b]{client_name}[/b] 주요 보관 존 추천:[/color]\n{dist_text}",
                 font_name=FONT_NAME,
                 font_size=dp(12),
                 markup=True,
                 size_hint_y=None,
-                height=dp(45),
+                height=dp(42),
             )
             lbl_guide.bind(size=lambda i, s: setattr(i, "text_size", s))
             main_layout.add_widget(lbl_guide)
 
         # 1단계: 바코드 스캔
-        bc_box = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
+        bc_box = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(5))
         self.lbl_bc_status = Label(
-            text="1. 상품 바코드: [color=D32F2F]미스캔[/color]",
+            text="1. 상품 바코드: [color=FF5252]미스캔[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
             markup=True,
             halign="left",
+            color=(1, 1, 1, 1),
         )
+        self.lbl_bc_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         self.btn_scan_bc = StyledButton(
             text="스캔", size_hint_x=0.25, bg_color=PRIMARY_BLUE
         )
@@ -2629,18 +2634,20 @@ class ReturnExecutionPopup(Popup):
         main_layout.add_widget(bc_box)
 
         # 2단계: 로케이션 스캔
-        loc_box = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
+        loc_box = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(5))
         self.lbl_loc_status = Label(
-            text="2. 적치 로케이션 QR: [color=757575]대기중 (바코드 스캔 후 가능)[/color]",
+            text="2. 적치 로케이션 QR: [color=B0BEC5]대기중 (바코드 스캔 후 가능)[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
             markup=True,
             halign="left",
+            color=(1, 1, 1, 1),
         )
+        self.lbl_loc_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         self.btn_scan_loc = StyledButton(
             text="스캔",
             size_hint_x=0.25,
-            bg_color=(0.6, 0.6, 0.6, 1),
+            bg_color=(0.5, 0.5, 0.5, 1),
             disabled=True,
         )
         self.btn_scan_loc.bind(
@@ -2650,12 +2657,18 @@ class ReturnExecutionPopup(Popup):
         loc_box.add_widget(self.btn_scan_loc)
         main_layout.add_widget(loc_box)
 
-        qty_box = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
-        qty_box.add_widget(
-            Label(
-                text="[color=212121]원복 확인수량:[/color]", font_name=FONT_NAME, font_size=dp(13), markup=True
-            )
+        qty_box = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
+        lbl_qty_title = Label(
+            text="[color=FFFFFF]원복 확인수량:[/color]",
+            font_name=FONT_NAME,
+            font_size=dp(13),
+            markup=True,
+            size_hint_x=0.4,
+            halign="left",
         )
+        lbl_qty_title.bind(size=lambda i, s: setattr(i, "text_size", s))
+        qty_box.add_widget(lbl_qty_title)
+
         self.input_qty = TextInput(
             text=str(t(task_data, "지시수량", "1")),
             multiline=False,
@@ -2663,19 +2676,21 @@ class ReturnExecutionPopup(Popup):
             font_name=FONT_NAME,
             font_size=dp(16),
             halign="center",
+            size_hint_x=0.6,
         )
         qty_box.add_widget(self.input_qty)
         main_layout.add_widget(qty_box)
 
         # 3단계: 사진 촬영
         self.lbl_photo_status = Label(
-            text="3. 증적 사진: [color=757575]대기중 (로케이션 스캔 완료 후 가능)[/color]",
+            text="3. 증적 사진: [color=B0BEC5]대기중 (로케이션 스캔 완료 후 가능)[/color]",
             font_name=FONT_NAME,
             font_size=dp(13),
             markup=True,
             halign="left",
             size_hint_y=None,
             height=dp(25),
+            color=(1, 1, 1, 1),
         )
         self.lbl_photo_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         main_layout.add_widget(self.lbl_photo_status)
@@ -2683,22 +2698,22 @@ class ReturnExecutionPopup(Popup):
         self.btn_photo = StyledButton(
             text="📷 적치 상태 사진 촬영하기",
             size_hint_y=None,
-            height=dp(45),
-            bg_color=(0.6, 0.6, 0.6, 1),
+            height=dp(42),
+            bg_color=(0.5, 0.5, 0.5, 1),
             disabled=True,
         )
         self.btn_photo.bind(on_press=self.take_photo)
         main_layout.add_widget(self.btn_photo)
 
         btn_grid = GridLayout(
-            cols=2, size_hint_y=None, height=dp(45), spacing=dp(10)
+            cols=2, size_hint_y=None, height=dp(42), spacing=dp(10)
         )
-        btn_cancel = StyledButton(text="취소", bg_color=(0.6, 0.6, 0.6, 1))
+        btn_cancel = StyledButton(text="취소", bg_color=(0.5, 0.5, 0.5, 1))
         btn_cancel.bind(on_press=self.dismiss)
 
         self.btn_submit = StyledButton(
             text="원복 최종 완료",
-            bg_color=(0.6, 0.6, 0.6, 1),
+            bg_color=(0.5, 0.5, 0.5, 1),
             disabled=True,
         )
         self.btn_submit.bind(on_press=self.submit_completion)
@@ -2709,10 +2724,9 @@ class ReturnExecutionPopup(Popup):
 
         self.content = main_layout
 
-    # 💡 [고객사별 존 추천 집계 로직 보완]
     def _get_client_location_distribution(self, client_name):
         if not client_name or not self.return_screen.raw_inventory:
-            return "[color=757575]재고 데이터를 읽어오는 중입니다...[/color]"
+            return "[color=B0BEC5]재고 데이터를 로딩 중입니다...[/color]"
 
         zone_counts = Counter()
         target_client = client_name.strip().lower()
@@ -2727,9 +2741,9 @@ class ReturnExecutionPopup(Popup):
 
         top_zones = zone_counts.most_common(2)
         if not top_zones:
-            return f"[color=757575]'{client_name}'의 기존 보관 재고 위치 정보가 없습니다.[/color]"
+            return f"[color=B0BEC5]'{client_name}'의 기존 보관 정보가 없습니다.[/color]"
 
-        result_str = " / ".join([f"[color=2E7D32][b]{z}[/b]({cnt}개)[/color]" for z, cnt in top_zones])
+        result_str = " / ".join([f"[color=81C784][b]{z}[/b]({cnt}개)[/color]" for z, cnt in top_zones])
         return result_str
 
     def simulate_scan(self, scan_type):
@@ -2738,13 +2752,13 @@ class ReturnExecutionPopup(Popup):
 
         if scan_type == "barcode":
             self.scanned_barcode = target_bc
-            self.lbl_bc_status.text = f"1. 상품 바코드: [color=2E7D32]{target_bc} (스캔완료)[/color]"
+            self.lbl_bc_status.text = f"1. 상품 바코드: [color=81C784]{target_bc} (스캔완료)[/color]"
 
             self.btn_scan_loc.disabled = False
             self.btn_scan_loc.set_bg_color(PRIMARY_BLUE)
             if not self.scanned_location:
                 self.lbl_loc_status.text = (
-                    "2. 적치 로케이션 QR: [color=D32F2F]미스캔[/color]"
+                    "2. 적치 로케이션 QR: [color=FF5252]미스캔[/color]"
                 )
 
         elif scan_type == "location":
@@ -2756,13 +2770,13 @@ class ReturnExecutionPopup(Popup):
 
             loc = target_loc if target_loc else "A-01-01"
             self.scanned_location = loc
-            self.lbl_loc_status.text = f"2. 적치 로케이션 QR: [color=2E7D32]{loc} (스캔완료)[/color]"
+            self.lbl_loc_status.text = f"2. 적치 로케이션 QR: [color=81C784]{loc} (스캔완료)[/color]"
 
             self.btn_photo.disabled = False
             self.btn_photo.set_bg_color(get_color_from_hex("#00897B"))
             if not self.photo_file_path:
                 self.lbl_photo_status.text = (
-                    "3. 증적 사진: [color=D32F2F]미촬영[/color]"
+                    "3. 증적 사진: [color=FF5252]미촬영[/color]"
                 )
 
     def take_photo(self, instance):
@@ -2798,7 +2812,7 @@ class ReturnExecutionPopup(Popup):
                 current_activity = PythonActivity.mActivity
                 current_activity.startActivity(intent)
 
-                self.lbl_photo_status.text = f"3. 증적 사진: [color=2E7D32]촬영 완료 ({file_name})[/color]"
+                self.lbl_photo_status.text = f"3. 증적 사진: [color=81C784]촬영 완료 ({file_name})[/color]"
                 self.btn_submit.disabled = False
                 self.btn_submit.set_bg_color(PRIMARY_BLUE)
                 return
@@ -2809,7 +2823,7 @@ class ReturnExecutionPopup(Popup):
             with open(self.photo_file_path, "wb") as f:
                 f.write(b"IMAGE_DATA")
             self.lbl_photo_status.text = (
-                f"3. 증적 사진: [color=2E7D32]촬영 완료 ({file_name})[/color]"
+                f"3. 증적 사진: [color=81C784]촬영 완료 ({file_name})[/color]"
             )
             self.btn_submit.disabled = False
             self.btn_submit.set_bg_color(PRIMARY_BLUE)
