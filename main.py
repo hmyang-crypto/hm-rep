@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.6"
+CURRENT_VERSION = "1.8.9.5"
 
 
 def check_and_apply_update():
@@ -165,21 +165,13 @@ LOG_SHEET_NAME = "작업완료_로그"
 FCM_TOKEN_SHEET_NAME = "FCM_토큰"
 LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
 
-# 💡 원복 관련 시트 및 구글 드라이브 폴더 ID
-RETURN_TASK_SHEET_NAME = "원복작업_지시서"
-RETURN_LOG_SHEET_NAME = "원복작업_로그"
-RETURN_DRIVE_FOLDER_ID = "1_EafaL8qZ-g8nYGxDvhhpROIUHZmwFRJ"
-
 SHEET_RANGES = {
     USER_SHEET_NAME: "A:AZ",
     TASK_SHEET_NAME: "A:AZ",
     LOG_SHEET_NAME: "A:AZ",
-    RETURN_TASK_SHEET_NAME: "A:Z",
-    RETURN_LOG_SHEET_NAME: "A:Z",
     FCM_TOKEN_SHEET_NAME: "A:AZ",
     LOCATION_CAPA_SHEET_NAME: "A:J",
 }
-
 
 try:
     LabelBase.register(name="Nanum", fn_regular="NanumSquareRoundEB.ttf")
@@ -1902,20 +1894,6 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_dashboard))
 
-        # 💡 [여기 추가!] 현황판 바로 밑에 [원복] 원복 작업 버튼 배치
-        btn_return = StyledButton(
-            text="[원복] 원복 작업",
-            bg_color=get_color_from_hex("#D32F2F"),  # 원복 구분을 위해 빨간색 지정
-            size_hint_x=None,
-            width=dp(220),
-        )
-        btn_return.bind(
-            on_press=lambda x: setattr(
-                self.manager, "current", "return_replenish"
-            )
-        )
-        menu_box.add_widget(create_compact_menu_row(btn_return))
-
         btn_sku_loc = StyledButton(
             text="🔍 SKU별 로케이션 검색",
             bg_color=get_color_from_hex("#E65100"),
@@ -3314,41 +3292,6 @@ class UnifiedReplenishScreen(Screen):
             App.get_running_app().current_list_type = "보충인원"
             task_list_screen.process_task(dummy_card)
 
-# 💡 구글 드라이브 비동기 업로드 함수
-def upload_photo_to_drive_async(file_path, file_name, task_id, sheet_name, callback_success=None):
-    def _async_upload():
-        try:
-            from googleapiclient.discovery import build
-            from googleapiclient.http import MediaFileUpload
-
-            scope = ["https://www.googleapis.com/auth/drive"]
-            creds = ServiceAccountCredentials.from_json_keyfile_name(SERVICE_ACCOUNT_FILE, scope)
-            drive_service = build("drive", "v3", credentials=creds)
-
-            file_metadata = {"name": file_name, "parents": [RETURN_DRIVE_FOLDER_ID]}
-            media = MediaFileUpload(file_path, mimetype="image/jpeg", resumable=True)
-            uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
-
-            web_link = uploaded_file.get("webViewLink", f"https://drive.google.com/file/d/{uploaded_file.get('id')}/view")
-
-            sheet = get_worksheet(sheet_name)
-            headers = [str(h).strip() for h in sheet.row_values(1)]
-            if "사진" in headers and "작업ID" in headers:
-                task_id_col = headers.index("작업ID") + 1
-                photo_col = headers.index("사진") + 1
-                all_ids = sheet.col_values(task_id_col)
-                if task_id in all_ids:
-                    row_idx = all_ids.index(task_id) + 1
-                    sheet.update_cell(row_idx, photo_col, web_link)
-                    invalidate_cache(sheet_name)
-
-            if callback_success:
-                Clock.schedule_once(lambda dt: callback_success(web_link))
-        except Exception as e:
-            print(f"🔴 사진 업로드 오류: {e}")
-
-    threading.Thread(target=_async_upload, daemon=True).start()
-
 
 # --- 검수 및 액션 처리 전용 화면 ---
 class TaskListScreen(Screen):
@@ -4411,18 +4354,36 @@ class BluetoothPrinter:
             is_urgent = label_info.get("긴급여부", False)
             is_invoice_only = label_info.get("송장전용", False)
 
+            # 💡 [추가] 수량 및 박스입수량 계산 데이터 가져오기
+            conf_qty = safe_int(label_info.get("확인수량", 0))
+            box_size = safe_int(label_info.get("박스입수량", 1))
+            if box_size <= 0:
+                box_size = 1
+
             tag_str = ""
             if is_urgent:
                 tag_str += "[긴급건] "
             if is_invoice_only:
                 tag_str += "[송장만]"
 
+            # 💡 [추가] 박스 / 낱개 계산 수식 문자열 생성
+            if box_size > 1:
+                b_cnt = conf_qty // box_size
+                e_cnt = conf_qty % box_size
+                qty_str = f"수량 : {conf_qty} ({b_cnt} BOX + {e_cnt} EA)"
+            else:
+                qty_str = f"수량 : {conf_qty} ({conf_qty} EA)"
+
             cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 [보관] {from_loc}\r\n"
             cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 75 {barcode_suffix}\r\n"
             if tag_str:
                 cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 75 {tag_str}\r\nLEFT\r\n"
 
-            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+            # 중앙 출고 로케이션 영역
+            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\n"
+
+            # 💡 [추가] 하단 구분선 및 수량계산 표기 명령어 추가
+            cmd += f"LINE 20 540 556 540 3\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 30 580 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
@@ -4653,7 +4614,6 @@ class MainApp(App):
         sm.add_widget(NameEntryScreen(name="name_entry"))
         sm.add_widget(MainMenuScreen(name="main_menu"))
         sm.add_widget(UnifiedReplenishScreen(name="unified_replenish"))
-        sm.add_widget(ReturnReplenishScreen(name="return_replenish")) # 👈 추가
         sm.add_widget(TaskListScreen(name="task_list"))
         sm.add_widget(AdminDashboardScreen(name="admin_dashboard"))
         sm.add_widget(SkuLocationSearchScreen(name="sku_location_search"))
