@@ -8,13 +8,14 @@ import threading
 import time
 import traceback
 import urllib.request
-from collections import Counter, defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime, timedelta
+from functools import partial
 
-# 💡 운영 본 어플 GitHub Raw 주소
+# 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.5"
+CURRENT_VERSION = "1.8.9.4"
 
 
 def check_and_apply_update():
@@ -148,6 +149,9 @@ if platform == "android":
 
 if platform == "android":
     Window.softinput_mode = "below_target"
+    from android.permissions import Permission, request_permissions
+    from android.runnable import run_on_ui_thread
+    from jnius import JavaException, PythonJavaClass, autoclass, java_method
 
 import gspread
 from gspread.exceptions import APIError
@@ -284,7 +288,7 @@ def open_native_korean_input(
 ):
     if platform == "android":
         try:
-            from jnius import JavaException, PythonJavaClass, autoclass, java_method
+            from jnius import autoclass
 
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             AlertDialog = autoclass("android.app.AlertDialog$Builder")
@@ -596,9 +600,7 @@ class ZoneMultiSelectDropDown(DropDown):
         grid.bind(minimum_height=grid.setter("height"))
 
         for zone_name, count in zone_counts_dict.items():
-            is_active = (
-                zone_name in selected_zones or "전체" in selected_zones
-            )
+            is_active = zone_name in selected_zones or "전체" in selected_zones
 
             item_box = TouchableBox(
                 orientation="horizontal",
@@ -638,9 +640,7 @@ class ZoneMultiSelectDropDown(DropDown):
             item_box.add_widget(chk)
 
             item_box.bind(
-                on_release=lambda inst, c=chk: setattr(
-                    c, "active", not c.active
-                )
+                on_release=lambda inst, c=chk: setattr(c, "active", not c.active)
             )
             chk.bind(active=self._on_check_change)
 
@@ -691,9 +691,7 @@ class ZoneMultiSelectDropDown(DropDown):
         self._update_toggle_all_btn_text()
 
     def _on_toggle_all_press(self, instance):
-        target_state = not all(
-            chk.active for chk in self.checkboxes.values()
-        )
+        target_state = not all(chk.active for chk in self.checkboxes.values())
         for chk in self.checkboxes.values():
             chk.active = target_state
         self._update_toggle_all_btn_text()
@@ -833,63 +831,8 @@ def get_sheet_data(sheet_name, force_refresh=False):
         raise e
 
 
-def upload_photo_to_drive_async(
-    file_path, file_name, task_id, sheet_name, callback_success=None
-):
-    def _async_upload():
-        try:
-            from googleapiclient.discovery import build
-            from googleapiclient.http import MediaFileUpload
-
-            scope = ["https://www.googleapis.com/auth/drive"]
-            creds = ServiceAccountCredentials.from_json_keyfile_name(
-                SERVICE_ACCOUNT_FILE, scope
-            )
-            drive_service = build("drive", "v3", credentials=creds)
-
-            file_metadata = {
-                "name": file_name,
-                "parents": [RETURN_DRIVE_FOLDER_ID],
-            }
-            media = MediaFileUpload(
-                file_path, mimetype="image/jpeg", resumable=True
-            )
-            uploaded_file = (
-                drive_service.files()
-                .create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields="id, webViewLink",
-                )
-                .execute()
-            )
-
-            web_link = uploaded_file.get(
-                "webViewLink",
-                f"https://drive.google.com/file/d/{uploaded_file.get('id')}/view",
-            )
-
-            sheet = get_worksheet(sheet_name)
-            headers = [str(h).strip() for h in sheet.row_values(1)]
-            if "사진" in headers and "작업ID" in headers:
-                task_id_col = headers.index("작업ID") + 1
-                photo_col = headers.index("사진") + 1
-                all_ids = sheet.col_values(task_id_col)
-                if task_id in all_ids:
-                    row_idx = all_ids.index(task_id) + 1
-                    sheet.update_cell(row_idx, photo_col, web_link)
-                    invalidate_cache(sheet_name)
-
-            if callback_success:
-                Clock.schedule_once(lambda dt: callback_success(web_link))
-        except Exception as e:
-            print(f"🔴 사진 업로드 오류: {e}")
-
-    threading.Thread(target=_async_upload, daemon=True).start()
-
-
 def t(d, k, default=""):
-    return d.get(k, default) if isinstance(d, dict) else default
+    return d.get(k, default)
 
 
 class LoadingPopup(Popup):
@@ -913,7 +856,7 @@ class InfoPopup(Popup):
         super().__init__(**kwargs)
         self.title = title
         self.title_font = FONT_NAME
-        self.size_hint = (0.85, 0.4)
+        self.size_hint = (0.9, 0.5)
         content = BoxLayout(
             orientation="vertical", padding=dp(10), spacing=dp(10)
         )
@@ -933,71 +876,11 @@ class InfoPopup(Popup):
         scroll_view.add_widget(message_label)
         content.add_widget(scroll_view)
         ok_button = StyledButton(
-            text="확인", size_hint_y=None, height=dp(40)
+            text="확인", size_hint_y=None, height=dp(45)
         )
         ok_button.bind(on_press=self.dismiss)
         content.add_widget(ok_button)
         self.content = content
-
-
-class LocationSelectPopup(Popup):
-
-    def __init__(self, location_list, on_select, **kwargs):
-        super().__init__(**kwargs)
-        self.title = "적치 로케이션 선택"
-        self.title_font = FONT_NAME
-        self.size_hint = (0.9, 0.6)
-        self.auto_dismiss = False
-
-        main_layout = BoxLayout(
-            orientation="vertical", padding=dp(10), spacing=dp(8)
-        )
-        main_layout.add_widget(
-            Label(
-                text="스캔한 QR에 복수 로케이션이 들어있습니다.\n[실제 적치할 로케이션]을 선택해 주세요.",
-                font_name=FONT_NAME,
-                font_size=dp(14),
-                size_hint_y=None,
-                height=dp(40),
-                halign="center",
-            )
-        )
-
-        scroll = ScrollView()
-        grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
-        grid.bind(minimum_height=grid.setter("height"))
-
-        for loc in location_list:
-            clean_loc = str(loc).strip()
-            if not clean_loc:
-                continue
-            btn = StyledButton(
-                text=f"📍 {clean_loc}",
-                size_hint_y=None,
-                height=dp(45),
-                bg_color=PRIMARY_BLUE,
-            )
-            btn.bind(
-                on_release=lambda instance, l=clean_loc: (
-                    on_select(l),
-                    self.dismiss(),
-                )
-            )
-            grid.add_widget(btn)
-
-        scroll.add_widget(grid)
-        main_layout.add_widget(scroll)
-
-        btn_cancel = StyledButton(
-            text="취소",
-            size_hint_y=None,
-            height=dp(40),
-            bg_color=(0.6, 0.6, 0.6, 1),
-        )
-        btn_cancel.bind(on_press=self.dismiss)
-        main_layout.add_widget(btn_cancel)
-
-        self.content = main_layout
 
 
 class SingleInputPopup(Popup):
@@ -1085,6 +968,7 @@ class SingleInputPopup(Popup):
         self.dismiss()
 
 
+# 최근 완료 이력 컴팩트 리스트 팝업 창
 class RecentCompletedPopup(Popup):
     _is_opening = False
 
@@ -1624,7 +1508,6 @@ class NameEntryScreen(Screen):
 
     def on_enter(self, *args):
         app = App.get_running_app()
-        # 💡 기존에 사용하던 이름을 그대로 가져와서 입력창에 세팅해 둡니다.
         saved_name = app.load_saved_user_name()
         if saved_name:
             self.name_input.text = saved_name
@@ -1660,7 +1543,7 @@ class MainMenuScreen(Screen):
         app = App.get_running_app()
 
         top_bar = BoxLayout(size_hint_y=None, height=dp(40))
-        welcome_box = BoxLayout(orientation="vertical", size_hint_x=0.55)
+        welcome_box = BoxLayout(orientation="vertical", size_hint_x=0.75)
         welcome_box.add_widget(
             Label(
                 text=f'"{app.user_real_name}"님',
@@ -1683,20 +1566,10 @@ class MainMenuScreen(Screen):
         for child in welcome_box.children:
             child.bind(size=lambda i, s: setattr(i, "text_size", s))
 
-        lbl_version = Label(
-            text=f"v{CURRENT_VERSION}",
-            font_name=FONT_NAME,
-            font_size=dp(12),
-            color=TEXT_MUTED,
-            halign="right",
-            valign="top",
-            size_hint_x=0.2,
-        )
-
         btn_printer = StyledButton(
             text="프린터",
             size_hint_x=None,
-            width=dp(65),
+            width=dp(70),
             font_size=dp(12),
             bg_color=get_color_from_hex("#78909C"),
         )
@@ -1705,7 +1578,6 @@ class MainMenuScreen(Screen):
         )
 
         top_bar.add_widget(welcome_box)
-        top_bar.add_widget(lbl_version)
         top_bar.add_widget(btn_printer)
         self.layout.add_widget(top_bar)
 
@@ -1974,6 +1846,7 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(perf_card)
 
+        # 메인 메뉴 버튼들
         menu_box = BoxLayout(
             orientation="vertical", spacing=dp(6), size_hint_y=None
         )
@@ -2132,10 +2005,10 @@ class SkuLocationSearchScreen(Screen):
         super().__init__(**kwargs)
         self.raw_inventory = []
         self.layout = BoxLayout(
-            orientation="vertical", padding=dp(10), spacing=dp(8)
+            orientation="vertical", padding=dp(10), spacing=dp(10)
         )
 
-        top_bar = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
+        top_bar = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
         top_bar.add_widget(
             StyledButton(
                 text="< 메인",
@@ -2148,23 +2021,23 @@ class SkuLocationSearchScreen(Screen):
         )
         top_bar.add_widget(
             Label(
-                text="🔍 SKU별 로케이션 검색",
+                text="SKU별 로케이션 검색",
                 font_name=FONT_NAME,
-                font_size=dp(16),
+                font_size=dp(18),
                 bold=True,
                 color=TEXT_DARK,
             )
         )
         top_bar.add_widget(
             StyledButton(
-                text="갱신", size_hint_x=0.2, on_press=lambda x: self.fetch_data()
+                text="갱신", size_hint_x=0.2, on_press=lambda x: self.refresh()
             )
         )
         self.layout.add_widget(top_bar)
 
         search_bar = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
         self.search_input = TextInput(
-            hint_text="터치하여 바코드 또는 SKU명 검색",
+            hint_text="터치하여 바코드 스캔/입력",
             multiline=False,
             font_name=FONT_NAME,
             font_size=dp(15),
@@ -2176,14 +2049,14 @@ class SkuLocationSearchScreen(Screen):
         btn_search = StyledButton(
             text="검색", size_hint_x=0.2, font_size=dp(14)
         )
-        btn_search.bind(on_press=self.search_locations)
+        btn_search.bind(on_press=self.search_location)
 
         search_bar.add_widget(self.search_input)
         search_bar.add_widget(btn_search)
         self.layout.add_widget(search_bar)
 
         self.scroll = ScrollView()
-        self.grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
+        self.grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None)
         self.grid.bind(minimum_height=self.grid.setter("height"))
         self.scroll.add_widget(self.grid)
         self.layout.add_widget(self.scroll)
@@ -2193,31 +2066,51 @@ class SkuLocationSearchScreen(Screen):
         if instance.collide_point(*touch.pos):
             def set_query(val):
                 self.search_input.text = val
-                self.search_locations()
+                self.search_location()
 
             open_native_korean_input(
-                "검색어 입력", "바코드 또는 SKU 검색", "", set_query
+                "바코드 입력", "바코드를 스캔하거나 입력하세요", "", set_query
             )
             return True
         return False
 
     def on_enter(self):
-        if not self.raw_inventory:
-            self.fetch_data()
+        app = App.get_running_app()
+        if not app.user_real_name:
+            app.user_real_name = app.load_saved_user_name() or ""
+            if not app.user_real_name:
+                self.manager.current = "name_entry"
+                return
 
-    def fetch_data(self):
+        self.search_input.text = ""
+        self.grid.clear_widgets()
+        self.grid.add_widget(
+            Label(
+                text="바코드를 스캔하면 점유 로케이션이 표로 나옵니다.",
+                font_name=FONT_NAME,
+                font_size=dp(15),
+                color=TEXT_MUTED,
+                size_hint_y=None,
+                height=dp(100),
+            )
+        )
+
         App.get_running_app().show_loading_popup()
-        threading.Thread(target=self._async_fetch, daemon=True).start()
+        threading.Thread(target=self._async_fetch_inventory, daemon=True).start()
 
-    def _async_fetch(self):
+    def refresh(self):
+        App.get_running_app().show_loading_popup()
+        threading.Thread(target=self._async_fetch_inventory, daemon=True).start()
+
+    def _async_fetch_inventory(self):
         try:
-            inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
-            self.raw_inventory = inventory
-            Clock.schedule_once(lambda dt: self.search_locations())
+            data = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
+            self.raw_inventory = data
+            Clock.schedule_once(lambda dt: self.search_location())
         except Exception as e:
             Clock.schedule_once(
                 lambda dt, err=str(e): App.get_running_app().show_info_popup(
-                    "오류", str(err)
+                    "오류", f"재고 시트 로드 실패: {err}"
                 )
             )
         finally:
@@ -2227,16 +2120,16 @@ class SkuLocationSearchScreen(Screen):
 
     def handle_barcode_scan(self, barcode):
         self.search_input.text = str(barcode).strip()
-        self.search_locations()
+        self.search_location()
 
-    def search_locations(self, instance=None):
+    def search_location(self, instance=None):
         query = self.search_input.text.strip().lower()
         self.grid.clear_widgets()
 
         if not query:
             self.grid.add_widget(
                 Label(
-                    text="바코드를 스캔하거나 입력 후 검색해 주세요.",
+                    text="바코드를 스캔하면 점유 로케이션이 표로 나옵니다.",
                     font_name=FONT_NAME,
                     font_size=dp(15),
                     color=TEXT_MUTED,
@@ -2246,17 +2139,22 @@ class SkuLocationSearchScreen(Screen):
             )
             return
 
-        matches = []
+        grouped_results = defaultdict(list)
         for row in self.raw_inventory:
-            bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip().lower()
-            sku = str(t(row, "상품명", t(row, "SKU", ""))).strip().lower()
-            if query in bc or query in sku:
-                matches.append(row)
+            loc_type = str(t(row, "로케이션 유형", "")).strip()
+            if loc_type != "보관":
+                continue
 
-        if not matches:
+            bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip()
+            sku = str(t(row, "SKU", t(row, "상품명", ""))).strip()
+
+            if query in bc.lower() or query in sku.lower():
+                grouped_results[bc].append(row)
+
+        if not grouped_results:
             self.grid.add_widget(
                 Label(
-                    text=f"검색어 [{query}] 에 해당하는 재고 로케이션이 없습니다.",
+                    text=f"검색어 [{query}] 에 해당하는 '보관' 로케이션 재고가 없습니다.",
                     font_name=FONT_NAME,
                     font_size=dp(14),
                     color=TEXT_MUTED,
@@ -2266,77 +2164,277 @@ class SkuLocationSearchScreen(Screen):
             )
             return
 
-        for row in matches:
-            self.grid.add_widget(self._create_loc_card(row))
+        for bc, rows in grouped_results.items():
+            self.grid.add_widget(self._create_grouped_table_card(bc, rows))
 
-    def _create_loc_card(self, row):
+    def _create_grouped_table_card(self, barcode, rows):
+        sku_name = str(t(rows[0], "SKU", t(rows[0], "상품명", "N/A"))).strip()
+        tot_qty = sum(safe_int(t(r, "로케이션 수량", 0)) for r in rows)
+
         card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(85),
-            padding=dp(8),
-            spacing=dp(2),
+            padding=dp(12),
+            spacing=dp(6),
         )
 
-        loc_type = str(t(row, "로케이션 유형", "")).strip()
-        bg = get_color_from_hex("#E3F2FD") if loc_type == "보관" else [1, 1, 1, 1]
+        table_height = dp(45) + dp(25) + (len(rows) * dp(22)) + dp(24)
+        card.height = table_height
 
         with card.canvas.before:
-            Color(*bg)
-            RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(8)])
+            Color(1, 1, 1, 1)
+            RoundedRectangle(
+                pos=card.pos, size=card.size, radius=[dp(10)]
+            )
         card.bind(
             pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
             size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
         )
 
-        loc_name = str(t(row, "로케이션", t(row, "보관로케이션", "N/A"))).strip()
-        qty = safe_int(t(row, "로케이션 수량", 0))
-        prod_name = str(t(row, "상품명", "N/A")).strip()
-        bc = str(t(row, "바코드", "N/A")).strip()
-
-        lbl_top = Label(
-            text=f"📍 [b][color=1E88E5]{loc_name}[/color][/b] ({loc_type})  │  수량: [b][color=D32F2F]{qty}개[/color][/b]",
+        lbl_sku = Label(
+            text=f"[b]{sku_name}[/b]",
             font_name=FONT_NAME,
-            font_size=dp(13),
-            markup=True,
-            halign="left",
-            size_hint_y=None,
-            height=dp(20),
-        )
-        lbl_top.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_top)
-
-        lbl_prod = Label(
-            text=f"[b]{prod_name}[/b]",
-            font_name=FONT_NAME,
-            font_size=dp(12),
+            font_size=dp(14),
             color=TEXT_DARK,
             markup=True,
             halign="left",
+            valign="middle",
             shorten=True,
             shorten_from="right",
             size_hint_y=None,
-            height=dp(18),
+            height=dp(22),
         )
-        lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_prod)
+        lbl_sku.bind(size=lambda i, s: setattr(i, "text_size", s))
+        card.add_widget(lbl_sku)
 
-        lbl_bc = Label(
-            text=f"바코드: {bc}",
+        lbl_bc_tot = Label(
+            text=f"바코드: [b][color=1E88E5]{barcode}[/color][/b]  |  총 보관재고: [b][color=D32F2F]{tot_qty}개[/color][/b]",
             font_name=FONT_NAME,
-            font_size=dp(11),
-            color=TEXT_MUTED,
+            font_size=dp(13),
+            color=TEXT_DARK,
+            markup=True,
             halign="left",
+            valign="middle",
             size_hint_y=None,
-            height=dp(16),
+            height=dp(20),
         )
-        lbl_bc.bind(size=lambda i, s: setattr(i, "text_size", s))
-        card.add_widget(lbl_bc)
+        lbl_bc_tot.bind(size=lambda i, s: setattr(i, "text_size", s))
+        card.add_widget(lbl_bc_tot)
 
+        table_grid = GridLayout(cols=2, size_hint_y=None, spacing=dp(1))
+        table_grid.height = dp(25) + (len(rows) * dp(22))
+
+        th_loc = Label(
+            text="[b]보관 로케이션 (F:보관)[/b]",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            color=get_color_from_hex("#37474F"),
+            markup=True,
+            halign="center",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(25),
+        )
+        with th_loc.canvas.before:
+            Color(0.9, 0.93, 0.95, 1)
+            Rectangle(pos=th_loc.pos, size=th_loc.size)
+        th_loc.bind(
+            pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+            size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+        )
+
+        th_qty = Label(
+            text="[b]재고 수량(H열)[/b]",
+            font_name=FONT_NAME,
+            font_size=dp(12),
+            color=get_color_from_hex("#37474F"),
+            markup=True,
+            halign="center",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(25),
+        )
+        with th_qty.canvas.before:
+            Color(0.9, 0.93, 0.95, 1)
+            Rectangle(pos=th_qty.pos, size=th_qty.size)
+        th_qty.bind(
+            pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+            size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+        )
+
+        table_grid.add_widget(th_loc)
+        table_grid.add_widget(th_qty)
+
+        for idx, r in enumerate(rows):
+            loc_str = str(t(r, "로케이션", "N/A")).strip()
+            qty_val = safe_int(t(r, "로케이션 수량", 0))
+
+            bg_color = (0.97, 0.97, 0.97, 1) if idx % 2 == 1 else (1, 1, 1, 1)
+
+            td_loc = Label(
+                text=f"[b][color=D32F2F]{loc_str}[/color][/b]",
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                markup=True,
+                halign="center",
+                valign="middle",
+                size_hint_y=None,
+                height=dp(22),
+            )
+            with td_loc.canvas.before:
+                Color(*bg_color)
+                Rectangle(pos=td_loc.pos, size=td_loc.size)
+            td_loc.bind(
+                pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+                size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+            )
+
+            td_qty = Label(
+                text=f"[b][color=1E88E5]{qty_val} 개[/color][/b]",
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                markup=True,
+                halign="center",
+                valign="middle",
+                size_hint_y=None,
+                height=dp(22),
+            )
+            with td_qty.canvas.before:
+                Color(*bg_color)
+                Rectangle(pos=td_qty.pos, size=td_qty.size)
+            td_qty.bind(
+                pos=lambda i, p: setattr(i.canvas.before.children[-1], "pos", p),
+                size=lambda i, s: setattr(i.canvas.before.children[-1], "size", s),
+            )
+
+            table_grid.add_widget(td_loc)
+            table_grid.add_widget(td_qty)
+
+        card.add_widget(table_grid)
         return card
 
 
-# --- [통합 보충 작업 화면] ---
+# --- 통합 보충 작업 카드 뷰어 ---
+class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
+    index = NumericProperty(0)
+    task_data = DictProperty({})
+    is_claimed = BooleanProperty(False)
+    is_checked = BooleanProperty(False)
+    card_screen = ObjectProperty(None)
+    card_bg_color = ListProperty([1, 1, 1, 1])
+
+    def refresh_view_attrs(self, rv, index, data):
+        super().refresh_view_attrs(rv, index, data)
+        self.index = index
+        self.task_data = data.get("task_data", {})
+        self.is_claimed = data.get("is_claimed", False)
+        self.is_checked = data.get("is_checked", False)
+        self.card_screen = data.get("card_screen", None)
+
+        is_urgent = self.task_data.get("긴급여부") == "Y"
+        is_shelf_rack = t(self.task_data, "선반랙 여부", "").upper() == "Y"
+
+        if is_urgent:
+            self.card_bg_color = get_color_from_hex("#FFCDD2")
+        elif is_shelf_rack:
+            self.card_bg_color = get_color_from_hex("#E3F2FD")
+        else:
+            self.card_bg_color = [1, 1, 1, 1]
+
+        raw_equip = str(t(self.task_data, "장비", ""))
+        if raw_equip == "리치":
+            display_tag = "[color=0000FF][리치][/color]"
+        elif raw_equip == "오더피커":
+            display_tag = "[color=1E88E5][오더피커][/color]"
+        else:
+            display_tag = ""
+
+        client_name = str(t(self.task_data, "고객사", t(self.task_data, "화주사", ""))).strip()
+        client_tag = f" [color=555555][{client_name}][/color]" if client_name else ""
+
+        self.ids.lbl_equip.text = f"[b]{display_tag}{client_tag}[/b]"
+
+        existing_qty = safe_int(t(self.task_data, "기존수량", 0))
+        req_qty = safe_int(t(self.task_data, "지시수량", 0))
+        remaining_qty = existing_qty - req_qty
+        self.ids.lbl_stock_info.text = f"기존: [b]{existing_qty}[/b]\n보충후: [b][color=1E88E5]{remaining_qty}[/color][/b]"
+
+        qty_per_box = safe_int(
+            t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
+        )
+        product_name = t(self.task_data, "상품명", "N/A")
+        is_invoice_only = qty_per_box == 1 or "송장" in product_name
+        is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
+
+        tag_prefix = ""
+        if is_urgent:
+            tag_prefix += "[color=D32F2F][긴급][/color] "
+        if is_shelf_rack:
+            tag_prefix += "[color=1565C0][선반랙][/color] "
+
+        self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
+        self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
+
+        from_loc = str(t(self.task_data, "기존로케이션", "-"))
+        to_loc = str(t(self.task_data, "보충로케이션", "-"))
+        self.ids.lbl_loc.text = (
+            f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
+        )
+
+        conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
+        active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
+
+        target_box_ea_calc = (
+            f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
+            if qty_per_box > 0
+            else f"({req_qty}E)"
+        )
+
+        if self.is_claimed:
+            self.ids.lbl_main_qty.text = f"지시: {req_qty} / [color=D32F2F]{active_count}[/color] [color=1E88E5]{target_box_ea_calc}[/color]"
+        else:
+            self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
+
+        box_notice_str = f"박스입수: {qty_per_box}"
+        if is_inbox:
+            box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
+        if is_invoice_only:
+            box_notice_str += "  [color=D32F2F][b][송장만 부착 - 로케이션 적지 말 것][/b][/color]"
+
+        self.ids.lbl_box_info.text = box_notice_str
+
+        self.ids.box_check.opacity = 1
+        self.ids.box_check.disabled = False
+        self.ids.box_check.active = self.is_checked
+
+        if self.is_claimed:
+            self.ids.btn_action_box.height = dp(40)
+            self.ids.btn_action_box.opacity = 1
+            self.ids.btn_action_box.disabled = False
+        else:
+            self.ids.btn_action_box.height = 0
+            self.ids.btn_action_box.opacity = 0
+            self.ids.btn_action_box.disabled = True
+
+    def on_checkbox_active(self, checkbox, value):
+        if self.card_screen:
+            self.card_screen.toggle_card_check(self.task_data, value)
+
+    def handle_card_btn(self, action_name):
+        if self.card_screen:
+            self.card_screen.handle_my_task_action(action_name, self.task_data)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            app = App.get_running_app()
+            if app and app.root and app.root.current == "task_list":
+                task_list_screen = app.root.get_screen("task_list")
+                task_list_screen.open_task_from_scan({"task_data": self.task_data})
+                return True
+        return super().on_touch_down(touch)
+
+
+# --- 올인원 통합 보충 작업 화면 ---
 class UnifiedReplenishScreen(Screen):
 
     def __init__(self, **kwargs):
@@ -2367,7 +2465,7 @@ class UnifiedReplenishScreen(Screen):
         )
 
         lbl_title = Label(
-            text="📦 보충 작업 통합 컨트롤",
+            text="보충 작업 통합 컨트롤",
             font_name=FONT_NAME,
             font_size=dp(15),
             bold=True,
@@ -2385,7 +2483,7 @@ class UnifiedReplenishScreen(Screen):
         btn_refresh = StyledButton(
             text="갱신", size_hint_x=0.18, font_size=dp(12)
         )
-        btn_refresh.bind(on_press=self.refresh_button_click)
+        btn_refresh.bind(on_press=self.refresh_button_click) # 💡 전용 갱신 버튼 이벤트 바인딩
 
         header.add_widget(btn_back)
         header.add_widget(lbl_title)
@@ -2770,6 +2868,7 @@ class UnifiedReplenishScreen(Screen):
                     f"스캔한 바코드 [{clean_bc}] 에 해당하는 작업을 찾을 수 없습니다.",
                 )
 
+    # 💡 [v1.8.9.3] 갱신 버튼 전용 안전 갱신 메서드
     def refresh_button_click(self, instance=None):
         self.fetch_data()
 
@@ -3192,7 +3291,8 @@ class UnifiedReplenishScreen(Screen):
         elif action_name == "complete":
             App.get_running_app().current_list_type = "보충인원"
             task_list_screen.process_task(dummy_card)
-      
+
+
 # --- 검수 및 액션 처리 전용 화면 ---
 class TaskListScreen(Screen):
 
@@ -3448,22 +3548,6 @@ class TaskListScreen(Screen):
         conf_q = int(qty_val)
         card.task_data["확인수량"] = conf_q
 
-        # 💡 [1번 요구사항] 지시수량과 확인수량이 다른 경우 2차 검증 팝업 호출
-        req_q = safe_int(t(card.task_data, "지시수량", 0))
-        if conf_q != req_q:
-            app.show_confirmation_popup(
-                title="수량 불일치 경고 🚨",
-                message=f"[color=ffffff]지시수량([color=FF8A80][b]{req_q}개[/b][/color])과 확인수량([color=81C784][b]{conf_q}개[/b][/color])이 다릅니다.\n이대로 보충 완료 처리를 진행하시겠습니까?[/color]",
-                on_yes=lambda: self._finalize_task_processing(
-                    card,
-                    conf_q,
-                    0,
-                    None,
-                    card.task_data.get("remarks_text", t(card.task_data, "비고", "")),
-                ),
-            )
-            return
-
         self._finalize_task_processing(
             card,
             conf_q,
@@ -3485,18 +3569,12 @@ class TaskListScreen(Screen):
             prod_name = str(t(card_data, "상품명", ""))
             is_invoice_only = qty_per_box == 1 or "송장" in prod_name
 
-            # 💡 [2번 요구사항] 확인수량 기반 라벨 데이터 구성
-            conf_qty_val = card_data.get("confirmed_quantity", t(card_data, "확인수량", t(card_data, "지시수량", 0)))
-            printed_qty = safe_int(conf_qty_val)
-
             label_info = {
                 "바코드": get_barcode_from_task(card_data),
                 "보관 로케이션": str(t(card_data, "기존로케이션", "N/A")),
                 "출고 로케이션": str(t(card_data, "보충로케이션", "N/A")),
                 "긴급여부": (t(card_data, "긴급여부") == "Y"),
                 "송장전용": is_invoice_only,
-                "확인수량": printed_qty,
-                "박스입수량": qty_per_box,
             }
             threading.Thread(
                 target=self._print_thread,
@@ -3607,7 +3685,7 @@ class TaskListScreen(Screen):
 
             updated_task_data = dict(card.task_data)
             updated_task_data.update(updates)
-
+            
             try:
                 log_sheet = get_worksheet(LOG_SHEET_NAME)
                 log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
@@ -4161,11 +4239,9 @@ class PrinterSettingsPopup(Popup):
         self.content = layout
 
     def scan_devices(self, instance):
-        if platform != "android":
+        if platform != "android" or not autoclass:
             return
         try:
-            from jnius import autoclass
-
             adapter = autoclass(
                 "android.bluetooth.BluetoothAdapter"
             ).getDefaultAdapter()
@@ -4205,8 +4281,6 @@ class BluetoothPrinter:
 
         for attempt in range(2):
             try:
-                from jnius import autoclass
-
                 BluetoothAdapter = autoclass(
                     "android.bluetooth.BluetoothAdapter"
                 )
@@ -4244,7 +4318,6 @@ class BluetoothPrinter:
         self.stream = None
         self.socket = None
 
-    # 💡 [2번 요구사항] CPCL 라벨 인쇄 구분선 및 수량(박스/낱개 계산) 출력 적용
     def print_outbound_label_cpcl(self, label_info: dict, quantity: int):
         if not self.stream:
             return False
@@ -4259,35 +4332,18 @@ class BluetoothPrinter:
             is_urgent = label_info.get("긴급여부", False)
             is_invoice_only = label_info.get("송장전용", False)
 
-            conf_qty = safe_int(label_info.get("확인수량", 0))
-            box_size = safe_int(label_info.get("박스입수량", 1))
-            if box_size <= 0:
-                box_size = 1
-
             tag_str = ""
             if is_urgent:
                 tag_str += "[긴급건] "
             if is_invoice_only:
                 tag_str += "[송장만]"
 
-            # 박스 / 낱개 계산 수식 문자열 생성
-            if box_size > 1:
-                b_cnt = conf_qty // box_size
-                e_cnt = conf_qty % box_size
-                qty_str = f"수량 : {conf_qty} ({b_cnt} BOX + {e_cnt} EA)"
-            else:
-                qty_str = f"수량 : {conf_qty} ({conf_qty} EA)"
-
             cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 [보관] {from_loc}\r\n"
             cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 75 {barcode_suffix}\r\n"
             if tag_str:
                 cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 75 {tag_str}\r\nLEFT\r\n"
 
-            # 중앙 출고 로케이션 영역
-            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\n"
-
-            # 💡 하단 구분선 및 수량계산 표기 추가
-            cmd += f"LINE 20 540 556 540 3\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 30 580 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
@@ -4493,103 +4549,6 @@ Builder.load_string(
             font_size: dp(12)
             bg_color: (0.1, 0.8, 0.5, 1)
             on_press: root.handle_card_btn('complete')
-
-<ReturnTaskCard>:
-    orientation: 'vertical'
-    size_hint_y: None
-    height: self.minimum_height
-    padding: dp(10)
-    spacing: dp(4)
-    canvas.before:
-        Color:
-            rgba: root.card_bg_color
-        RoundedRectangle:
-            pos: self.pos
-            size: self.size
-            radius: [dp(12),]
-
-    BoxLayout:
-        size_hint_y: None
-        height: dp(26)
-        spacing: dp(5)
-        Label:
-            id: lbl_equip
-            font_name: app.FONT_NAME
-            font_size: dp(14)
-            halign: 'left'
-            valign: 'middle'
-            markup: True
-            size_hint_x: 0.8
-            text_size: self.width, None
-        CheckBox:
-            id: box_check
-            size_hint_x: None
-            width: dp(30)
-            color: (0.12, 0.53, 0.9, 1)
-            on_active: root.on_checkbox_active(self, self.active)
-
-    Label:
-        id: lbl_product
-        font_name: app.FONT_NAME
-        font_size: dp(15)
-        color: (0,0,0,1)
-        halign: 'left'
-        valign: 'middle'
-        markup: True
-        text_size: self.width, None
-        size_hint_y: None
-        height: self.texture_size[1]
-
-    BoxLayout:
-        size_hint_y: None
-        height: dp(18)
-        Label:
-            id: lbl_barcode
-            font_name: app.FONT_NAME
-            font_size: dp(12)
-            color: (0.4, 0.4, 0.4, 1)
-            halign: 'left'
-            text_size: self.width, None
-
-    BoxLayout:
-        size_hint_y: None
-        height: dp(25)
-        Label:
-            id: lbl_loc
-            font_name: app.FONT_NAME
-            font_size: dp(15)
-            bold: True
-            markup: True
-            halign: 'left'
-            text_size: self.width, None
-
-    BoxLayout:
-        size_hint_y: None
-        height: dp(26)
-        Label:
-            id: lbl_main_qty
-            font_name: app.FONT_NAME
-            font_size: dp(16)
-            bold: True
-            halign: 'left'
-            valign: 'middle'
-            markup: True
-            color: (0.12, 0.53, 0.9, 1)
-            text_size: self.width, None
-
-    GridLayout:
-        id: btn_action_box
-        cols: 1
-        size_hint_y: None
-        height: dp(40)
-        opacity: 0
-        disabled: True
-
-        StyledButton:
-            text: "원복 적치 & 사진촬영 완료"
-            font_size: dp(13)
-            bg_color: (0.8, 0.2, 0.2, 1)
-            on_press: root.handle_card_btn('complete')
 """
 )
 
@@ -4615,14 +4574,12 @@ class MainApp(App):
         sm.add_widget(NameEntryScreen(name="name_entry"))
         sm.add_widget(MainMenuScreen(name="main_menu"))
         sm.add_widget(UnifiedReplenishScreen(name="unified_replenish"))
-        sm.add_widget(ReturnReplenishScreen(name="return_replenish"))
         sm.add_widget(TaskListScreen(name="task_list"))
         sm.add_widget(AdminDashboardScreen(name="admin_dashboard"))
         sm.add_widget(SkuLocationSearchScreen(name="sku_location_search"))
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
 
-        # 💡 [요구사항 반영] 앱 구동 시 무조건 로그인 화면(name_entry)으로 강제 진입하도록 시작 화면을 고정합니다.
         sm.current = "name_entry"
 
         return sm
@@ -4667,19 +4624,13 @@ class MainApp(App):
                 curr_screen.handle_barcode_scan(clean_barcode)
 
     def on_start(self):
-        # 💡 [안정화] 메인 스레드 정지 방지를 위해 gspread 연결을 완전히 비동기 실행합니다.
         threading.Thread(target=initialize_gspread, daemon=True).start()
         Clock.schedule_interval(self.check_for_new_tasks, 30)
 
         if platform == "android":
             try:
-                from android.permissions import Permission, request_permissions
-
                 request_permissions(
                     [
-                        Permission.CAMERA,
-                        Permission.READ_EXTERNAL_STORAGE,
-                        Permission.WRITE_EXTERNAL_STORAGE,
                         Permission.POST_NOTIFICATIONS,
                         Permission.BLUETOOTH_SCAN,
                         Permission.BLUETOOTH_CONNECT,
@@ -4740,8 +4691,6 @@ class MainApp(App):
         if platform != "android":
             return
         try:
-            from jnius import autoclass
-
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             RingtoneManager = autoclass("android.media.RingtoneManager")
             context = PythonActivity.mActivity.getApplicationContext()
