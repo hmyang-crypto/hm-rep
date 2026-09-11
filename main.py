@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.4"
+CURRENT_VERSION = "1.8.9.5"
 
 
 def check_and_apply_update():
@@ -3548,6 +3548,22 @@ class TaskListScreen(Screen):
         conf_q = int(qty_val)
         card.task_data["확인수량"] = conf_q
 
+        # 💡 [추가] 지시수량과 확인수량이 다를 경우 2차 검증 팝업 호출
+        req_q = safe_int(t(card.task_data, "지시수량", 0))
+        if conf_q != req_q:
+            app.show_confirmation_popup(
+                title="수량 불일치 경고 🚨",
+                message=f"[color=ffffff]지시수량([color=FF8A80][b]{req_q}개[/b][/color])과 확인수량([color=81C784][b]{conf_q}개[/b][/color])이 다릅니다.\n이대로 보충 완료 처리를 진행하시겠습니까?[/color]",
+                on_yes=lambda: self._finalize_task_processing(
+                    card,
+                    conf_q,
+                    0,
+                    None,
+                    card.task_data.get("remarks_text", t(card.task_data, "비고", "")),
+                ),
+            )
+            return
+
         self._finalize_task_processing(
             card,
             conf_q,
@@ -3569,12 +3585,18 @@ class TaskListScreen(Screen):
             prod_name = str(t(card_data, "상품명", ""))
             is_invoice_only = qty_per_box == 1 or "송장" in prod_name
 
+            # 💡 [수정] 확인수량 기반 인쇄 데이터 세팅
+            conf_qty_val = card_data.get("confirmed_quantity", t(card_data, "확인수량", t(card_data, "지시수량", 0)))
+            printed_qty = safe_int(conf_qty_val)
+
             label_info = {
                 "바코드": get_barcode_from_task(card_data),
                 "보관 로케이션": str(t(card_data, "기존로케이션", "N/A")),
                 "출고 로케이션": str(t(card_data, "보충로케이션", "N/A")),
                 "긴급여부": (t(card_data, "긴급여부") == "Y"),
                 "송장전용": is_invoice_only,
+                "확인수량": printed_qty,
+                "박스입수량": qty_per_box,
             }
             threading.Thread(
                 target=self._print_thread,
