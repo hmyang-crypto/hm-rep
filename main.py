@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.5"
+CURRENT_VERSION = "1.8.9.6"
 
 
 def check_and_apply_update():
@@ -4340,6 +4340,7 @@ class BluetoothPrinter:
         self.stream = None
         self.socket = None
 
+    # 💡 [보정] 하단 수량 잘림 방지 (구분선 위치 바짝 올림 & 폰트 크기/좌표 축소)
     def print_outbound_label_cpcl(self, label_info: dict, quantity: int):
         if not self.stream:
             return False
@@ -4354,7 +4355,6 @@ class BluetoothPrinter:
             is_urgent = label_info.get("긴급여부", False)
             is_invoice_only = label_info.get("송장전용", False)
 
-            # 💡 [추가] 수량 및 박스입수량 계산 데이터 가져오기
             conf_qty = safe_int(label_info.get("확인수량", 0))
             box_size = safe_int(label_info.get("박스입수량", 1))
             if box_size <= 0:
@@ -4366,7 +4366,7 @@ class BluetoothPrinter:
             if is_invoice_only:
                 tag_str += "[송장만]"
 
-            # 💡 [추가] 박스 / 낱개 계산 수식 문자열 생성
+            # 박스 / 낱개 계산 수식 문자열 생성
             if box_size > 1:
                 b_cnt = conf_qty // box_size
                 e_cnt = conf_qty % box_size
@@ -4374,16 +4374,20 @@ class BluetoothPrinter:
             else:
                 qty_str = f"수량 : {conf_qty} ({conf_qty} EA)"
 
+            # CPCL 인쇄 명령 구성
             cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 [보관] {from_loc}\r\n"
             cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 75 {barcode_suffix}\r\n"
             if tag_str:
                 cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 75 {tag_str}\r\nLEFT\r\n"
 
-            # 중앙 출고 로케이션 영역
-            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\n"
+            # 1. 상단 구분선 및 중앙 출고 로케이션 영역
+            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 210 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 380 {loc2}\r\n"
 
-            # 💡 [추가] 하단 구분선 및 수량계산 표기 명령어 추가
-            cmd += f"LINE 20 540 556 540 3\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 30 580 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+            # 💡 2. 하단 구분선 위치를 Y=500으로 바짝 올림 (기존 540에서 위로 40px 이동)
+            cmd += f"LINE 20 500 556 500 3\r\nLEFT\r\n"
+
+            # 💡 3. 수량 폰트 크기를 SETMAG 1 2 로 축소 (가로 비율 줄임) 및 Y=520 위치에 출력 (잘림 완전 방지)
+            cmd += f"SETMAG 1 2\r\nTEXT 4 1 20 520 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
