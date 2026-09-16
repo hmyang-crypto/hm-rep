@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.7"
+CURRENT_VERSION = "1.8.9.8"
 
 
 def check_and_apply_update():
@@ -2398,11 +2398,11 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
-        # 💡 [하단 텍스트 변경] 입수량이 1이거나 송장만부착 건이면 빨간색 강조 경고문구 출력
-        if is_invoice_only:
-            box_notice_str = "[color=FF1744][b]🛑 박스 수기작성 금지 (단품/송장전용)[/b][/color]"
-        else:
-            box_notice_str = f"박스입수: {qty_per_box}"
+        # 💡 [보정] 입수량 표기 유지 + 이모티콘 제거 후 경고 텍스트 추가
+if is_invoice_only:
+    box_notice_str = f"박스입수: {qty_per_box}  [color=FF1744][b](박스 수기작성 금지 - 단품/송장전용)[/b][/color]"
+else:
+    box_notice_str = f"박스입수: {qty_per_box}"
 
         if is_inbox:
             box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
@@ -4408,7 +4408,7 @@ class BluetoothPrinter:
             if (box_size == 1) or ("(송장만부착)" in sku_name) or is_invoice_only:
                 Clock.schedule_once(
                     lambda dt: App.get_running_app().show_info_popup(
-                        "🛑 수기 작성 절대 금지",
+                        " 수기 작성 절대 금지",
                         "해당 상품은 [단품/송장만부착] 출고 박스입니다!\n\n"
                         "라벨이 붙지 않은 나머지 박스 겉면에\n"
                         "[매직/펜으로 로케이션을 적지 마세요]\n\n"
