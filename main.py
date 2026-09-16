@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.6"
+CURRENT_VERSION = "1.8.9.7"
 
 
 def check_and_apply_update():
@@ -2359,11 +2359,14 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         remaining_qty = existing_qty - req_qty
         self.ids.lbl_stock_info.text = f"기존: [b]{existing_qty}[/b]\n보충후: [b][color=1E88E5]{remaining_qty}[/color][/b]"
 
+        # ------------------ 💡 [여기서부터 교체!] ------------------
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
-        product_name = t(self.task_data, "상품명", "N/A")
-        is_invoice_only = qty_per_box == 1 or "송장" in product_name
+        product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", "N/A")))
+        
+        # 💡 [조건 추가] 입수량이 1이거나 SKU명/상품명에 '(송장만부착)' 또는 '송장'이 들어있는 경우
+        is_invoice_only = (qty_per_box == 1) or ("(송장만부착)" in product_name) or ("송장" in product_name)
         is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
 
         tag_prefix = ""
@@ -2395,13 +2398,17 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
-        box_notice_str = f"박스입수: {qty_per_box}"
+        # 💡 [하단 텍스트 변경] 입수량이 1이거나 송장만부착 건이면 빨간색 강조 경고문구 출력
+        if is_invoice_only:
+            box_notice_str = "[color=FF1744][b]🛑 박스 수기작성 금지 (단품/송장전용)[/b][/color]"
+        else:
+            box_notice_str = f"박스입수: {qty_per_box}"
+
         if is_inbox:
             box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
-        if is_invoice_only:
-            box_notice_str += "  [color=D32F2F][b][송장만 부착 - 로케이션 적지 말 것][/b][/color]"
 
         self.ids.lbl_box_info.text = box_notice_str
+        # ------------------ 💡 [여기까지 교체!] ------------------
 
         self.ids.box_check.opacity = 1
         self.ids.box_check.disabled = False
@@ -4392,6 +4399,23 @@ class BluetoothPrinter:
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
             time.sleep(0.2)
+            # ------------------ 💡 [여기서부터 추가!] ------------------
+            box_size = safe_int(label_info.get("박스입수량", 1))
+            sku_name = str(label_info.get("상품명", label_info.get("SKU명", "")))
+            is_invoice_only = label_info.get("송장전용", False)
+
+            # 💡 입수량이 1이거나 SKU명/상품명에 '(송장만부착)'이 들어있으면 팝업 노출
+            if (box_size == 1) or ("(송장만부착)" in sku_name) or is_invoice_only:
+                Clock.schedule_once(
+                    lambda dt: App.get_running_app().show_info_popup(
+                        "🛑 수기 작성 절대 금지",
+                        "해당 상품은 [단품/송장만부착] 출고 박스입니다!\n\n"
+                        "라벨이 붙지 않은 나머지 박스 겉면에\n"
+                        "[매직/펜으로 로케이션을 적지 마세요]\n\n"
+                        "※ 박스 훼손 시 반품 사유가 됩니다.",
+                    )
+                )
+            # ------------------ 💡 [여기까지 추가!] ------------------
             return True
         except Exception as e:
             print(f"🔴 CPCL 전송 중 에러: {e}")
