@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.8"
+CURRENT_VERSION = "1.8.9.9"
 
 
 def check_and_apply_update():
@@ -2399,10 +2399,10 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
         # 💡 [보정] 입수량 표기 유지 + 이모티콘 제거 후 경고 텍스트 추가
-if is_invoice_only:
-    box_notice_str = f"박스입수: {qty_per_box}  [color=FF1744][b](박스 수기작성 금지 - 단품/송장전용)[/b][/color]"
-else:
-    box_notice_str = f"박스입수: {qty_per_box}"
+        if is_invoice_only:
+            box_notice_str = f"박스입수: {qty_per_box}  [color=FF1744][b](박스 수기작성 금지 - 단품/송장전용)[/b][/color]"
+        else:
+            box_notice_str = f"박스입수: {qty_per_box}"
 
         if is_inbox:
             box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
