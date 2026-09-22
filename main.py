@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.8.9.9"
+CURRENT_VERSION = "1.9.0.0"
 
 
 def check_and_apply_update():
@@ -1228,8 +1228,11 @@ class InspectionPopup(Popup):
         self.task_data = card.task_data
         self.task_list_screen = task_list_screen
         self.current_remarks = str(t(self.task_data, "비고", ""))
+        
+        # 목표 보충 로케이션 추출
+        self.target_location = str(t(self.task_data, "보충로케이션", "")).strip().upper()
 
-        self.title = "검수 및 최종 처리"
+        self.title = "검수 및 최종 로케이션 스캔"
         self.title_font = FONT_NAME
         self.size_hint = (0.95, None)
         self.height = dp(580)
@@ -1261,7 +1264,7 @@ class InspectionPopup(Popup):
 
         if is_invoice_only:
             warn_lbl = Label(
-                text="[color=D32F2F][b]⚠️ [송장만 부착 항목] - 로케이션을 적지 마세요![/b][/color]",
+                text="[color=D32F2F][b][송장만 부착 항목] - 로케이션을 적지 마세요![/b][/color]",
                 font_name=FONT_NAME,
                 font_size=dp(13),
                 markup=True,
@@ -1337,22 +1340,25 @@ class InspectionPopup(Popup):
 
         main_layout.add_widget(input_grid)
 
+        # 로케이션 스캔 영역
         loc_box = BoxLayout(
-            orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(70)
+            orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(80)
         )
-        loc_box.add_widget(
-            Label(
-                text="최종 적치위치",
-                font_name=FONT_NAME,
-                font_size=dp(14),
-                size_hint_y=None,
-                height=dp(20),
-                halign="left",
-            )
+        
+        lbl_target = Label(
+            text=f"목표 적치위치: [color=1E88E5][b]{self.target_location}[/b][/color]",
+            font_name=FONT_NAME,
+            font_size=dp(14),
+            markup=True,
+            size_hint_y=None,
+            height=dp(22),
+            halign="left",
         )
+        lbl_target.bind(size=lambda i, s: setattr(i, "text_size", s))
+        loc_box.add_widget(lbl_target)
+
         self.final_location_input = TextInput(
-            text=str(t(self.task_data, "보충로케이션", "")),
-            hint_text="적치위치 입력",
+            hint_text="로케이션 QR 스캔 시 자동 완결",
             multiline=False,
             font_name=FONT_NAME,
             font_size=dp(16),
@@ -1362,7 +1368,7 @@ class InspectionPopup(Popup):
         )
         self.final_location_input.bind(
             on_touch_down=lambda instance, touch: self._touch_input(
-                instance, touch, "최종 적치위치 입력", False
+                instance, touch, "로케이션 QR/바코드 수기입력", False
             )
         )
         loc_box.add_widget(self.final_location_input)
@@ -1374,7 +1380,7 @@ class InspectionPopup(Popup):
         cancel_button = StyledButton(text="취소", bg_color=(0.6, 0.6, 0.6, 1))
         cancel_button.bind(on_press=self.dismiss)
         ok_button = StyledButton(
-            text="최종 완료", bg_color=get_color_from_hex("#00897B")
+            text="검수 완료 (수기입력용)", bg_color=get_color_from_hex("#00897B")
         )
         ok_button.bind(on_press=self.confirm_inspection)
 
@@ -1387,25 +1393,25 @@ class InspectionPopup(Popup):
     def _touch_input(self, instance, touch, title, is_num):
         if instance.collide_point(*touch.pos):
             def set_val(val):
-                instance.text = str(val).strip()
+                instance.text = str(val).strip().upper()
+                if not is_num:
+                    self.process_location_scan(instance.text)
 
             open_native_korean_input(title, title, instance.text, set_val, is_number=is_num)
             return True
         return False
 
-    def confirm_inspection(self, instance):
+    def process_location_scan(self, scanned_location):
         app = App.get_running_app()
+        scanned_loc = scanned_location.strip().upper()
 
         box_size_str = self.box_size_input.text.strip()
         box_count_str = self.box_count_input.text.strip() or "0"
         rem_qty_str = self.rem_qty_input.text.strip() or "0"
-        final_location = self.final_location_input.text.strip()
 
         if not box_size_str.isdigit() or not box_count_str.isdigit() or not rem_qty_str.isdigit():
-            app.show_info_popup(
-                "입력 오류", "박스 입수량, 박스 수량, 낱개 수량을 숫자로 입력해야 합니다."
-            )
-            return
+            app.show_info_popup("입력 오류 🚨", "수량을 올바르게 입력해주세요.")
+            return False
 
         box_size = int(box_size_str)
         box_count = int(box_count_str)
@@ -1413,22 +1419,46 @@ class InspectionPopup(Popup):
 
         calculated_total_qty = (box_size * box_count) + rem_qty
 
+        # 💡 [조건 1] 수량이 0이면 스캔이 들어와도 차단하고 경고 팝업 호출
         if calculated_total_qty <= 0:
-            app.show_info_popup("입력 오류", "최종 수량이 0개 이상이어야 합니다.")
-            return
+            app.show_info_popup(
+                "수량 입력 필요 🚨",
+                "수량이 입력되지 않았습니다!\n\n"
+                "박스 수량 또는 낱개 수량을 먼저 입력한 뒤\n"
+                "로케이션 QR을 스캔해 주세요.",
+            )
+            return False
 
-        if not final_location:
-            app.show_info_popup("오류", "최종 적치위치를 입력해야 합니다.")
-            return
+        self.final_location_input.text = scanned_loc
 
+        # 💡 [조건 2] 로케이션 불일치 검증
+        if scanned_loc != self.target_location:
+            app.show_info_popup(
+                "🛑 로케이션 미일치 🚨",
+                f"스캔한 로케이션이 일치하지 않습니다!\n\n"
+                f"• 목표 로케이션: [ {self.target_location} ]\n"
+                f"• 스캔 로케이션: [ {scanned_loc} ]\n\n"
+                f"올바른 로케이션에 적치 후 다시 스캔해 주세요.",
+            )
+            return False
+
+        # 💡 [조건 3] 수량 입력 + 로케이션 일치 시 자동 최종완료
         self.task_list_screen._finalize_task_processing(
             card=self.card,
             final_qty=calculated_total_qty,
             split_qty=0,
-            final_location=final_location,
+            final_location=scanned_loc,
             updated_remarks=self.current_remarks,
         )
         self.dismiss()
+        return True
+
+    def confirm_inspection(self, instance):
+        scanned_location = self.final_location_input.text.strip().upper()
+        if not scanned_location:
+            App.get_running_app().show_info_popup("스캔 필요 🚨", "적치할 로케이션 QR/바코드를 스캔해 주세요.")
+            return
+        self.process_location_scan(scanned_location)
 
 
 class NameEntryScreen(Screen):
@@ -3384,6 +3414,13 @@ class TaskListScreen(Screen):
         self.update_recycle_view()
 
     def handle_barcode_scan(self, barcode):
+        # 💡 만약 현재 InspectionPopup(검수창)이 열려있다면 로케이션 스캔으로 전달
+        for child in Window.children:
+            if isinstance(child, InspectionPopup):
+                # 💡 단순 텍스트 입력 대신 자동검증 & 자동완결 메서드 직접 호출
+                child.process_location_scan(str(barcode).strip().upper())
+                return
+                
         matches = [
             item
             for item in self.all_tasks_data
