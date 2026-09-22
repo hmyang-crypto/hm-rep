@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 #UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 #UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-#CURRENT_VERSION = "1.8.9.5"
+#CURRENT_VERSION = "1.8.9.9"
 
 
 #def check_and_apply_update():
@@ -2359,11 +2359,14 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         remaining_qty = existing_qty - req_qty
         self.ids.lbl_stock_info.text = f"기존: [b]{existing_qty}[/b]\n보충후: [b][color=1E88E5]{remaining_qty}[/color][/b]"
 
+        # ------------------ 💡 [여기서부터 교체!] ------------------
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
-        product_name = t(self.task_data, "상품명", "N/A")
-        is_invoice_only = qty_per_box == 1 or "송장" in product_name
+        product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", "N/A")))
+        
+        # 💡 [조건 추가] 입수량이 1이거나 SKU명/상품명에 '(송장만부착)' 또는 '송장'이 들어있는 경우
+        is_invoice_only = (qty_per_box == 1) or ("(송장만부착)" in product_name) or ("송장" in product_name)
         is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
 
         tag_prefix = ""
@@ -2395,13 +2398,17 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
-        box_notice_str = f"박스입수: {qty_per_box}"
+        # 💡 [보정] 입수량 표기 유지 + 이모티콘 제거 후 경고 텍스트 추가
+        if is_invoice_only:
+            box_notice_str = f"박스입수: {qty_per_box}  [color=FF1744][b](박스 수기작성 금지 - 단품/송장전용)[/b][/color]"
+        else:
+            box_notice_str = f"박스입수: {qty_per_box}"
+
         if is_inbox:
             box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
-        if is_invoice_only:
-            box_notice_str += "  [color=D32F2F][b][송장만 부착 - 로케이션 적지 말 것][/b][/color]"
 
         self.ids.lbl_box_info.text = box_notice_str
+        # ------------------ 💡 [여기까지 교체!] ------------------
 
         self.ids.box_check.opacity = 1
         self.ids.box_check.disabled = False
@@ -4340,6 +4347,7 @@ class BluetoothPrinter:
         self.stream = None
         self.socket = None
 
+    # 💡 [보정] 하단 수량 잘림 방지 (구분선 위치 바짝 올림 & 폰트 크기/좌표 축소)
     def print_outbound_label_cpcl(self, label_info: dict, quantity: int):
         if not self.stream:
             return False
@@ -4354,7 +4362,6 @@ class BluetoothPrinter:
             is_urgent = label_info.get("긴급여부", False)
             is_invoice_only = label_info.get("송장전용", False)
 
-            # 💡 [추가] 수량 및 박스입수량 계산 데이터 가져오기
             conf_qty = safe_int(label_info.get("확인수량", 0))
             box_size = safe_int(label_info.get("박스입수량", 1))
             if box_size <= 0:
@@ -4366,7 +4373,7 @@ class BluetoothPrinter:
             if is_invoice_only:
                 tag_str += "[송장만]"
 
-            # 💡 [추가] 박스 / 낱개 계산 수식 문자열 생성
+            # 박스 / 낱개 계산 수식 문자열 생성
             if box_size > 1:
                 b_cnt = conf_qty // box_size
                 e_cnt = conf_qty % box_size
@@ -4374,20 +4381,41 @@ class BluetoothPrinter:
             else:
                 qty_str = f"수량 : {conf_qty} ({conf_qty} EA)"
 
+            # CPCL 인쇄 명령 구성
             cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 [보관] {from_loc}\r\n"
             cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 75 {barcode_suffix}\r\n"
             if tag_str:
                 cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 75 {tag_str}\r\nLEFT\r\n"
 
-            # 중앙 출고 로케이션 영역
-            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\n"
+            # 1. 상단 구분선 및 중앙 출고 로케이션 영역
+            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 210 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 380 {loc2}\r\n"
 
-            # 💡 [추가] 하단 구분선 및 수량계산 표기 명령어 추가
-            cmd += f"LINE 20 540 556 540 3\r\nLEFT\r\nSETMAG 2 2\r\nTEXT 4 1 30 580 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+            # 💡 2. 하단 구분선 위치를 Y=500으로 바짝 올림 (기존 540에서 위로 40px 이동)
+            cmd += f"LINE 20 500 556 500 3\r\nLEFT\r\n"
+
+            # 💡 3. 수량 폰트 크기를 SETMAG 1 2 로 축소 (가로 비율 줄임) 및 Y=520 위치에 출력 (잘림 완전 방지)
+            cmd += f"SETMAG 1 2\r\nTEXT 4 1 20 520 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
             time.sleep(0.2)
+            # ------------------ 💡 [여기서부터 추가!] ------------------
+            box_size = safe_int(label_info.get("박스입수량", 1))
+            sku_name = str(label_info.get("상품명", label_info.get("SKU명", "")))
+            is_invoice_only = label_info.get("송장전용", False)
+
+            # 💡 입수량이 1이거나 SKU명/상품명에 '(송장만부착)'이 들어있으면 팝업 노출
+            if (box_size == 1) or ("(송장만부착)" in sku_name) or is_invoice_only:
+                Clock.schedule_once(
+                    lambda dt: App.get_running_app().show_info_popup(
+                        " 수기 작성 절대 금지",
+                        "해당 상품은 [단품/송장만부착] 출고 박스입니다!\n\n"
+                        "라벨이 붙지 않은 나머지 박스 겉면에\n"
+                        "[매직/펜으로 로케이션을 적지 마세요]\n\n"
+                        "※ 박스 훼손 시 반품 사유가 됩니다.",
+                    )
+                )
+            # ------------------ 💡 [여기까지 추가!] ------------------
             return True
         except Exception as e:
             print(f"🔴 CPCL 전송 중 에러: {e}")
