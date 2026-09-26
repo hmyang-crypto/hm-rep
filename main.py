@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.9"
+CURRENT_VERSION = "1.9.1.0"
 
 
 def check_and_apply_update():
@@ -1466,11 +1466,10 @@ class InspectionPopup(Popup):
 
     def process_location_scan(self, scanned_location):
         app = App.get_running_app()
-        
-        # 💡 [완벽 보정] UTF-8 BOM, 특수 제어문자 및 앞뒤 깨진 상자 기호(☒) 원천 제거
+
         raw_loc = str(scanned_location).replace('\ufeff', '').strip()
-        scanned_loc = re.sub(r'[\x00-\x1F\x7F]', '', raw_loc)
-        scanned_loc = re.sub(r'^[^\w\-]+|[^\w\-]+$', '', scanned_loc).strip().upper()
+        # 💡 [핵심] 순수 영문, 숫자, 하이픈(-) 외의 모든 ☒ 박스기호 및 제어문자 강제 삭제
+        scanned_loc = re.sub(r'[^A-Za-z0-9\-]', '', raw_loc).strip().upper()
 
         box_size_str = self.box_size_input.text.strip()
         box_count_str = self.box_count_input.text.strip() or "0"
@@ -4926,15 +4925,12 @@ class MainApp(App):
         return False
 
     def process_global_scan(self, barcode):
-        # 💡 [핵심] 영문, 숫자, 하이픈(-), 언더바(_) 등 바코드에 사용되는 정상 문자를 제외한 
-        # 맨 앞/뒤의 숨겨진 특수 제어문자(ASCII 0~31, STX, 깨진 문자 등)를 모두 제거
         raw_str = str(barcode).replace('\ufeff', '').strip()
-        clean_barcode = re.sub(r'^[^\w\-]+|[^\w\-]+$', '', raw_str).strip().upper()
-        
-        # 추가 안전장치: 아스키 제어문자 제거
-        clean_barcode = re.sub(r'[\x00-\x1F\x7F]', '', clean_barcode)
 
-        if self.root:
+        # 💡 [핵심] 순수 영문(A-Z, a-z), 숫자(0-9), 하이픈(-) 제외한 모든 기호/제어문자/☒ 원천 제거
+        clean_barcode = re.sub(r'[^A-Za-z0-9\-]', '', raw_str).strip().upper()
+
+        if self.root and clean_barcode:
             curr_screen = self.root.current_screen
             if hasattr(curr_screen, "handle_barcode_scan"):
                 curr_screen.handle_barcode_scan(clean_barcode)
