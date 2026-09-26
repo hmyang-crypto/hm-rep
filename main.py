@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.2"
+CURRENT_VERSION = "1.9.0.3"
 
 
 def check_and_apply_update():
@@ -4814,13 +4814,22 @@ class MainApp(App):
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
 
+        # 💡 [엔터키 입력 시]
         if key in [13, 40]:
             if self._scan_buffer:
-                self.process_global_scan(str(self._scan_buffer))
+                # 붙여넣기 과정에서 섞여 들어간 불필요한 'v' 또는 'V' 오입력 제거
+                clean_code = str(self._scan_buffer).strip()
+                
+                # 만약 스캔값이 순수 'v' 나 'V' 한 글자면 오입력으로 간주하고 무시
+                if clean_code.upper() != "V":
+                    self.process_global_scan(clean_code)
                 self._scan_buffer = ""
             return True
 
         if codepoint:
+            # 💡 컨트롤 키(Ctrl+V) 조합으로 들어오는 단독 'v' 키 캡처 방지
+            if "ctrl" in modifier and codepoint.lower() == "v":
+                return False
             self._scan_buffer += str(codepoint)
         return False
 
