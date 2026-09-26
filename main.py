@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.1"
+CURRENT_VERSION = "1.9.0.2"
 
 
 def check_and_apply_update():
@@ -2500,16 +2500,57 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         app = App.get_running_app()
         
         def on_confirm_fallback(reason):
-            if reason.strip():
-                self.task_data["manual_qty_unlocked"] = True
-                ts = datetime.now().strftime("%H:%M")
-                curr_rem = self.task_data.get("remarks_text", t(self.task_data, "비고", ""))
-                formatted = f"[{ts} 스캔불가사유: {reason.strip()}]"
-                self.task_data["remarks_text"] = f"{curr_rem}\n{formatted}" if curr_rem else formatted
-                self.task_data["비고"] = self.task_data["remarks_text"]
-                
-                # 수량 입력 팝업 즉시 호출
-                self.card_screen.handle_my_task_action("qty", self.task_data)
+            clean_reason = reason.strip()
+            if not clean_reason:
+                return
+
+            # 1. 시간 및 사유 포맷팅
+            ts = datetime.now().strftime("%H:%M")
+            formatted_entry = f"[{ts} 스캔불가사유: {clean_reason}]"
+
+            # 2. 기존 비고 가져와서 병합
+            curr_rem = str(self.task_data.get("remarks_text", t(self.task_data, "비고", ""))).strip()
+            updated_remarks = f"{curr_rem}\n{formatted_entry}" if curr_rem else formatted_entry
+
+            # 3. 로컬 앱 메모리 동기화 및 버튼 잠금 해제
+            self.task_data["manual_qty_unlocked"] = True
+            self.task_data["remarks_text"] = updated_remarks
+            self.task_data["비고"] = updated_remarks
+
+            if self.card_screen and hasattr(self.card_screen, "raw_all_tasks"):
+                task_id = t(self.task_data, "작업ID")
+                for task in self.card_screen.raw_all_tasks:
+                    if t(task, "작업ID") == task_id:
+                        task["manual_qty_unlocked"] = True
+                        task["remarks_text"] = updated_remarks
+                        task["비고"] = updated_remarks
+                        break
+
+            # 💡 [핵심 추가] 비고 내용 구글 시트에 "즉시(실시간)" 비동기 업데이트
+            task_id = str(t(self.task_data, "작업ID"))
+            def _async_update_sheet_remarks():
+                try:
+                    sheet = get_worksheet(TASK_SHEET_NAME)
+                    headers = [str(h).strip() for h in sheet.row_values(1)]
+                    if "비고" in headers and "작업ID" in headers:
+                        task_id_col = headers.index("작업ID") + 1
+                        remarks_col = headers.index("비고") + 1
+                        
+                        all_ids = sheet.col_values(task_id_col)
+                        if task_id in all_ids:
+                            row_idx = all_ids.index(task_id) + 1
+                            sheet.update_cell(row_idx, remarks_col, updated_remarks)
+                            invalidate_cache(TASK_SHEET_NAME)
+                            print(f"✅ 구글 시트 비고 실시간 업데이트 완료: {updated_remarks}")
+                except Exception as e:
+                    print(f"⚠️ 비고 실시간 시트 업데이트 에러: {e}")
+
+            threading.Thread(target=_async_update_sheet_remarks, daemon=True).start()
+
+            app.show_toast("스캔불가 사유가 구글 시트 비고란에 즉시 기록되었습니다.")
+
+            # 4. 수량 입력 팝업 즉시 열기
+            self.card_screen.handle_my_task_action("qty", self.task_data)
 
         open_native_korean_input(
             "바코드 스캔 불가 처리",
@@ -3652,7 +3693,13 @@ class TaskListScreen(Screen):
         conf_q = int(qty_val)
         card.task_data["확인수량"] = conf_q
 
-        # 💡 [추가] 지시수량과 확인수량이 다를 경우 2차 검증 팝업 호출
+        # 💡 [보정] 스캔불가 사유가 담긴 비고 텍스트를 최우선으로 추출
+        current_remarks = str(
+            card.task_data.get(
+                "remarks_text", t(card.task_data, "비고", "")
+            )
+        ).strip()
+
         req_q = safe_int(t(card.task_data, "지시수량", 0))
         if conf_q != req_q:
             app.show_confirmation_popup(
@@ -3663,7 +3710,7 @@ class TaskListScreen(Screen):
                     conf_q,
                     0,
                     None,
-                    card.task_data.get("remarks_text", t(card.task_data, "비고", "")),
+                    current_remarks,  # 👈 비고 전달
                 ),
             )
             return
@@ -3673,7 +3720,7 @@ class TaskListScreen(Screen):
             conf_q,
             0,
             None,
-            card.task_data.get("remarks_text", t(card.task_data, "비고", "")),
+            current_remarks,  # 👈 비고 전달
         )
 
     def _start_print_job(self, card_data):
