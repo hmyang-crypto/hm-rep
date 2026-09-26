@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.6"
+CURRENT_VERSION = "1.9.0.8"
 
 
 def check_and_apply_update():
@@ -1403,7 +1403,11 @@ class InspectionPopup(Popup):
 
     def process_location_scan(self, scanned_location):
         app = App.get_running_app()
-        scanned_loc = scanned_location.strip().upper()
+        
+        # 💡 [완벽 보정] UTF-8 BOM, 특수 제어문자 및 앞뒤 깨진 상자 기호(☒) 원천 제거
+        raw_loc = str(scanned_location).replace('\ufeff', '').strip()
+        scanned_loc = re.sub(r'[\x00-\x1F\x7F]', '', raw_loc)
+        scanned_loc = re.sub(r'^[^\w\-]+|[^\w\-]+$', '', scanned_loc).strip().upper()
 
         box_size_str = self.box_size_input.text.strip()
         box_count_str = self.box_count_input.text.strip() or "0"
@@ -1419,7 +1423,7 @@ class InspectionPopup(Popup):
 
         calculated_total_qty = (box_size * box_count) + rem_qty
 
-        # 💡 [조건 1] 수량이 0이면 스캔이 들어와도 차단하고 경고 팝업 호출
+        # 수량 0 체크
         if calculated_total_qty <= 0:
             app.show_info_popup(
                 "수량 입력 필요 🚨",
@@ -1431,7 +1435,7 @@ class InspectionPopup(Popup):
 
         self.final_location_input.text = scanned_loc
 
-        # 💡 [조건 2] 로케이션 불일치 검증
+        # 로케이션 검증
         if scanned_loc != self.target_location:
             app.show_info_popup(
                 "🛑 로케이션 미일치 🚨",
@@ -1441,6 +1445,17 @@ class InspectionPopup(Popup):
                 f"올바른 로케이션에 적치 후 다시 스캔해 주세요.",
             )
             return False
+
+        # 최종 처리
+        self.task_list_screen._finalize_task_processing(
+            card=self.card,
+            final_qty=calculated_total_qty,
+            split_qty=0,
+            final_location=scanned_loc,
+            updated_remarks=self.current_remarks,
+        )
+        self.dismiss()
+        return True
 
         # 💡 [조건 3] 수량 입력 + 로케이션 일치 시 자동 최종완료
         self.task_list_screen._finalize_task_processing(
@@ -4815,33 +4830,41 @@ class MainApp(App):
         return sm
 
     def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
-        # 1. 스캔 간격 타이머 (0.25초 이상 지연 시 버퍼 리셋)
         current_time = time.time()
+        # 0.25초 지연 시 버퍼 리셋
         if current_time - self._last_keystroke_time > 0.25:
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
 
-        # 2. 엔터키(13 또는 40) 입력 시 스캔 완결 처리
+        # 💡 [엔터키(13, 40) 수신 시]
         if key in [13, 40]:
             if self._scan_buffer:
-                self.process_global_scan(self._scan_buffer)
+                raw_data = str(self._scan_buffer).strip()
+                
+                # 🚨 핵심: 버퍼에 단독으로 'V' 또는 'v'만 들어있다면 스캐너 붙여넣기 찌꺼기이므로 무시!
+                if raw_data.upper() == "V":
+                    # 버퍼를 지우지 않고 뒤따라올 바코드 텍스트를 기다립니다.
+                    return True
+
+                self.process_global_scan(raw_data)
                 self._scan_buffer = ""
             return True
 
-        # 3. 예전 코드 방식: 순수 인쇄 가능한 영문/숫자/특수문자만 버퍼에 축적 (제어문자 원천 차단)
+        # 순수 아스키 문자 수집
         if codepoint and codepoint.isprintable() and ord(codepoint) >= 32:
             self._scan_buffer += codepoint
         return False
 
     def process_global_scan(self, barcode):
-        # 예전 코드 방식: 제어문자(ASCII 0~31, 127) 제거 정규식 적용
-        clean_barcode = re.sub(r'[\x00-\x1F\x7F]', '', str(barcode)).strip().upper()
+        # 💡 [핵심] 영문, 숫자, 하이픈(-), 언더바(_) 등 바코드에 사용되는 정상 문자를 제외한 
+        # 맨 앞/뒤의 숨겨진 특수 제어문자(ASCII 0~31, STX, 깨진 문자 등)를 모두 제거
+        raw_str = str(barcode).replace('\ufeff', '').strip()
+        clean_barcode = re.sub(r'^[^\w\-]+|[^\w\-]+$', '', raw_str).strip().upper()
         
-        # 만약 클립보드 붙여넣기 잔상으로 맨 앞에 v/V만 달려온 경우 살짝 정제
-        if (clean_barcode.startswith("V") or clean_barcode.startswith("v")) and len(clean_barcode) > 1:
-            clean_barcode = clean_barcode[1:]
+        # 추가 안전장치: 아스키 제어문자 제거
+        clean_barcode = re.sub(r'[\x00-\x1F\x7F]', '', clean_barcode)
 
-        if self.root and clean_barcode:
+        if self.root:
             curr_screen = self.root.current_screen
             if hasattr(curr_screen, "handle_barcode_scan"):
                 curr_screen.handle_barcode_scan(clean_barcode)
