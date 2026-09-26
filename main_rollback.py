@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 #UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 #UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-#CURRENT_VERSION = "1.8.9.4"
+#CURRENT_VERSION = "1.9.0.3"
 
 
 #def check_and_apply_update():
@@ -1228,8 +1228,11 @@ class InspectionPopup(Popup):
         self.task_data = card.task_data
         self.task_list_screen = task_list_screen
         self.current_remarks = str(t(self.task_data, "비고", ""))
+        
+        # 목표 보충 로케이션 추출
+        self.target_location = str(t(self.task_data, "보충로케이션", "")).strip().upper()
 
-        self.title = "검수 및 최종 처리"
+        self.title = "검수 및 최종 로케이션 스캔"
         self.title_font = FONT_NAME
         self.size_hint = (0.95, None)
         self.height = dp(580)
@@ -1261,7 +1264,7 @@ class InspectionPopup(Popup):
 
         if is_invoice_only:
             warn_lbl = Label(
-                text="[color=D32F2F][b]⚠️ [송장만 부착 항목] - 로케이션을 적지 마세요![/b][/color]",
+                text="[color=D32F2F][b][송장만 부착 항목] - 로케이션을 적지 마세요![/b][/color]",
                 font_name=FONT_NAME,
                 font_size=dp(13),
                 markup=True,
@@ -1337,22 +1340,25 @@ class InspectionPopup(Popup):
 
         main_layout.add_widget(input_grid)
 
+        # 로케이션 스캔 영역
         loc_box = BoxLayout(
-            orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(70)
+            orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(80)
         )
-        loc_box.add_widget(
-            Label(
-                text="최종 적치위치",
-                font_name=FONT_NAME,
-                font_size=dp(14),
-                size_hint_y=None,
-                height=dp(20),
-                halign="left",
-            )
+        
+        lbl_target = Label(
+            text=f"목표 적치위치: [color=1E88E5][b]{self.target_location}[/b][/color]",
+            font_name=FONT_NAME,
+            font_size=dp(14),
+            markup=True,
+            size_hint_y=None,
+            height=dp(22),
+            halign="left",
         )
+        lbl_target.bind(size=lambda i, s: setattr(i, "text_size", s))
+        loc_box.add_widget(lbl_target)
+
         self.final_location_input = TextInput(
-            text=str(t(self.task_data, "보충로케이션", "")),
-            hint_text="적치위치 입력",
+            hint_text="로케이션 QR 스캔 시 자동 완결",
             multiline=False,
             font_name=FONT_NAME,
             font_size=dp(16),
@@ -1362,7 +1368,7 @@ class InspectionPopup(Popup):
         )
         self.final_location_input.bind(
             on_touch_down=lambda instance, touch: self._touch_input(
-                instance, touch, "최종 적치위치 입력", False
+                instance, touch, "로케이션 QR/바코드 수기입력", False
             )
         )
         loc_box.add_widget(self.final_location_input)
@@ -1374,7 +1380,7 @@ class InspectionPopup(Popup):
         cancel_button = StyledButton(text="취소", bg_color=(0.6, 0.6, 0.6, 1))
         cancel_button.bind(on_press=self.dismiss)
         ok_button = StyledButton(
-            text="최종 완료", bg_color=get_color_from_hex("#00897B")
+            text="검수 완료 (수기입력용)", bg_color=get_color_from_hex("#00897B")
         )
         ok_button.bind(on_press=self.confirm_inspection)
 
@@ -1387,25 +1393,25 @@ class InspectionPopup(Popup):
     def _touch_input(self, instance, touch, title, is_num):
         if instance.collide_point(*touch.pos):
             def set_val(val):
-                instance.text = str(val).strip()
+                instance.text = str(val).strip().upper()
+                if not is_num:
+                    self.process_location_scan(instance.text)
 
             open_native_korean_input(title, title, instance.text, set_val, is_number=is_num)
             return True
         return False
 
-    def confirm_inspection(self, instance):
+    def process_location_scan(self, scanned_location):
         app = App.get_running_app()
+        scanned_loc = scanned_location.strip().upper()
 
         box_size_str = self.box_size_input.text.strip()
         box_count_str = self.box_count_input.text.strip() or "0"
         rem_qty_str = self.rem_qty_input.text.strip() or "0"
-        final_location = self.final_location_input.text.strip()
 
         if not box_size_str.isdigit() or not box_count_str.isdigit() or not rem_qty_str.isdigit():
-            app.show_info_popup(
-                "입력 오류", "박스 입수량, 박스 수량, 낱개 수량을 숫자로 입력해야 합니다."
-            )
-            return
+            app.show_info_popup("입력 오류 🚨", "수량을 올바르게 입력해주세요.")
+            return False
 
         box_size = int(box_size_str)
         box_count = int(box_count_str)
@@ -1413,22 +1419,46 @@ class InspectionPopup(Popup):
 
         calculated_total_qty = (box_size * box_count) + rem_qty
 
+        # 💡 [조건 1] 수량이 0이면 스캔이 들어와도 차단하고 경고 팝업 호출
         if calculated_total_qty <= 0:
-            app.show_info_popup("입력 오류", "최종 수량이 0개 이상이어야 합니다.")
-            return
+            app.show_info_popup(
+                "수량 입력 필요 🚨",
+                "수량이 입력되지 않았습니다!\n\n"
+                "박스 수량 또는 낱개 수량을 먼저 입력한 뒤\n"
+                "로케이션 QR을 스캔해 주세요.",
+            )
+            return False
 
-        if not final_location:
-            app.show_info_popup("오류", "최종 적치위치를 입력해야 합니다.")
-            return
+        self.final_location_input.text = scanned_loc
 
+        # 💡 [조건 2] 로케이션 불일치 검증
+        if scanned_loc != self.target_location:
+            app.show_info_popup(
+                "🛑 로케이션 미일치 🚨",
+                f"스캔한 로케이션이 일치하지 않습니다!\n\n"
+                f"• 목표 로케이션: [ {self.target_location} ]\n"
+                f"• 스캔 로케이션: [ {scanned_loc} ]\n\n"
+                f"올바른 로케이션에 적치 후 다시 스캔해 주세요.",
+            )
+            return False
+
+        # 💡 [조건 3] 수량 입력 + 로케이션 일치 시 자동 최종완료
         self.task_list_screen._finalize_task_processing(
             card=self.card,
             final_qty=calculated_total_qty,
             split_qty=0,
-            final_location=final_location,
+            final_location=scanned_loc,
             updated_remarks=self.current_remarks,
         )
         self.dismiss()
+        return True
+
+    def confirm_inspection(self, instance):
+        scanned_location = self.final_location_input.text.strip().upper()
+        if not scanned_location:
+            App.get_running_app().show_info_popup("스캔 필요 🚨", "적치할 로케이션 QR/바코드를 스캔해 주세요.")
+            return
+        self.process_location_scan(scanned_location)
 
 
 class NameEntryScreen(Screen):
@@ -2332,7 +2362,18 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.card_screen = data.get("card_screen", None)
 
         is_urgent = self.task_data.get("긴급여부") == "Y"
-        is_shelf_rack = t(self.task_data, "선반랙 여부", "").upper() == "Y"
+        shelf_val = str(
+            t(
+                self.task_data,
+                "선반렉 여부",
+                t(
+                    self.task_data,
+                    "선반랙 여부",
+                    t(self.task_data, "선반렉", t(self.task_data, "선반랙", "")),
+                ),
+            )
+        ).strip().upper()
+        is_shelf_rack = (shelf_val == "Y") or ("선반" in shelf_val)
 
         if is_urgent:
             self.card_bg_color = get_color_from_hex("#FFCDD2")
@@ -2362,15 +2403,16 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
-        product_name = t(self.task_data, "상품명", "N/A")
-        is_invoice_only = qty_per_box == 1 or "송장" in product_name
+        product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", "N/A")))
+        
+        is_invoice_only = (qty_per_box == 1) or ("(송장만부착)" in product_name) or ("송장" in product_name)
         is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
 
         tag_prefix = ""
         if is_urgent:
             tag_prefix += "[color=D32F2F][긴급][/color] "
         if is_shelf_rack:
-            tag_prefix += "[color=1565C0][선반랙][/color] "
+            tag_prefix += "[color=1565C0][선반렉][/color] "
 
         self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
         self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
@@ -2395,11 +2437,13 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
-        box_notice_str = f"박스입수: {qty_per_box}"
+        if is_invoice_only:
+            box_notice_str = f"박스입수: {qty_per_box}  [color=FF1744][b](박스 수기작성 금지 - 단품/송장전용)[/b][/color]"
+        else:
+            box_notice_str = f"박스입수: {qty_per_box}"
+
         if is_inbox:
             box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
-        if is_invoice_only:
-            box_notice_str += "  [color=D32F2F][b][송장만 부착 - 로케이션 적지 말 것][/b][/color]"
 
         self.ids.lbl_box_info.text = box_notice_str
 
@@ -2407,10 +2451,24 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.ids.box_check.disabled = False
         self.ids.box_check.active = self.is_checked
 
+        # 💡 [핵심] 수량입력 버튼 동적 제어 로직
+        is_no_barcode_sku = product_name.strip().startswith("★")
+        has_qty_entered = str(conf_qty_val).strip().isdigit() and int(str(conf_qty_val).strip()) > 0
+        is_manual_unlocked = self.task_data.get("manual_qty_unlocked", False)
+
+        can_show_qty_btn = is_no_barcode_sku or has_qty_entered or is_manual_unlocked
+
         if self.is_claimed:
             self.ids.btn_action_box.height = dp(40)
             self.ids.btn_action_box.opacity = 1
             self.ids.btn_action_box.disabled = False
+
+            if can_show_qty_btn:
+                self.ids.btn_qty_input.text = "수량입력"
+                self.ids.btn_qty_input.set_bg_color(PRIMARY_BLUE)
+            else:
+                self.ids.btn_qty_input.text = "스캔불가"
+                self.ids.btn_qty_input.set_bg_color(get_color_from_hex("#78909C"))
         else:
             self.ids.btn_action_box.height = 0
             self.ids.btn_action_box.opacity = 0
@@ -2422,7 +2480,84 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
     def handle_card_btn(self, action_name):
         if self.card_screen:
-            self.card_screen.handle_my_task_action(action_name, self.task_data)
+            product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", ""))).strip()
+            is_no_barcode_sku = product_name.startswith("★")
+            conf_q_val = str(self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))).strip()
+            has_qty_entered = conf_q_val.isdigit() and int(conf_q_val) > 0
+            is_manual_unlocked = self.task_data.get("manual_qty_unlocked", False)
+
+            can_show_qty_btn = is_no_barcode_sku or has_qty_entered or is_manual_unlocked
+
+            if action_name == "qty":
+                if can_show_qty_btn:
+                    self.card_screen.handle_my_task_action("qty", self.task_data)
+                else:
+                    self._prompt_scan_fallback()
+            else:
+                self.card_screen.handle_my_task_action(action_name, self.task_data)
+
+    def _prompt_scan_fallback(self):
+        app = App.get_running_app()
+        
+        def on_confirm_fallback(reason):
+            clean_reason = reason.strip()
+            if not clean_reason:
+                return
+
+            # 1. 시간 및 사유 포맷팅
+            ts = datetime.now().strftime("%H:%M")
+            formatted_entry = f"[{ts} 스캔불가사유: {clean_reason}]"
+
+            # 2. 기존 비고 가져와서 병합
+            curr_rem = str(self.task_data.get("remarks_text", t(self.task_data, "비고", ""))).strip()
+            updated_remarks = f"{curr_rem}\n{formatted_entry}" if curr_rem else formatted_entry
+
+            # 3. 로컬 앱 메모리 동기화 및 버튼 잠금 해제
+            self.task_data["manual_qty_unlocked"] = True
+            self.task_data["remarks_text"] = updated_remarks
+            self.task_data["비고"] = updated_remarks
+
+            if self.card_screen and hasattr(self.card_screen, "raw_all_tasks"):
+                task_id = t(self.task_data, "작업ID")
+                for task in self.card_screen.raw_all_tasks:
+                    if t(task, "작업ID") == task_id:
+                        task["manual_qty_unlocked"] = True
+                        task["remarks_text"] = updated_remarks
+                        task["비고"] = updated_remarks
+                        break
+
+            # 💡 [핵심 추가] 비고 내용 구글 시트에 "즉시(실시간)" 비동기 업데이트
+            task_id = str(t(self.task_data, "작업ID"))
+            def _async_update_sheet_remarks():
+                try:
+                    sheet = get_worksheet(TASK_SHEET_NAME)
+                    headers = [str(h).strip() for h in sheet.row_values(1)]
+                    if "비고" in headers and "작업ID" in headers:
+                        task_id_col = headers.index("작업ID") + 1
+                        remarks_col = headers.index("비고") + 1
+                        
+                        all_ids = sheet.col_values(task_id_col)
+                        if task_id in all_ids:
+                            row_idx = all_ids.index(task_id) + 1
+                            sheet.update_cell(row_idx, remarks_col, updated_remarks)
+                            invalidate_cache(TASK_SHEET_NAME)
+                            print(f"✅ 구글 시트 비고 실시간 업데이트 완료: {updated_remarks}")
+                except Exception as e:
+                    print(f"⚠️ 비고 실시간 시트 업데이트 에러: {e}")
+
+            threading.Thread(target=_async_update_sheet_remarks, daemon=True).start()
+
+            app.show_toast("스캔불가 사유가 구글 시트 비고란에 즉시 기록되었습니다.")
+
+            # 4. 수량 입력 팝업 즉시 열기
+            self.card_screen.handle_my_task_action("qty", self.task_data)
+
+        open_native_korean_input(
+            "바코드 스캔 불가 처리",
+            "스캔이 안 되는 사유 입력 (예: 바코드 훼손)",
+            "",
+            on_confirm_fallback
+        )
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -2432,7 +2567,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
                 task_list_screen.open_task_from_scan({"task_data": self.task_data})
                 return True
         return super().on_touch_down(touch)
-
 
 # --- 올인원 통합 보충 작업 화면 ---
 class UnifiedReplenishScreen(Screen):
@@ -2842,6 +2976,10 @@ class UnifiedReplenishScreen(Screen):
             if self.active_main_tab != "MY":
                 self.switch_main_tab("MY")
             target_task = my_matches[0]
+            
+            # 💡 [핵심] 바코드 스캔 성공 시 수량입력 버튼 잠금 해제
+            target_task["manual_qty_unlocked"] = True
+            
             task_list_screen = self.manager.get_screen("task_list")
             dummy_card = type(
                 "DummyCard", (), {"task_data": target_task}
@@ -3377,6 +3515,13 @@ class TaskListScreen(Screen):
         self.update_recycle_view()
 
     def handle_barcode_scan(self, barcode):
+        # 💡 만약 현재 InspectionPopup(검수창)이 열려있다면 로케이션 스캔으로 전달
+        for child in Window.children:
+            if isinstance(child, InspectionPopup):
+                # 💡 단순 텍스트 입력 대신 자동검증 & 자동완결 메서드 직접 호출
+                child.process_location_scan(str(barcode).strip().upper())
+                return
+                
         matches = [
             item
             for item in self.all_tasks_data
@@ -3548,12 +3693,34 @@ class TaskListScreen(Screen):
         conf_q = int(qty_val)
         card.task_data["확인수량"] = conf_q
 
+        # 💡 [보정] 스캔불가 사유가 담긴 비고 텍스트를 최우선으로 추출
+        current_remarks = str(
+            card.task_data.get(
+                "remarks_text", t(card.task_data, "비고", "")
+            )
+        ).strip()
+
+        req_q = safe_int(t(card.task_data, "지시수량", 0))
+        if conf_q != req_q:
+            app.show_confirmation_popup(
+                title="수량 불일치 경고 🚨",
+                message=f"[color=ffffff]지시수량([color=FF8A80][b]{req_q}개[/b][/color])과 확인수량([color=81C784][b]{conf_q}개[/b][/color])이 다릅니다.\n이대로 보충 완료 처리를 진행하시겠습니까?[/color]",
+                on_yes=lambda: self._finalize_task_processing(
+                    card,
+                    conf_q,
+                    0,
+                    None,
+                    current_remarks,  # 👈 비고 전달
+                ),
+            )
+            return
+
         self._finalize_task_processing(
             card,
             conf_q,
             0,
             None,
-            card.task_data.get("remarks_text", t(card.task_data, "비고", "")),
+            current_remarks,  # 👈 비고 전달
         )
 
     def _start_print_job(self, card_data):
@@ -3569,12 +3736,18 @@ class TaskListScreen(Screen):
             prod_name = str(t(card_data, "상품명", ""))
             is_invoice_only = qty_per_box == 1 or "송장" in prod_name
 
+            # 💡 [수정] 확인수량 기반 인쇄 데이터 세팅
+            conf_qty_val = card_data.get("confirmed_quantity", t(card_data, "확인수량", t(card_data, "지시수량", 0)))
+            printed_qty = safe_int(conf_qty_val)
+
             label_info = {
                 "바코드": get_barcode_from_task(card_data),
                 "보관 로케이션": str(t(card_data, "기존로케이션", "N/A")),
                 "출고 로케이션": str(t(card_data, "보충로케이션", "N/A")),
                 "긴급여부": (t(card_data, "긴급여부") == "Y"),
                 "송장전용": is_invoice_only,
+                "확인수량": printed_qty,
+                "박스입수량": qty_per_box,
             }
             threading.Thread(
                 target=self._print_thread,
@@ -4318,6 +4491,7 @@ class BluetoothPrinter:
         self.stream = None
         self.socket = None
 
+    # 💡 [보정] 하단 수량 잘림 방지 (구분선 위치 바짝 올림 & 폰트 크기/좌표 축소)
     def print_outbound_label_cpcl(self, label_info: dict, quantity: int):
         if not self.stream:
             return False
@@ -4332,22 +4506,60 @@ class BluetoothPrinter:
             is_urgent = label_info.get("긴급여부", False)
             is_invoice_only = label_info.get("송장전용", False)
 
+            conf_qty = safe_int(label_info.get("확인수량", 0))
+            box_size = safe_int(label_info.get("박스입수량", 1))
+            if box_size <= 0:
+                box_size = 1
+
             tag_str = ""
             if is_urgent:
                 tag_str += "[긴급건] "
             if is_invoice_only:
                 tag_str += "[송장만]"
 
+            # 박스 / 낱개 계산 수식 문자열 생성
+            if box_size > 1:
+                b_cnt = conf_qty // box_size
+                e_cnt = conf_qty % box_size
+                qty_str = f"수량 : {conf_qty} ({b_cnt} BOX + {e_cnt} EA)"
+            else:
+                qty_str = f"수량 : {conf_qty} ({conf_qty} EA)"
+
+            # CPCL 인쇄 명령 구성
             cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 [보관] {from_loc}\r\n"
             cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 75 {barcode_suffix}\r\n"
             if tag_str:
                 cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 75 {tag_str}\r\nLEFT\r\n"
 
-            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 235 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 425 {loc2}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+            # 1. 상단 구분선 및 중앙 출고 로케이션 영역
+            cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 210 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 380 {loc2}\r\n"
+
+            # 💡 2. 하단 구분선 위치를 Y=500으로 바짝 올림 (기존 540에서 위로 40px 이동)
+            cmd += f"LINE 20 500 556 500 3\r\nLEFT\r\n"
+
+            # 💡 3. 수량 폰트 크기를 SETMAG 1 2 로 축소 (가로 비율 줄임) 및 Y=520 위치에 출력 (잘림 완전 방지)
+            cmd += f"SETMAG 1 2\r\nTEXT 4 1 20 520 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
             time.sleep(0.2)
+            # ------------------ 💡 [여기서부터 추가!] ------------------
+            box_size = safe_int(label_info.get("박스입수량", 1))
+            sku_name = str(label_info.get("상품명", label_info.get("SKU명", "")))
+            is_invoice_only = label_info.get("송장전용", False)
+
+            # 💡 입수량이 1이거나 SKU명/상품명에 '(송장만부착)'이 들어있으면 팝업 노출
+            if (box_size == 1) or ("(송장만부착)" in sku_name) or is_invoice_only:
+                Clock.schedule_once(
+                    lambda dt: App.get_running_app().show_info_popup(
+                        " 수기 작성 절대 금지",
+                        "해당 상품은 [단품/송장만부착] 출고 박스입니다!\n\n"
+                        "라벨이 붙지 않은 나머지 박스 겉면에\n"
+                        "[매직/펜으로 로케이션을 적지 마세요]\n\n"
+                        "※ 박스 훼손 시 반품 사유가 됩니다.",
+                    )
+                )
+            # ------------------ 💡 [여기까지 추가!] ------------------
             return True
         except Exception as e:
             print(f"🔴 CPCL 전송 중 에러: {e}")
@@ -4467,6 +4679,7 @@ Builder.load_string(
         text_size: self.width, None
         size_hint_y: None
         height: self.texture_size[1]
+        on_texture_size: self.height = self.texture_size[1]
 
     BoxLayout:
         size_hint_y: None
@@ -4532,6 +4745,7 @@ Builder.load_string(
             bg_color: (0.9, 0.6, 0, 1)
             on_press: root.handle_card_btn('return')
         StyledButton:
+            id: btn_qty_input  # 👈 [핵심] ID 추가
             text: "수량입력"
             font_size: dp(12)
             on_press: root.handle_card_btn('qty')
@@ -4600,13 +4814,22 @@ class MainApp(App):
             self._scan_buffer = ""
         self._last_keystroke_time = current_time
 
+        # 💡 [엔터키 입력 시]
         if key in [13, 40]:
             if self._scan_buffer:
-                self.process_global_scan(str(self._scan_buffer))
+                # 붙여넣기 과정에서 섞여 들어간 불필요한 'v' 또는 'V' 오입력 제거
+                clean_code = str(self._scan_buffer).strip()
+                
+                # 만약 스캔값이 순수 'v' 나 'V' 한 글자면 오입력으로 간주하고 무시
+                if clean_code.upper() != "V":
+                    self.process_global_scan(clean_code)
                 self._scan_buffer = ""
             return True
 
         if codepoint:
+            # 💡 컨트롤 키(Ctrl+V) 조합으로 들어오는 단독 'v' 키 캡처 방지
+            if "ctrl" in modifier and codepoint.lower() == "v":
+                return False
             self._scan_buffer += str(codepoint)
         return False
 
