@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.0"
+CURRENT_VERSION = "1.9.0.1"
 
 
 def check_and_apply_update():
@@ -2362,7 +2362,18 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.card_screen = data.get("card_screen", None)
 
         is_urgent = self.task_data.get("긴급여부") == "Y"
-        is_shelf_rack = t(self.task_data, "선반랙 여부", "").upper() == "Y"
+        shelf_val = str(
+            t(
+                self.task_data,
+                "선반렉 여부",
+                t(
+                    self.task_data,
+                    "선반랙 여부",
+                    t(self.task_data, "선반렉", t(self.task_data, "선반랙", "")),
+                ),
+            )
+        ).strip().upper()
+        is_shelf_rack = (shelf_val == "Y") or ("선반" in shelf_val)
 
         if is_urgent:
             self.card_bg_color = get_color_from_hex("#FFCDD2")
@@ -2389,13 +2400,11 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         remaining_qty = existing_qty - req_qty
         self.ids.lbl_stock_info.text = f"기존: [b]{existing_qty}[/b]\n보충후: [b][color=1E88E5]{remaining_qty}[/color][/b]"
 
-        # ------------------ 💡 [여기서부터 교체!] ------------------
         qty_per_box = safe_int(
             t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
         )
         product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", "N/A")))
         
-        # 💡 [조건 추가] 입수량이 1이거나 SKU명/상품명에 '(송장만부착)' 또는 '송장'이 들어있는 경우
         is_invoice_only = (qty_per_box == 1) or ("(송장만부착)" in product_name) or ("송장" in product_name)
         is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
 
@@ -2403,7 +2412,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         if is_urgent:
             tag_prefix += "[color=D32F2F][긴급][/color] "
         if is_shelf_rack:
-            tag_prefix += "[color=1565C0][선반랙][/color] "
+            tag_prefix += "[color=1565C0][선반렉][/color] "
 
         self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
         self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
@@ -2428,7 +2437,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
 
-        # 💡 [보정] 입수량 표기 유지 + 이모티콘 제거 후 경고 텍스트 추가
         if is_invoice_only:
             box_notice_str = f"박스입수: {qty_per_box}  [color=FF1744][b](박스 수기작성 금지 - 단품/송장전용)[/b][/color]"
         else:
@@ -2438,16 +2446,29 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
 
         self.ids.lbl_box_info.text = box_notice_str
-        # ------------------ 💡 [여기까지 교체!] ------------------
 
         self.ids.box_check.opacity = 1
         self.ids.box_check.disabled = False
         self.ids.box_check.active = self.is_checked
 
+        # 💡 [핵심] 수량입력 버튼 동적 제어 로직
+        is_no_barcode_sku = product_name.strip().startswith("★")
+        has_qty_entered = str(conf_qty_val).strip().isdigit() and int(str(conf_qty_val).strip()) > 0
+        is_manual_unlocked = self.task_data.get("manual_qty_unlocked", False)
+
+        can_show_qty_btn = is_no_barcode_sku or has_qty_entered or is_manual_unlocked
+
         if self.is_claimed:
             self.ids.btn_action_box.height = dp(40)
             self.ids.btn_action_box.opacity = 1
             self.ids.btn_action_box.disabled = False
+
+            if can_show_qty_btn:
+                self.ids.btn_qty_input.text = "수량입력"
+                self.ids.btn_qty_input.set_bg_color(PRIMARY_BLUE)
+            else:
+                self.ids.btn_qty_input.text = "스캔불가"
+                self.ids.btn_qty_input.set_bg_color(get_color_from_hex("#78909C"))
         else:
             self.ids.btn_action_box.height = 0
             self.ids.btn_action_box.opacity = 0
@@ -2459,7 +2480,43 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
     def handle_card_btn(self, action_name):
         if self.card_screen:
-            self.card_screen.handle_my_task_action(action_name, self.task_data)
+            product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", ""))).strip()
+            is_no_barcode_sku = product_name.startswith("★")
+            conf_q_val = str(self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))).strip()
+            has_qty_entered = conf_q_val.isdigit() and int(conf_q_val) > 0
+            is_manual_unlocked = self.task_data.get("manual_qty_unlocked", False)
+
+            can_show_qty_btn = is_no_barcode_sku or has_qty_entered or is_manual_unlocked
+
+            if action_name == "qty":
+                if can_show_qty_btn:
+                    self.card_screen.handle_my_task_action("qty", self.task_data)
+                else:
+                    self._prompt_scan_fallback()
+            else:
+                self.card_screen.handle_my_task_action(action_name, self.task_data)
+
+    def _prompt_scan_fallback(self):
+        app = App.get_running_app()
+        
+        def on_confirm_fallback(reason):
+            if reason.strip():
+                self.task_data["manual_qty_unlocked"] = True
+                ts = datetime.now().strftime("%H:%M")
+                curr_rem = self.task_data.get("remarks_text", t(self.task_data, "비고", ""))
+                formatted = f"[{ts} 스캔불가사유: {reason.strip()}]"
+                self.task_data["remarks_text"] = f"{curr_rem}\n{formatted}" if curr_rem else formatted
+                self.task_data["비고"] = self.task_data["remarks_text"]
+                
+                # 수량 입력 팝업 즉시 호출
+                self.card_screen.handle_my_task_action("qty", self.task_data)
+
+        open_native_korean_input(
+            "바코드 스캔 불가 처리",
+            "스캔이 안 되는 사유 입력 (예: 바코드 훼손)",
+            "",
+            on_confirm_fallback
+        )
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -2469,7 +2526,6 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
                 task_list_screen.open_task_from_scan({"task_data": self.task_data})
                 return True
         return super().on_touch_down(touch)
-
 
 # --- 올인원 통합 보충 작업 화면 ---
 class UnifiedReplenishScreen(Screen):
@@ -2879,6 +2935,10 @@ class UnifiedReplenishScreen(Screen):
             if self.active_main_tab != "MY":
                 self.switch_main_tab("MY")
             target_task = my_matches[0]
+            
+            # 💡 [핵심] 바코드 스캔 성공 시 수량입력 버튼 잠금 해제
+            target_task["manual_qty_unlocked"] = True
+            
             task_list_screen = self.manager.get_screen("task_list")
             dummy_card = type(
                 "DummyCard", (), {"task_data": target_task}
@@ -4572,6 +4632,7 @@ Builder.load_string(
         text_size: self.width, None
         size_hint_y: None
         height: self.texture_size[1]
+        on_texture_size: self.height = self.texture_size[1]
 
     BoxLayout:
         size_hint_y: None
@@ -4637,6 +4698,7 @@ Builder.load_string(
             bg_color: (0.9, 0.6, 0, 1)
             on_press: root.handle_card_btn('return')
         StyledButton:
+            id: btn_qty_input  # 👈 [핵심] ID 추가
             text: "수량입력"
             font_size: dp(12)
             on_press: root.handle_card_btn('qty')
