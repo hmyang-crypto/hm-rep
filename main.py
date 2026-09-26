@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.3"
+CURRENT_VERSION = "1.9.0.4"
 
 
 def check_and_apply_update():
@@ -3514,6 +3514,19 @@ class TaskListScreen(Screen):
     def search_tasks(self, instance=None):
         self.update_recycle_view()
 
+    # 💡 [추가] 검색창 터치 시 안드로이드 네이티브 입력창 띄우기
+    def on_search_touch(self, instance, touch):
+        if instance.collide_point(*touch.pos):
+            def set_query(val):
+                instance.text = val
+                self.search_tasks()
+
+            open_native_korean_input(
+                "검색어 입력", "SKU명 또는 바코드 검색", instance.text, set_query
+            )
+            return True
+        return False
+
     def handle_barcode_scan(self, barcode):
         # 💡 만약 현재 InspectionPopup(검수창)이 열려있다면 로케이션 스캔으로 전달
         for child in Window.children:
@@ -4607,7 +4620,8 @@ Builder.load_string(
                 multiline: False
                 font_name: app.FONT_NAME
                 size_hint_x: 0.8
-                on_text_validate: root.search_tasks()
+                readonly: True  # 💡 [추가] 직접키보드 입력 방지 (포커스로 인한 v 입력 차단)
+                on_touch_down: root.on_search_touch(self, args[1])  # 💡 [추가]
             StyledButton:
                 text: '검색'
                 size_hint_x: 0.2
