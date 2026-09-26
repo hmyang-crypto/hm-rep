@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.0"
+CURRENT_VERSION = "1.9.1.1"
 
 
 def check_and_apply_update():
@@ -3044,16 +3044,19 @@ class UnifiedReplenishScreen(Screen):
         self.fetch_data()
 
     def handle_barcode_scan(self, barcode):
-        clean_bc = str(barcode).strip()
+        # 💡 [영어, 숫자, 하이픈(-)만 남기는 강력한 정제 로직]
+        clean_bc = re.sub(r'[^A-Za-z0-9\-]', '', str(barcode)).strip().upper()
+
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
+        # 1. 내 작업 중 매칭되는 바코드 찾기
         my_matches = [
             t_item
             for t_item in self.raw_all_tasks
             if str(t(t_item, "상태")).strip() == "작업중"
             and str(t(t_item, "작업 담당자")).strip().lower() == user_name
-            and get_barcode_from_task(t_item) == clean_bc
+            and re.sub(r'[^A-Za-z0-9\-]', '', str(get_barcode_from_task(t_item))).strip().upper() == clean_bc
         ]
 
         if my_matches:
@@ -3061,7 +3064,7 @@ class UnifiedReplenishScreen(Screen):
                 self.switch_main_tab("MY")
             target_task = my_matches[0]
             
-            # 💡 [핵심] 바코드 스캔 성공 시 수량입력 버튼 잠금 해제
+            # 스캔 성공 시 수량입력 버튼 잠금 해제
             target_task["manual_qty_unlocked"] = True
             
             task_list_screen = self.manager.get_screen("task_list")
@@ -3070,11 +3073,12 @@ class UnifiedReplenishScreen(Screen):
             )()
             task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
         else:
+            # 2. 대기 목록 중 매칭되는 바코드 찾기
             pending_matches = [
                 t_item
                 for t_item in self.raw_all_tasks
                 if str(t(t_item, "상태")).strip() == "대기"
-                and get_barcode_from_task(t_item) == clean_bc
+                and re.sub(r'[^A-Za-z0-9\-]', '', str(get_barcode_from_task(t_item))).strip().upper() == clean_bc
             ]
             if pending_matches:
                 task_id = t(pending_matches[0], "작업ID")
