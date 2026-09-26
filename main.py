@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.8"
+CURRENT_VERSION = "1.9.0.9"
 
 
 def check_and_apply_update():
@@ -1175,6 +1175,69 @@ class RecentCompletedPopup(Popup):
             on_yes=do_reprint,
         )
 
+class ScanFailureReasonPopup(Popup):
+    def __init__(self, on_select_callback, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "스캔 실패 사유 선택 🚨"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.9, None)
+        self.height = dp(340)
+        self.auto_dismiss = False
+        self.on_select_callback = on_select_callback
+
+        layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(8))
+
+        # 💡 요청하신 3가지 프리셋 버튼
+        presets = [
+            "바코드 미인식(훼손포함)",
+            "바코드 없음",
+            "부자재",
+        ]
+
+        for reason in presets:
+            btn = StyledButton(
+                text=reason,
+                size_hint_y=None,
+                height=dp(45),
+                bg_color=get_color_from_hex("#455A64"),
+            )
+            btn.bind(on_release=lambda inst, r=reason: self._select_reason(r))
+            layout.add_widget(btn)
+
+        # 💡 기타 사유 (수기 직접입력) 버튼
+        btn_custom = StyledButton(
+            text="✏️ 기타 사유 (직접입력)",
+            size_hint_y=None,
+            height=dp(45),
+            bg_color=PRIMARY_BLUE,
+        )
+        btn_custom.bind(on_release=self._open_custom_input)
+        layout.add_widget(btn_custom)
+
+        # 취소 버튼
+        btn_cancel = StyledButton(
+            text="취소",
+            size_hint_y=None,
+            height=dp(40),
+            bg_color=get_color_from_hex("#78909C"),
+        )
+        btn_cancel.bind(on_press=self.dismiss)
+        layout.add_widget(btn_cancel)
+
+        self.content = layout
+
+    def _select_reason(self, reason):
+        self.on_select_callback(reason)
+        self.dismiss()
+
+    def _open_custom_input(self, instance):
+        self.dismiss()
+        open_native_korean_input(
+            "기타 사유 입력",
+            "사유를 직접 입력하세요",
+            "",
+            self.on_select_callback,
+        )
 
 class MultipleSkuSelectPopup(Popup):
 
@@ -2513,7 +2576,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
     def _prompt_scan_fallback(self):
         app = App.get_running_app()
-        
+
         def on_confirm_fallback(reason):
             clean_reason = reason.strip()
             if not clean_reason:
@@ -2524,10 +2587,14 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             formatted_entry = f"[{ts} 스캔불가사유: {clean_reason}]"
 
             # 2. 기존 비고 가져와서 병합
-            curr_rem = str(self.task_data.get("remarks_text", t(self.task_data, "비고", ""))).strip()
-            updated_remarks = f"{curr_rem}\n{formatted_entry}" if curr_rem else formatted_entry
+            curr_rem = str(
+                self.task_data.get("remarks_text", t(self.task_data, "비고", ""))
+            ).strip()
+            updated_remarks = (
+                f"{curr_rem}\n{formatted_entry}" if curr_rem else formatted_entry
+            )
 
-            # 3. 로컬 앱 메모리 동기화 및 버튼 잠금 해제
+            # 3. 로컬 메모리 동기화 및 수량입력 버튼 잠금 해제
             self.task_data["manual_qty_unlocked"] = True
             self.task_data["remarks_text"] = updated_remarks
             self.task_data["비고"] = updated_remarks
@@ -2541,8 +2608,9 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
                         task["비고"] = updated_remarks
                         break
 
-            # 💡 [핵심 추가] 비고 내용 구글 시트에 "즉시(실시간)" 비동기 업데이트
+            # 4. 구글 시트 비고 실시간 비동기 업데이트
             task_id = str(t(self.task_data, "작업ID"))
+
             def _async_update_sheet_remarks():
                 try:
                     sheet = get_worksheet(TASK_SHEET_NAME)
@@ -2550,29 +2618,31 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
                     if "비고" in headers and "작업ID" in headers:
                         task_id_col = headers.index("작업ID") + 1
                         remarks_col = headers.index("비고") + 1
-                        
+
                         all_ids = sheet.col_values(task_id_col)
                         if task_id in all_ids:
                             row_idx = all_ids.index(task_id) + 1
-                            sheet.update_cell(row_idx, remarks_col, updated_remarks)
+                            sheet.update_cell(
+                                row_idx, remarks_col, updated_remarks
+                            )
                             invalidate_cache(TASK_SHEET_NAME)
-                            print(f"✅ 구글 시트 비고 실시간 업데이트 완료: {updated_remarks}")
+                            print(
+                                f"✅ 구글 시트 비고 실시간 업데이트 완료: {updated_remarks}"
+                            )
                 except Exception as e:
                     print(f"⚠️ 비고 실시간 시트 업데이트 에러: {e}")
 
-            threading.Thread(target=_async_update_sheet_remarks, daemon=True).start()
+            threading.Thread(
+                target=_async_update_sheet_remarks, daemon=True
+            ).start()
 
-            app.show_toast("스캔불가 사유가 구글 시트 비고란에 즉시 기록되었습니다.")
+            app.show_toast("스캔불가 사유가 비고란에 기록되었습니다.")
 
-            # 4. 수량 입력 팝업 즉시 열기
+            # 5. 수량 입력 팝업 즉시 열기
             self.card_screen.handle_my_task_action("qty", self.task_data)
 
-        open_native_korean_input(
-            "바코드 스캔 불가 처리",
-            "스캔이 안 되는 사유 입력 (예: 바코드 훼손)",
-            "",
-            on_confirm_fallback
-        )
+        # 💡 스캔실패 사유 선택 팝업 오픈
+        ScanFailureReasonPopup(on_select_callback=on_confirm_fallback).open()
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
