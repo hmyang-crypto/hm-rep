@@ -4637,6 +4637,7 @@ Builder.load_string(
             bg_color: (0.9, 0.6, 0, 1)
             on_press: root.handle_card_btn('return')
         StyledButton:
+            id: btn_qty_input
             text: "수량입력"
             font_size: dp(12)
             on_press: root.handle_card_btn('qty')
