@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.4"
+CURRENT_VERSION = "1.9.0.5"
 
 
 def check_and_apply_update():
@@ -4812,58 +4812,29 @@ class MainApp(App):
 
         return sm
 
-    def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
-        try:
-            kb = getattr(window, "_system_keyboard", None)
-            focused_widget = getattr(kb, "widget", None) if kb else None
-            if focused_widget is not None and isinstance(
-                focused_widget, TextInput
-            ):
-                return False
-        except Exception:
-            pass
+    def handle_barcode_scan(self, barcode):
+        clean_bc = str(barcode).strip().upper()
 
-        current_time = time.time()
-        # 키 입력 간격이 0.25초 이상 벌어지면 버퍼 초기화
-        if current_time - self._last_keystroke_time > 0.25:
-            self._scan_buffer = ""
-        self._last_keystroke_time = current_time
+        # 💡 만약 현재 InspectionPopup(검수창)이 열려있다면 로케이션 스캔으로 전달
+        for child in Window.children:
+            if isinstance(child, InspectionPopup):
+                child.process_location_scan(clean_bc)
+                return
 
-        # 💡 [엔터키 입력 시 (스캔 완료)]
-        if key in [13, 40]:
-            if self._scan_buffer:
-                raw_barcode = str(self._scan_buffer).strip()
-                
-                # Ctrl+V 과정에서 맨 앞에 붙은 'v' 또는 'V' 찌꺼기 제거
-                if (raw_barcode.startswith("v") or raw_barcode.startswith("V")) and len(raw_barcode) > 1:
-                    clean_barcode = raw_barcode[1:]
-                else:
-                    clean_barcode = raw_barcode
+        # 💡 예전 방식: RecycleView 데이터에서 정확히 바코드 매칭
+        matches = [
+            item for item in self.ids.task_list_rv.data 
+            if str(t(item['task_data'], '상품바코드', t(item['task_data'], '바코드', ''))).strip().upper() == clean_bc
+        ]
 
-                # 정제된 바코드로 글로벌 스캔 프로세스 실행
-                if clean_barcode:
-                    self.process_global_scan(clean_barcode)
-                
-                self._scan_buffer = ""
-            return True
+        if not matches:
+            App.get_running_app().show_info_popup("알림", f"스캔한 바코드[{clean_bc}]는\n검수 대상 목록에 없습니다.")
+            return
 
-        # 💡 키보드 입력값을 있는 그대로 버퍼에 차곡차곡 축적
-        if codepoint:
-            self._scan_buffer += str(codepoint)
-        return False
-
-    def process_global_scan(self, barcode):
-        clean_barcode = (
-            str(barcode)
-            .replace("\r", "")
-            .replace("\n", "")
-            .replace("\t", "")
-            .strip()
-        )
-        if self.root and clean_barcode:
-            curr_screen = self.root.current_screen
-            if hasattr(curr_screen, "handle_barcode_scan"):
-                curr_screen.handle_barcode_scan(clean_barcode)
+        if len(matches) == 1:
+            self.open_task_from_scan(matches[0])
+        else:
+            MultipleSkuSelectPopup(matches=matches, on_select=self.open_task_from_scan).open()
 
     def on_start(self):
         threading.Thread(target=initialize_gspread, daemon=True).start()
