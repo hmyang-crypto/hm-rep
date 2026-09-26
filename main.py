@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.0.5"
+CURRENT_VERSION = "1.9.0.6"
 
 
 def check_and_apply_update():
@@ -3527,24 +3527,26 @@ class TaskListScreen(Screen):
             return True
         return False
 
+   # 💡 [바로 여기에 음영 처리된 코드가 들어가야 합니다!]
     def handle_barcode_scan(self, barcode):
-        # 💡 만약 현재 InspectionPopup(검수창)이 열려있다면 로케이션 스캔으로 전달
+        clean_bc = str(barcode).strip().upper()
+
         for child in Window.children:
             if isinstance(child, InspectionPopup):
-                # 💡 단순 텍스트 입력 대신 자동검증 & 자동완결 메서드 직접 호출
-                child.process_location_scan(str(barcode).strip().upper())
+                child.process_location_scan(clean_bc)
                 return
-                
+
         matches = [
-            item
-            for item in self.all_tasks_data
-            if get_barcode_from_task(item["task_data"]) == barcode
+            item for item in self.all_tasks_data
+            if get_barcode_from_task(item["task_data"]) == clean_bc
         ]
+
         if not matches:
             App.get_running_app().show_info_popup(
-                "알림", f"스캔한 바코드[{barcode}]는 검수 대상 목록에 없습니다."
+                "알림", f"스캔한 바코드[{clean_bc}]는 검수 대상 목록에 없습니다."
             )
             return
+
         if len(matches) == 1:
             self.open_task_from_scan(matches[0])
         else:
@@ -4812,29 +4814,37 @@ class MainApp(App):
 
         return sm
 
-    def handle_barcode_scan(self, barcode):
-        clean_bc = str(barcode).strip().upper()
+    def _on_keyboard_down(self, window, key, scancode, codepoint, modifier):
+        # 1. 스캔 간격 타이머 (0.25초 이상 지연 시 버퍼 리셋)
+        current_time = time.time()
+        if current_time - self._last_keystroke_time > 0.25:
+            self._scan_buffer = ""
+        self._last_keystroke_time = current_time
 
-        # 💡 만약 현재 InspectionPopup(검수창)이 열려있다면 로케이션 스캔으로 전달
-        for child in Window.children:
-            if isinstance(child, InspectionPopup):
-                child.process_location_scan(clean_bc)
-                return
+        # 2. 엔터키(13 또는 40) 입력 시 스캔 완결 처리
+        if key in [13, 40]:
+            if self._scan_buffer:
+                self.process_global_scan(self._scan_buffer)
+                self._scan_buffer = ""
+            return True
 
-        # 💡 예전 방식: RecycleView 데이터에서 정확히 바코드 매칭
-        matches = [
-            item for item in self.ids.task_list_rv.data 
-            if str(t(item['task_data'], '상품바코드', t(item['task_data'], '바코드', ''))).strip().upper() == clean_bc
-        ]
+        # 3. 예전 코드 방식: 순수 인쇄 가능한 영문/숫자/특수문자만 버퍼에 축적 (제어문자 원천 차단)
+        if codepoint and codepoint.isprintable() and ord(codepoint) >= 32:
+            self._scan_buffer += codepoint
+        return False
 
-        if not matches:
-            App.get_running_app().show_info_popup("알림", f"스캔한 바코드[{clean_bc}]는\n검수 대상 목록에 없습니다.")
-            return
+    def process_global_scan(self, barcode):
+        # 예전 코드 방식: 제어문자(ASCII 0~31, 127) 제거 정규식 적용
+        clean_barcode = re.sub(r'[\x00-\x1F\x7F]', '', str(barcode)).strip().upper()
+        
+        # 만약 클립보드 붙여넣기 잔상으로 맨 앞에 v/V만 달려온 경우 살짝 정제
+        if (clean_barcode.startswith("V") or clean_barcode.startswith("v")) and len(clean_barcode) > 1:
+            clean_barcode = clean_barcode[1:]
 
-        if len(matches) == 1:
-            self.open_task_from_scan(matches[0])
-        else:
-            MultipleSkuSelectPopup(matches=matches, on_select=self.open_task_from_scan).open()
+        if self.root and clean_barcode:
+            curr_screen = self.root.current_screen
+            if hasattr(curr_screen, "handle_barcode_scan"):
+                curr_screen.handle_barcode_scan(clean_barcode)
 
     def on_start(self):
         threading.Thread(target=initialize_gspread, daemon=True).start()
