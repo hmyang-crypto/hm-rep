@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.1"
+CURRENT_VERSION = "1.9.1.2"
 
 
 def check_and_apply_update():
@@ -1403,7 +1403,7 @@ class InspectionPopup(Popup):
 
         main_layout.add_widget(input_grid)
 
-        # 로케이션 스캔 영역
+        # 로케이션 스캔 및 [QR없음] 영역
         loc_box = BoxLayout(
             orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(80)
         )
@@ -1420,13 +1420,16 @@ class InspectionPopup(Popup):
         lbl_target.bind(size=lambda i, s: setattr(i, "text_size", s))
         loc_box.add_widget(lbl_target)
 
+        loc_input_row = BoxLayout(
+            orientation="horizontal", spacing=dp(6), size_hint_y=None, height=dp(45)
+        )
+
         self.final_location_input = TextInput(
             hint_text="로케이션 QR 스캔 시 자동 완결",
             multiline=False,
             font_name=FONT_NAME,
-            font_size=dp(16),
-            size_hint_y=None,
-            height=dp(45),
+            font_size=dp(15),
+            size_hint_x=0.7,
             readonly=True,
         )
         self.final_location_input.bind(
@@ -1434,7 +1437,19 @@ class InspectionPopup(Popup):
                 instance, touch, "로케이션 QR/바코드 수기입력", False
             )
         )
-        loc_box.add_widget(self.final_location_input)
+        loc_input_row.add_widget(self.final_location_input)
+
+        # 💡 [신규] QR없음 버튼 추가
+        btn_no_qr = StyledButton(
+            text="QR없음",
+            size_hint_x=0.3,
+            font_size=dp(13),
+            bg_color=get_color_from_hex("#E65100"), # 시인성 높은 오렌지 계열
+        )
+        btn_no_qr.bind(on_press=self.process_no_qr_action)
+        loc_input_row.add_widget(btn_no_qr)
+
+        loc_box.add_widget(loc_input_row)
         main_layout.add_widget(loc_box)
 
         top_button_grid = GridLayout(
@@ -1464,11 +1479,58 @@ class InspectionPopup(Popup):
             return True
         return False
 
+    # 💡 [신규] QR없음 버튼 클릭 처리 로직
+    def process_no_qr_action(self, instance):
+        app = App.get_running_app()
+
+        box_size_str = self.box_size_input.text.strip()
+        box_count_str = self.box_count_input.text.strip() or "0"
+        rem_qty_str = self.rem_qty_input.text.strip() or "0"
+
+        if not box_size_str.isdigit() or not box_count_str.isdigit() or not rem_qty_str.isdigit():
+            app.show_info_popup("입력 오류 🚨", "수량을 올바르게 입력해주세요.")
+            return
+
+        box_size = int(box_size_str)
+        box_count = int(box_count_str)
+        rem_qty = int(rem_qty_str)
+
+        calculated_total_qty = (box_size * box_count) + rem_qty
+
+        if calculated_total_qty <= 0:
+            app.show_info_popup(
+                "수량 입력 필요 🚨",
+                "수량이 입력되지 않았습니다!\n\n"
+                "박스 수량 또는 낱개 수량을 먼저 입력해 주세요.",
+            )
+            return
+
+        # 비고에 [자석로케이션 필요] 추가
+        ts = datetime.now().strftime("%H:%M")
+        no_qr_note = f"[{ts} 자석로케이션 필요]"
+        updated_remarks = (
+            f"{self.current_remarks}\n{no_qr_note}"
+            if self.current_remarks.strip()
+            else no_qr_note
+        )
+
+        self.final_location_input.text = self.target_location
+
+        # 목표 로케이션으로 자동 완료 처리
+        self.task_list_screen._finalize_task_processing(
+            card=self.card,
+            final_qty=calculated_total_qty,
+            split_qty=0,
+            final_location=self.target_location,
+            updated_remarks=updated_remarks,
+        )
+        app.show_toast("QR없음 처리: '자석로케이션 필요' 비고 등록 완료")
+        self.dismiss()
+
     def process_location_scan(self, scanned_location):
         app = App.get_running_app()
 
         raw_loc = str(scanned_location).replace('\ufeff', '').strip()
-        # 💡 [핵심] 순수 영문, 숫자, 하이픈(-) 외의 모든 ☒ 박스기호 및 제어문자 강제 삭제
         scanned_loc = re.sub(r'[^A-Za-z0-9\-]', '', raw_loc).strip().upper()
 
         box_size_str = self.box_size_input.text.strip()
@@ -1485,7 +1547,6 @@ class InspectionPopup(Popup):
 
         calculated_total_qty = (box_size * box_count) + rem_qty
 
-        # 수량 0 체크
         if calculated_total_qty <= 0:
             app.show_info_popup(
                 "수량 입력 필요 🚨",
@@ -1497,7 +1558,6 @@ class InspectionPopup(Popup):
 
         self.final_location_input.text = scanned_loc
 
-        # 로케이션 검증
         if scanned_loc != self.target_location:
             app.show_info_popup(
                 "🛑 로케이션 미일치 🚨",
@@ -1508,18 +1568,6 @@ class InspectionPopup(Popup):
             )
             return False
 
-        # 최종 처리
-        self.task_list_screen._finalize_task_processing(
-            card=self.card,
-            final_qty=calculated_total_qty,
-            split_qty=0,
-            final_location=scanned_loc,
-            updated_remarks=self.current_remarks,
-        )
-        self.dismiss()
-        return True
-
-        # 💡 [조건 3] 수량 입력 + 로케이션 일치 시 자동 최종완료
         self.task_list_screen._finalize_task_processing(
             card=self.card,
             final_qty=calculated_total_qty,
@@ -1536,7 +1584,6 @@ class InspectionPopup(Popup):
             App.get_running_app().show_info_popup("스캔 필요 🚨", "적치할 로케이션 QR/바코드를 스캔해 주세요.")
             return
         self.process_location_scan(scanned_location)
-
 
 class NameEntryScreen(Screen):
 
