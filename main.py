@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.2"
+CURRENT_VERSION = "1.9.1.3"
 
 
 def check_and_apply_update():
@@ -3091,13 +3091,13 @@ class UnifiedReplenishScreen(Screen):
         self.fetch_data()
 
     def handle_barcode_scan(self, barcode):
-        # 💡 [영어, 숫자, 하이픈(-)만 남기는 강력한 정제 로직]
+        # 💡 영어, 숫자, 하이픈(-)만 남김
         clean_bc = re.sub(r'[^A-Za-z0-9\-]', '', str(barcode)).strip().upper()
 
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
-        # 1. 내 작업 중 매칭되는 바코드 찾기
+        # 1. 내 작업('작업중') 중 매칭되는 모든 항목 검색
         my_matches = [
             t_item
             for t_item in self.raw_all_tasks
@@ -3109,16 +3109,32 @@ class UnifiedReplenishScreen(Screen):
         if my_matches:
             if self.active_main_tab != "MY":
                 self.switch_main_tab("MY")
-            target_task = my_matches[0]
+
+            # 💡 [핵심 해결 1] 매칭된 항목이 1개일 때
+            if len(my_matches) == 1:
+                target_task = my_matches[0]
+                target_task["manual_qty_unlocked"] = True
+                
+                task_list_screen = self.manager.get_screen("task_list")
+                dummy_card = type("DummyCard", (), {"task_data": target_task})()
+                task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
             
-            # 스캔 성공 시 수량입력 버튼 잠금 해제
-            target_task["manual_qty_unlocked"] = True
-            
-            task_list_screen = self.manager.get_screen("task_list")
-            dummy_card = type(
-                "DummyCard", (), {"task_data": target_task}
-            )()
-            task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
+            # 💡 [핵심 해결 2] 같은 로케이션/바코드 작업이 여러 개일 때 (중복 팝업 오프닝)
+            else:
+                # 중복 팝업용 데이터 포맷팅
+                formatted_matches = [{"task_data": task} for task in my_matches]
+
+                def _on_select_task(selected_item):
+                    sel_task = selected_item["task_data"]
+                    sel_task["manual_qty_unlocked"] = True
+                    task_list_screen = self.manager.get_screen("task_list")
+                    dummy_card = type("DummyCard", (), {"task_data": sel_task})()
+                    task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
+
+                MultipleSkuSelectPopup(
+                    matches=formatted_matches, on_select=_on_select_task
+                ).open()
+
         else:
             # 2. 대기 목록 중 매칭되는 바코드 찾기
             pending_matches = [
