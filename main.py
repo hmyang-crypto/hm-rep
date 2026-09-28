@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.3"
+CURRENT_VERSION = "1.9.1.4"
 
 
 def check_and_apply_update():
@@ -1174,6 +1174,254 @@ class RecentCompletedPopup(Popup):
             message=f"[color=ffffff][{prod_name[:18]}]\n라벨 1장을 재인쇄하시겠습니까?[/color]",
             on_yes=do_reprint,
         )
+
+class EmergencyReplenishPopup(Popup):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "🚨 라인 보충 긴급 요청 및 소통 창"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.95, 0.90)
+        self.auto_dismiss = False
+
+        self.main_layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
+
+        # 상단 탭 버튼
+        tab_box = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(42))
+        
+        self.btn_tab_new = StyledButton(
+            text="➕ 긴급 보충 요청",
+            bg_color=PRIMARY_BLUE,
+            font_size=dp(13)
+        )
+        self.btn_tab_new.bind(on_release=lambda x: self.switch_view("NEW"))
+        
+        self.btn_tab_status = StyledButton(
+            text="💬 요청 현황 & 데스크 회신",
+            bg_color=get_color_from_hex("#455A64"),
+            font_size=dp(13)
+        )
+        self.btn_tab_status.bind(on_release=lambda x: self.switch_view("STATUS"))
+
+        tab_box.add_widget(self.btn_tab_new)
+        tab_box.add_widget(self.btn_tab_status)
+        self.main_layout.add_widget(tab_box)
+
+        self.content_area = BoxLayout(orientation="vertical", spacing=dp(5))
+        self.main_layout.add_widget(self.content_area)
+
+        btn_close = StyledButton(
+            text="닫기",
+            size_hint_y=None,
+            height=dp(40),
+            bg_color=get_color_from_hex("#78909C")
+        )
+        btn_close.bind(on_press=self.dismiss)
+        self.main_layout.add_widget(btn_close)
+
+        self.content = self.main_layout
+        self.switch_view("NEW")
+
+    def switch_view(self, view_mode):
+        self.content_area.clear_widgets()
+        if view_mode == "NEW":
+            self.btn_tab_new.bg_color = PRIMARY_BLUE
+            self.btn_tab_status.bg_color = get_color_from_hex("#455A64")
+            self._render_new_request_view()
+        else:
+            self.btn_tab_new.bg_color = get_color_from_hex("#455A64")
+            self.btn_tab_status.bg_color = PRIMARY_BLUE
+            self._render_status_view()
+
+    # --- 1. 신규 보충 요청 ---
+    def _render_new_request_view(self):
+        layout = BoxLayout(orientation="vertical", spacing=dp(8))
+
+        search_box = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(45))
+        self.search_input = TextInput(
+            hint_text="바코드 스캔 또는 SKU/상품명 일부 입력...",
+            font_name=FONT_NAME,
+            font_size=dp(14),
+            multiline=False,
+        )
+        self.search_input.bind(text=self._on_search_text_changed)
+        search_box.add_widget(self.search_input)
+        layout.add_widget(search_box)
+
+        self.scroll = ScrollView(size_hint=(1, 1))
+        self.results_grid = GridLayout(cols=1, spacing=dp(5), size_hint_y=None)
+        self.results_grid.bind(minimum_height=self.results_grid.setter("height"))
+        self.scroll.add_widget(self.results_grid)
+        layout.add_widget(self.scroll)
+
+        self.content_area.add_widget(layout)
+        self._search_master_stock("")
+
+    def _on_search_text_changed(self, instance, text):
+        query = re.sub(r'[^A-Za-z0-9\-가-힣]', '', text).strip().upper()
+        self._search_master_stock(query)
+
+    def _search_master_stock(self, query):
+        self.results_grid.clear_widgets()
+        
+        master_data = []
+        try:
+            # 💡 '로케이션별재고 raw' 시트 캐시 로드
+            stock_sheet_data = get_sheet_data_cached("로케이션별재고 raw")
+            if stock_sheet_data:
+                master_data = stock_sheet_data
+        except Exception as e:
+            print(f"⚠️ 로케이션별재고 raw 참조 실패: {e}")
+
+        seen_skus = set()
+        matched_items = []
+
+        for row in master_data:
+            bc = str(row.get("바코드", row.get("SKU", ""))).strip().upper()
+            prod_name = str(row.get("상품명", "")).strip()
+            loc = str(row.get("로케이션", "-")).strip()
+            qty = str(row.get("재고수량", row.get("수량", "0"))).strip()
+
+            if not bc:
+                continue
+
+            if not query or (query in bc) or (query in prod_name.upper()):
+                combo_key = f"{bc}_{prod_name}"
+                if combo_key not in seen_skus:
+                    seen_skus.add(combo_key)
+                    matched_items.append({
+                        "barcode": bc,
+                        "product_name": prod_name,
+                        "location": loc,
+                        "stock_qty": qty
+                    })
+
+        if not matched_items:
+            self.results_grid.add_widget(
+                Label(text="검색된 재고 마스터 항목이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+            )
+            return
+
+        for data in matched_items[:25]:
+            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 현재위치: {data['location']} (전산재고: {data['stock_qty']}개)"
+            card_btn = StyledButton(
+                text=btn_text,
+                font_size=dp(12),
+                size_hint_y=None,
+                height=dp(55),
+                bg_color=get_color_from_hex("#37474F"),
+                halign="left"
+            )
+            card_btn.bind(on_release=lambda inst, d=data: self._send_request(d))
+            self.results_grid.add_widget(card_btn)
+
+    def _send_request(self, data):
+        app = App.get_running_app()
+        user_name = str(app.user_real_name).strip()
+
+        def _async_send():
+            try:
+                # 💡 [도급 보충 요청 시트] 이름 적용
+                sheet = get_worksheet("도급 보충 요청 시트")
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                req_id = f"REQ-{datetime.now().strftime('%M%S')}"
+                
+                # [요청ID, 시각, 출고라인, 바코드/SKU, 상품명, 요청자, 요청사유, 처리상태, 데스크메시지]
+                row_data = [
+                    req_id,
+                    ts,
+                    f"{getattr(app, 'current_line', '메인')}라인",
+                    data["barcode"],
+                    data["product_name"],
+                    user_name,
+                    "라인 재고 부족 / 보충 필요",
+                    "요청중",
+                    ""
+                ]
+                sheet.append_row(row_data)
+                invalidate_cache("도급 보충 요청 시트")
+                app.show_toast("✅ 데스크로 보충 요청이 전송되었습니다!")
+                self.dismiss()
+            except Exception as e:
+                app.show_info_popup("오류 🚨", f"보충 요청 전송 실패: {e}")
+
+        app.show_confirmation_popup(
+            title="긴급 보충 요청",
+            message=f"[{data['barcode']}]\n{data['product_name'][:18]}\n\n데스크로 긴급 보충 요청을 전송하시겠습니까?",
+            on_yes=lambda: threading.Thread(target=_async_send, daemon=True).start()
+        )
+
+    # --- 2. 내 요청 현황 & 데스크 회신 확인 ---
+    def _render_status_view(self):
+        app = App.get_running_app()
+        user_name = str(app.user_real_name).strip()
+
+        scroll = ScrollView(size_hint=(1, 1))
+        status_grid = GridLayout(cols=1, spacing=dp(8), size_hint_y=None)
+        status_grid.bind(minimum_height=status_grid.setter("height"))
+        scroll.add_widget(status_grid)
+
+        try:
+            # 💡 [도급 보충 요청 시트] 캐시 로드
+            sheet_data = get_sheet_data_cached("도급 보충 요청 시트")
+            my_requests = [
+                r for r in sheet_data 
+                if str(r.get("요청자", "")).strip() == user_name
+            ]
+        except Exception:
+            my_requests = []
+
+        if not my_requests:
+            status_grid.add_widget(
+                Label(text="등록된 보충 요청 내역이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(50))
+            )
+        else:
+            for req in reversed(my_requests[-15:]):
+                status = str(req.get("처리상태", "요청중")).strip()
+                reply_msg = str(req.get("데스크 회신 메시지", "")).strip()
+                bc = str(req.get("바코드/SKU", "")).strip()
+                prod = str(req.get("상품명", "")).strip()
+                ts = str(req.get("요청시각", "")).split()[-1] if req.get("요청시각") else ""
+
+                bg_col = "#37474F"
+                if "조치안내" in status:
+                    bg_col = "#E65100"
+                elif "보충진행중" in status:
+                    bg_col = "#00897B"
+                elif "품절" in status:
+                    bg_col = "#C62828"
+
+                card_box = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(4), size_hint_y=None, height=dp(85))
+                with card_box.canvas.before:
+                    Color(*get_color_from_hex(bg_col))
+                    Rectangle(pos=card_box.pos, size=card_box.size)
+                card_box.bind(pos=lambda i, p: setattr(i, "pos", p), size=lambda i, s: setattr(i, "size", s))
+
+                title_lbl = Label(
+                    text=f"[{ts}] [{status}] {bc} - {prod[:15]}",
+                    font_name=FONT_NAME,
+                    font_size=dp(13),
+                    bold=True,
+                    size_hint_y=None,
+                    height=dp(20),
+                    halign="left"
+                )
+                title_lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
+                card_box.add_widget(title_lbl)
+
+                reply_lbl = Label(
+                    text=f"💬 데스크 회신: {reply_msg}" if reply_msg else "💬 데스크 회신 대기 중...",
+                    font_name=FONT_NAME,
+                    font_size=dp(12),
+                    size_hint_y=None,
+                    height=dp(35),
+                    halign="left"
+                )
+                reply_lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
+                card_box.add_widget(reply_lbl)
+
+                status_grid.add_widget(card_box)
+
+        self.content_area.add_widget(scroll)
 
 class ScanFailureReasonPopup(Popup):
     def __init__(self, on_select_callback, **kwargs):
