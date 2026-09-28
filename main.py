@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.4"
+CURRENT_VERSION = "1.9.1.5"
 
 
 def check_and_apply_update():
@@ -1265,7 +1265,6 @@ class EmergencyReplenishPopup(Popup):
         
         master_data = []
         try:
-            # 💡 '로케이션별재고 raw' 시트 캐시 로드
             stock_sheet_data = get_sheet_data_cached("로케이션별재고 raw")
             if stock_sheet_data:
                 master_data = stock_sheet_data
@@ -1277,9 +1276,9 @@ class EmergencyReplenishPopup(Popup):
 
         for row in master_data:
             bc = str(row.get("바코드", row.get("SKU", ""))).strip().upper()
-            prod_name = str(row.get("상품명", "")).strip()
-            loc = str(row.get("로케이션", "-")).strip()
-            qty = str(row.get("재고수량", row.get("수량", "0"))).strip()
+            prod_name = str(row.get("SKU명", row.get("상품명", ""))).strip()
+            customer = str(row.get("고객사", row.get("고객", "-"))).strip()
+            loc = str(row.get("출고 로케이션", row.get("로케이션", "-"))).strip()
 
             if not bc:
                 continue
@@ -1291,8 +1290,8 @@ class EmergencyReplenishPopup(Popup):
                     matched_items.append({
                         "barcode": bc,
                         "product_name": prod_name,
+                        "customer": customer,
                         "location": loc,
-                        "stock_qty": qty
                     })
 
         if not matched_items:
@@ -1302,7 +1301,7 @@ class EmergencyReplenishPopup(Popup):
             return
 
         for data in matched_items[:25]:
-            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 현재위치: {data['location']} (전산재고: {data['stock_qty']}개)"
+            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 고객사: {data['customer']} | 로케이션: {data['location']}"
             card_btn = StyledButton(
                 text=btn_text,
                 font_size=dp(12),
@@ -1320,22 +1319,24 @@ class EmergencyReplenishPopup(Popup):
 
         def _async_send():
             try:
-                # 💡 [도급 보충 요청 시트] 이름 적용
                 sheet = get_worksheet("도급 보충 요청 시트")
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 req_id = f"REQ-{datetime.now().strftime('%M%S')}"
                 
-                # [요청ID, 시각, 출고라인, 바코드/SKU, 상품명, 요청자, 요청사유, 처리상태, 데스크메시지]
+                # 💡 [새 헤더 순서 맞춤 (A~K열)]
+                # A:요청ID | B:요청시각 | C:요청자 | D:고객사 | E:SKU명 | F:바코드 | G:출고 로케이션 | H:요청사유 | I:처리상태 | J:회신 메세지 | K:담당자
                 row_data = [
-                    req_id,
-                    ts,
-                    f"{getattr(app, 'current_line', '메인')}라인",
-                    data["barcode"],
-                    data["product_name"],
-                    user_name,
-                    "라인 재고 부족 / 보충 필요",
-                    "요청중",
-                    ""
+                    req_id,                                 # A열: 요청 ID
+                    ts,                                     # B열: 요청시각
+                    user_name,                              # C열: 요청자
+                    data["customer"],                       # D열: 고객사
+                    data["product_name"],                   # E열: SKU명
+                    data["barcode"],                        # F열: 바코드
+                    data["location"],                       # G열: 출고 로케이션
+                    "라인 재고 부족 / 보충 필요",          # H열: 요청사유
+                    "요청중",                               # I열: 처리상태
+                    "",                                     # J열: 회신 메세지
+                    ""                                      # K열: 담당자
                 ]
                 sheet.append_row(row_data)
                 invalidate_cache("도급 보충 요청 시트")
@@ -1361,7 +1362,6 @@ class EmergencyReplenishPopup(Popup):
         scroll.add_widget(status_grid)
 
         try:
-            # 💡 [도급 보충 요청 시트] 캐시 로드
             sheet_data = get_sheet_data_cached("도급 보충 요청 시트")
             my_requests = [
                 r for r in sheet_data 
@@ -1377,32 +1377,37 @@ class EmergencyReplenishPopup(Popup):
         else:
             for req in reversed(my_requests[-15:]):
                 status = str(req.get("처리상태", "요청중")).strip()
-                reply_msg = str(req.get("데스크 회신 메시지", "")).strip()
-                bc = str(req.get("바코드/SKU", "")).strip()
-                prod = str(req.get("상품명", "")).strip()
+                reply_msg = str(req.get("회신 메세지", req.get("회신메시지", ""))).strip()
+                manager_name = str(req.get("담당자", "")).strip()
+                bc = str(req.get("바코드", "")).strip()
+                sku_name = str(req.get("SKU명", "")).strip()
                 ts = str(req.get("요청시각", "")).split()[-1] if req.get("요청시각") else ""
 
-                bg_col = "#37474F"
+                # 상태별 카드 색상
+                bg_col = "#37474F" # 기본 요청중 (회색)
                 if "조치안내" in status:
-                    bg_col = "#E65100"
+                    bg_col = "#E65100" # 회신도착 (주황)
                 elif "보충진행중" in status:
-                    bg_col = "#00897B"
-                elif "품절" in status:
-                    bg_col = "#C62828"
+                    bg_col = "#00897B" # 진행중 (청록)
+                elif "보충완료" in status:
+                    bg_col = "#2E7D32" # 완료 (초록)
+                elif "품절" in status or "재고없음" in status:
+                    bg_col = "#C62828" # 품절 (빨강)
 
-                card_box = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(4), size_hint_y=None, height=dp(85))
+                card_box = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(4), size_hint_y=None, height=dp(90))
                 with card_box.canvas.before:
                     Color(*get_color_from_hex(bg_col))
                     Rectangle(pos=card_box.pos, size=card_box.size)
                 card_box.bind(pos=lambda i, p: setattr(i, "pos", p), size=lambda i, s: setattr(i, "size", s))
 
+                mgr_text = f" (담당: {manager_name})" if manager_name else ""
                 title_lbl = Label(
-                    text=f"[{ts}] [{status}] {bc} - {prod[:15]}",
+                    text=f"[{ts}] [{status}]{mgr_text} {bc}\n{sku_name[:22]}",
                     font_name=FONT_NAME,
                     font_size=dp(13),
                     bold=True,
                     size_hint_y=None,
-                    height=dp(20),
+                    height=dp(36),
                     halign="left"
                 )
                 title_lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
@@ -1413,7 +1418,7 @@ class EmergencyReplenishPopup(Popup):
                     font_name=FONT_NAME,
                     font_size=dp(12),
                     size_hint_y=None,
-                    height=dp(35),
+                    height=dp(30),
                     halign="left"
                 )
                 reply_lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
@@ -4328,7 +4333,7 @@ class AdminDashboardScreen(Screen):
         top_bar.add_widget(
             StyledButton(
                 text="< 메인",
-                size_hint_x=0.2,
+                size_hint_x=0.15,
                 bg_color=get_color_from_hex("#78909C"),
                 on_press=lambda x: setattr(
                     self.manager, "current", "main_menu"
@@ -4339,16 +4344,28 @@ class AdminDashboardScreen(Screen):
             Label(
                 text="전체 작업 현황판",
                 font_name=FONT_NAME,
-                font_size=dp(18),
+                font_size=dp(15),
                 bold=True,
                 color=TEXT_DARK,
+                size_hint_x=0.35,
             )
         )
         top_bar.add_widget(
             StyledButton(
-                text="갱신", size_hint_x=0.2, on_press=lambda x: self.refresh()
+                text="갱신", size_hint_x=0.15, on_press=lambda x: self.refresh()
             )
         )
+
+        # 💡 [정확한 위치] 작업현황판 상단 우측에 '🚨 보충요청/소통' 버튼 연결
+        btn_emergency_chat = StyledButton(
+            text="🚨 보충요청/소통",
+            size_hint_x=0.35,
+            font_size=dp(12),
+            bg_color=get_color_from_hex("#D32F2F")  # 눈에 띄는 빨간색
+        )
+        btn_emergency_chat.bind(on_release=lambda inst: EmergencyReplenishPopup().open())
+        top_bar.add_widget(btn_emergency_chat)
+
         self.layout.add_widget(top_bar)
 
         search_bar = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
