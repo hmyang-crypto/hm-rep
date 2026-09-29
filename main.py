@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.1"
+CURRENT_VERSION = "1.9.2.2"
 
 
 def check_and_apply_update():
@@ -1345,22 +1345,89 @@ class EmergencyReplenishPopup(Popup):
 
         if not matched_items:
             self.results_grid.add_widget(
-                Label(text="SKU 정보 없음", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+                Label(
+                    text="SKU 정보 없음",
+                    font_name=FONT_NAME,
+                    font_size=dp(14),
+                    color=TEXT_MUTED,
+                    size_hint_y=None,
+                    height=dp(50)
+                )
             )
             return
 
+        # 결과 목록 카드 생성 (상위 30건)
         for data in matched_items[:30]:
-            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 파트너명: {data['partner']} | 출고위치: {data['location']} | B2C재고: {data['loc_qty']}개"
-            card_btn = StyledButton(
-                text=btn_text,
-                font_size=dp(12),
+            # 💡 [화이트/블루 톤] 화이트 카드로 레이아웃 구성
+            card = TouchableBox(
+                orientation="vertical",
                 size_hint_y=None,
-                height=dp(58),
-                bg_color=get_color_from_hex("#37474F"),
-                halign="left"
+                height=dp(82),  # 높이를 대폭 늘려 위아래 가독성 확보
+                padding=(dp(12), dp(8)),
+                spacing=dp(4)
             )
-            card_btn.bind(on_release=lambda inst, d=data: self._send_request(d))
-            self.results_grid.add_widget(card_btn)
+
+            # 💡 둥근 모서리 및 화이트 배경 지정
+            with card.canvas.before:
+                Color(1, 1, 1, 1)  # 흰색 배경
+                bg_rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(8)])
+            card.bind(
+                pos=lambda i, p, b=bg_rect: setattr(b, "pos", p),
+                size=lambda i, s, b=bg_rect: setattr(b, "size", s)
+            )
+
+            # 1행: [바코드] + SKU명 (한 줄 표시 및 ... 말줄임 처리)
+            prod_text = f"[{data['barcode']}] {data['product_name']}"
+            lbl_prod = Label(
+                text=prod_text,
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                bold=True,
+                color=get_color_from_hex("#1565C0"),  # 블루 톤 강조
+                halign="left",
+                valign="middle",
+                shorten=True,              # 💡 줄바꿈 방지 및 말줄임 처리
+                shorten_from="right",
+                size_hint_y=None,
+                height=dp(22)
+            )
+            lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
+            card.add_widget(lbl_prod)
+
+            # 2행: 파트너명
+            lbl_partner = Label(
+                text=f"• 파트너명: {data['partner']}",
+                font_name=FONT_NAME,
+                font_size=dp(12),
+                color=TEXT_DARK,
+                halign="left",
+                valign="middle",
+                shorten=True,
+                shorten_from="right",
+                size_hint_y=None,
+                height=dp(18)
+            )
+            lbl_partner.bind(size=lambda i, s: setattr(i, "text_size", s))
+            card.add_widget(lbl_partner)
+
+            # 3행: 출고위치 | B2C재고
+            lbl_info = Label(
+                text=f"• 출고위치: [b]{data['location']}[/b]  |  B2C재고: [b][color=D32F2F]{data['loc_qty']}개[/color][/b]",
+                font_name=FONT_NAME,
+                font_size=dp(12),
+                markup=True,
+                color=TEXT_DARK,
+                halign="left",
+                valign="middle",
+                size_hint_y=None,
+                height=dp(18)
+            )
+            lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
+            card.add_widget(lbl_info)
+
+            # 💡 카드 클릭 시 보충 요청 실행
+            card.bind(on_release=lambda inst, d=data: self._send_request(d))
+            self.results_grid.add_widget(card)
 
     def _send_request(self, data):
         app = App.get_running_app()
