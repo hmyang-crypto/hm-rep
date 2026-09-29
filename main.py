@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.7"
+CURRENT_VERSION = "1.9.1.8"
 
 
 def check_and_apply_update():
@@ -1296,7 +1296,7 @@ class EmergencyReplenishPopup(Popup):
         
         master_data = []
         try:
-            # 1. 캐시 데이터 조회 후 없으면 직접 시트 데이터 강제 로드
+            # 어플 내 검증된 시트 데이터 호출 방식 사용
             master_data = get_sheet_data_cached("로케이션별재고 raw")
             if not master_data:
                 master_data = get_sheet_data("로케이션별재고 raw", force_refresh=False)
@@ -1314,17 +1314,17 @@ class EmergencyReplenishPopup(Popup):
         clean_query = query.strip().upper()
 
         for row in master_data:
-            # 💡 [시트 구조 정확한 매핑]
-            bc = str(row.get("바코드", "")).strip().upper()                  # D열
-            prod_name = str(row.get("SKU", "")).strip()                     # C열
-            partner = str(row.get("파트너명", "-")).strip()                  # B열
-            loc = str(row.get("로케이션", "-")).strip()                      # E열
-            loc_qty = str(row.get("로케이션 수량", row.get("수량", "0"))).strip() # H열
+            # 💡 어플 내 검증된 t() 도우미 함수를 사용하여 안전하게 컬럼 추출
+            bc = str(t(row, "바코드", t(row, "상품바코드", t(row, "SKU", "")))).strip().upper()
+            prod_name = str(t(row, "SKU", t(row, "상품명", t(row, "SKU명", "")))).strip()
+            partner = str(t(row, "파트너명", t(row, "고객사", "-"))).strip()
+            loc = str(t(row, "로케이션", t(row, "출고 로케이션", "-"))).strip()
+            loc_qty = str(t(row, "로케이션 수량", t(row, "로케이션수량", t(row, "수량", "0")))).strip()
 
-            if not bc or bc == "N/A":
+            if not bc or bc in ["N/A", "NONE", ""]:
                 continue
 
-            # 검색어 조건 (바코드 또는 SKU명에 포함 시)
+            # 부분 일치 검색 (바코드 숫자 일부 또는 SKU명에 포함 시)
             if not clean_query or (clean_query in bc) or (clean_query in prod_name.upper()):
                 combo_key = f"{bc}_{prod_name}_{loc}"
                 if combo_key not in seen_skus:
@@ -1343,7 +1343,7 @@ class EmergencyReplenishPopup(Popup):
             )
             return
 
-        # 결과 목록 카드 생성 (상위 30건)
+        # 결과 카드는 상위 30건 표시
         for data in matched_items[:30]:
             btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 파트너명: {data['partner']} | 로케이션: {data['location']} | 수량: {data['loc_qty']}개"
             card_btn = StyledButton(
@@ -1356,6 +1356,7 @@ class EmergencyReplenishPopup(Popup):
             )
             card_btn.bind(on_release=lambda inst, d=data: self._send_request(d))
             self.results_grid.add_widget(card_btn)
+
     def _send_request(self, data):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip()
