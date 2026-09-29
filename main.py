@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.6"
+CURRENT_VERSION = "1.9.1.7"
 
 
 def check_and_apply_update():
@@ -1178,7 +1178,7 @@ class RecentCompletedPopup(Popup):
 class EmergencyReplenishPopup(Popup):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.title = "🚨 라인 보충 긴급 요청 및 소통 창"
+        self.title = " 라인 보충 긴급 요청 및 소통 창"
         self.title_font = FONT_NAME
         self.size_hint = (0.95, 0.90)
         self.auto_dismiss = False
@@ -1189,14 +1189,14 @@ class EmergencyReplenishPopup(Popup):
         tab_box = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(42))
         
         self.btn_tab_new = StyledButton(
-            text="➕ 긴급 보충 요청",
+            text=" 긴급 보충 요청",
             bg_color=PRIMARY_BLUE,
             font_size=dp(13)
         )
         self.btn_tab_new.bind(on_release=lambda x: self.switch_view("NEW"))
         
         self.btn_tab_status = StyledButton(
-            text="💬 요청 현황 & 데스크 회신",
+            text=" 요청 현황 & 데스크 회신",
             bg_color=get_color_from_hex("#455A64"),
             font_size=dp(13)
         )
@@ -1232,21 +1232,38 @@ class EmergencyReplenishPopup(Popup):
             self.btn_tab_status.bg_color = PRIMARY_BLUE
             self._render_status_view()
 
-    # --- 1. 신규 보충 요청 ---
+    # --- 1. 신규 보충 요청 뷰 ---
     def _render_new_request_view(self):
         layout = BoxLayout(orientation="vertical", spacing=dp(8))
 
+        # 💡 상단 검색 바 (수기 입력 터치 + [검색] 버튼 추가)
         search_box = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(45))
+        
         self.search_input = TextInput(
-            hint_text="바코드 스캔 또는 SKU/상품명 일부 입력...",
+            hint_text="터치하여 입력 / 바코드 스캔...",
             font_name=FONT_NAME,
             font_size=dp(14),
             multiline=False,
+            size_hint_x=0.75,
+            readonly=True, # PDA 터치 입력창과 연동하기 위해 readonly 설정
         )
-        self.search_input.bind(text=self._on_search_text_changed)
+        # 터치 시 안드로이드 입력창 오픈
+        self.search_input.bind(on_touch_down=self._on_search_input_touch)
         search_box.add_widget(self.search_input)
+
+        # 💡 [검색] 버튼 명시적 추가
+        btn_do_search = StyledButton(
+            text="검색",
+            size_hint_x=0.25,
+            font_size=dp(14),
+            bg_color=PRIMARY_BLUE
+        )
+        btn_do_search.bind(on_press=lambda x: self._search_master_stock(self.search_input.text))
+        search_box.add_widget(btn_do_search)
+
         layout.add_widget(search_box)
 
+        # 스크롤 영역
         self.scroll = ScrollView(size_hint=(1, 1))
         self.results_grid = GridLayout(cols=1, spacing=dp(5), size_hint_y=None)
         self.results_grid.bind(minimum_height=self.results_grid.setter("height"))
@@ -1254,8 +1271,22 @@ class EmergencyReplenishPopup(Popup):
         layout.add_widget(self.scroll)
 
         self.content_area.add_widget(layout)
+        
+        # 최초 열림 시 전체 목록(또는 빈 검색) 조회
         self._search_master_stock("")
 
+    # 💡 터치 시 키보드 입력창 띄우기 메서드
+    def _on_search_input_touch(self, instance, touch):
+        if instance.collide_point(*touch.pos):
+            def set_search_query(val):
+                instance.text = str(val).strip().upper()
+                self._search_master_stock(instance.text)
+
+            open_native_korean_input(
+                "검색어 입력", "바코드 숫자 또는 SKU 일부 입력", instance.text, set_search_query
+            )
+            return True
+        return False
     def _on_search_text_changed(self, instance, text):
         query = re.sub(r'[^A-Za-z0-9\-가-힣]', '', text).strip().upper()
         self._search_master_stock(query)
@@ -4370,7 +4401,7 @@ class AdminDashboardScreen(Screen):
 
         # 💡 [정확한 위치] 작업현황판 상단 우측에 '🚨 보충요청/소통' 버튼 연결
         btn_emergency_chat = StyledButton(
-            text="🚨 보충요청/소통",
+            text="보충요청/소통",
             size_hint_x=0.35,
             font_size=dp(12),
             bg_color=get_color_from_hex("#D32F2F")  # 눈에 띄는 빨간색
