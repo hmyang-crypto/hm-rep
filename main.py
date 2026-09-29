@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.0"
+CURRENT_VERSION = "1.9.2.1"
 
 
 def check_and_apply_update():
@@ -1255,7 +1255,6 @@ class EmergencyReplenishPopup(Popup):
             font_size=dp(14),
             bg_color=PRIMARY_BLUE
         )
-        # 💡 검색 버튼 클릭 시 비동기(Thread)로 실행하여 UI 멈춤 방지
         btn_do_search.bind(on_press=lambda x: self._start_async_search(self.search_input.text))
         search_box.add_widget(btn_do_search)
 
@@ -1269,13 +1268,11 @@ class EmergencyReplenishPopup(Popup):
 
         self.content_area.add_widget(layout)
         
-        # 💡 [핵심] 최초 열림 시 전체 조회를 실행하지 않아서 앱 진입 속도 10배 향상!
         self.results_grid.clear_widgets()
         self.results_grid.add_widget(
             Label(text="바코드를 스캔하거나 입력 후 [검색]을 눌러주세요.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
         )
 
-    # 💡 백그라운드 스레드로 검색 수행
     def _start_async_search(self, query):
         if not query.strip():
             App.get_running_app().show_toast("검색어를 입력해 주세요.")
@@ -1283,7 +1280,7 @@ class EmergencyReplenishPopup(Popup):
 
         self.results_grid.clear_widgets()
         self.results_grid.add_widget(
-            Label(text=" 재고 마스터 검색 중...", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+            Label(text="🔍 재고 마스터 검색 중...", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
         )
         threading.Thread(target=self._search_master_stock, args=(query,), daemon=True).start()
 
@@ -1302,12 +1299,10 @@ class EmergencyReplenishPopup(Popup):
     def _search_master_stock(self, query):
         master_data = []
         try:
-            # SKU별 로케이션 검색과 동일한 시트 데이터 호출
-            master_data = get_sheet_data_cached("로케이션별재고 raw")
-            if not master_data:
-                master_data = get_sheet_data("로케이션별재고 raw", force_refresh=False)
+            # SkuLocationSearchScreen과 동일하게 데이터 직접 강제 수집
+            master_data = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
         except Exception as e:
-            print(f" 로케이션별재고 raw 참조 실패: {e}")
+            print(f"⚠️ 로케이션별재고 raw 참조 실패: {e}")
 
         seen_skus = set()
         matched_items = []
@@ -1315,22 +1310,22 @@ class EmergencyReplenishPopup(Popup):
 
         if master_data:
             for row in master_data:
-                # 1. B2C출고 항목만 가져오기 (F열: 로케이션 유형)
+                # 1. B2C출고 항목만 선별 (F열: 로케이션 유형)
                 loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
                 if loc_type != "B2C출고":
                     continue
 
-                # 2. 정해진 컬럼명으로 데이터 추출 (t 함수 이용)
+                # 2. SkuLocationSearchScreen 방식과 100% 동일한 키로 파싱
                 bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip().upper()
                 prod_name = str(t(row, "SKU", t(row, "상품명", ""))).strip()
-                partner = str(t(row, "파트너명", "-")).strip()
+                partner = str(t(row, "파트너명", t(row, "고객사", "-"))).strip()
                 loc = str(t(row, "로케이션", "-")).strip()
                 loc_qty = str(t(row, "로케이션 수량", t(row, "로케이션수량", "0"))).strip()
 
                 if not bc or bc in ["N/A", "NONE", ""]:
                     continue
 
-                # 3. 검색어 매칭 (바코드 또는 SKU명 포함 시)
+                # 3. 검색어 부분 일치 조건 (바코드 일부 숫자인 경우에도 매칭 성공)
                 if not clean_query or (clean_query in bc) or (clean_query in prod_name.upper()):
                     combo_key = f"{bc}_{prod_name}_{loc}"
                     if combo_key not in seen_skus:
@@ -1343,7 +1338,6 @@ class EmergencyReplenishPopup(Popup):
                             "loc_qty": loc_qty
                         })
 
-        # UI에 렌더링 전달
         Clock.schedule_once(lambda dt: self._render_search_results(matched_items, query))
 
     def _render_search_results(self, matched_items, query):
@@ -1378,20 +1372,18 @@ class EmergencyReplenishPopup(Popup):
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 req_id = f"REQ-{datetime.now().strftime('%M%S')}"
                 
-                # 💡 [새 헤더 순서 맞춤 (A~K열)]
-                # A:요청ID | B:요청시각 | C:요청자 | D:고객사 | E:SKU명 | F:바코드 | G:출고 로케이션 | H:요청사유 | I:처리상태 | J:회신 메세지 | K:담당자
                 row_data = [
-                    req_id,                  # A: 요청 ID
-                    ts,                      # B: 요청시각
-                    user_name,               # C: 요청자
-                    data["partner"],         # D: 파트너명
-                    data["product_name"],    # E: SKU명
-                    data["barcode"],         # F: 바코드
-                    data["location"],        # G: 출고 로케이션
-                    "라인 재고 부족 / 보충 필요", # H: 요청사유
-                    "요청중",                # I: 처리상태
-                    "",                      # J: 회신 메세지
-                    ""                       # K: 담당자
+                    req_id,                                 # A: 요청 ID
+                    ts,                                     # B: 요청시각
+                    user_name,                              # C: 요청자
+                    data["partner"],                        # D: 파트너명
+                    data["product_name"],                   # E: SKU명
+                    data["barcode"],                        # F: 바코드
+                    data["location"],                       # G: 출고 로케이션
+                    "라인 재고 부족 / 보충 필요",          # H: 요청사유
+                    "요청중",                               # I: 처리상태
+                    "",                                     # J: 회신 메세지
+                    ""                                      # K: 담당자
                 ]
                 sheet.append_row(row_data)
                 invalidate_cache("도급 보충 요청 시트")
@@ -1418,6 +1410,8 @@ class EmergencyReplenishPopup(Popup):
 
         try:
             sheet_data = get_sheet_data_cached("도급 보충 요청 시트")
+            if not sheet_data:
+                sheet_data = get_sheet_data("도급 보충 요청 시트", force_refresh=False)
             my_requests = [
                 r for r in sheet_data 
                 if str(r.get("요청자", "")).strip() == user_name
@@ -1438,16 +1432,15 @@ class EmergencyReplenishPopup(Popup):
                 sku_name = str(req.get("SKU명", "")).strip()
                 ts = str(req.get("요청시각", "")).split()[-1] if req.get("요청시각") else ""
 
-                # 상태별 카드 색상
-                bg_col = "#37474F" # 기본 요청중 (회색)
+                bg_col = "#37474F"
                 if "조치안내" in status:
-                    bg_col = "#E65100" # 회신도착 (주황)
+                    bg_col = "#E65100"
                 elif "보충진행중" in status:
-                    bg_col = "#00897B" # 진행중 (청록)
+                    bg_col = "#00897B"
                 elif "보충완료" in status:
-                    bg_col = "#2E7D32" # 완료 (초록)
+                    bg_col = "#2E7D32"
                 elif "품절" in status or "재고없음" in status:
-                    bg_col = "#C62828" # 품절 (빨강)
+                    bg_col = "#C62828"
 
                 card_box = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(4), size_hint_y=None, height=dp(90))
                 with card_box.canvas.before:
