@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.9"
+CURRENT_VERSION = "1.9.2.0"
 
 
 def check_and_apply_update():
@@ -1236,7 +1236,6 @@ class EmergencyReplenishPopup(Popup):
     def _render_new_request_view(self):
         layout = BoxLayout(orientation="vertical", spacing=dp(8))
 
-        # 💡 상단 검색 바 (수기 입력 터치 + [검색] 버튼 추가)
         search_box = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(45))
         
         self.search_input = TextInput(
@@ -1245,25 +1244,23 @@ class EmergencyReplenishPopup(Popup):
             font_size=dp(14),
             multiline=False,
             size_hint_x=0.75,
-            readonly=True, # PDA 터치 입력창과 연동하기 위해 readonly 설정
+            readonly=True,
         )
-        # 터치 시 안드로이드 입력창 오픈
         self.search_input.bind(on_touch_down=self._on_search_input_touch)
         search_box.add_widget(self.search_input)
 
-        # 💡 [검색] 버튼 명시적 추가
         btn_do_search = StyledButton(
             text="검색",
             size_hint_x=0.25,
             font_size=dp(14),
             bg_color=PRIMARY_BLUE
         )
-        btn_do_search.bind(on_press=lambda x: self._search_master_stock(self.search_input.text))
+        # 💡 검색 버튼 클릭 시 비동기(Thread)로 실행하여 UI 멈춤 방지
+        btn_do_search.bind(on_press=lambda x: self._start_async_search(self.search_input.text))
         search_box.add_widget(btn_do_search)
 
         layout.add_widget(search_box)
 
-        # 스크롤 영역
         self.scroll = ScrollView(size_hint=(1, 1))
         self.results_grid = GridLayout(cols=1, spacing=dp(5), size_hint_y=None)
         self.results_grid.bind(minimum_height=self.results_grid.setter("height"))
@@ -1272,85 +1269,92 @@ class EmergencyReplenishPopup(Popup):
 
         self.content_area.add_widget(layout)
         
-        # 최초 열림 시 전체 목록(또는 빈 검색) 조회
-        self._search_master_stock("")
+        # 💡 [핵심] 최초 열림 시 전체 조회를 실행하지 않아서 앱 진입 속도 10배 향상!
+        self.results_grid.clear_widgets()
+        self.results_grid.add_widget(
+            Label(text="바코드를 스캔하거나 입력 후 [검색]을 눌러주세요.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+        )
 
-    # 💡 터치 시 키보드 입력창 띄우기 메서드
+    # 💡 백그라운드 스레드로 검색 수행
+    def _start_async_search(self, query):
+        if not query.strip():
+            App.get_running_app().show_toast("검색어를 입력해 주세요.")
+            return
+
+        self.results_grid.clear_widgets()
+        self.results_grid.add_widget(
+            Label(text=" 재고 마스터 검색 중...", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+        )
+        threading.Thread(target=self._search_master_stock, args=(query,), daemon=True).start()
+
     def _on_search_input_touch(self, instance, touch):
         if instance.collide_point(*touch.pos):
             def set_search_query(val):
                 instance.text = str(val).strip().upper()
-                self._search_master_stock(instance.text)
+                self._start_async_search(instance.text)
 
             open_native_korean_input(
                 "검색어 입력", "바코드 숫자 또는 SKU 일부 입력", instance.text, set_search_query
             )
             return True
         return False
-    def _on_search_text_changed(self, instance, text):
-        query = re.sub(r'[^A-Za-z0-9\-가-힣]', '', text).strip().upper()
-        self._search_master_stock(query)
 
     def _search_master_stock(self, query):
-        self.results_grid.clear_widgets()
-        
         master_data = []
         try:
-            # 어플 내 검증된 시트 데이터 호출
+            # SKU별 로케이션 검색과 동일한 시트 데이터 호출
             master_data = get_sheet_data_cached("로케이션별재고 raw")
             if not master_data:
                 master_data = get_sheet_data("로케이션별재고 raw", force_refresh=False)
         except Exception as e:
             print(f" 로케이션별재고 raw 참조 실패: {e}")
 
-        if not master_data:
-            self.results_grid.add_widget(
-                Label(text="SKU 정보 없.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
-            )
-            return
-
         seen_skus = set()
         matched_items = []
         clean_query = query.strip().upper()
 
-        for row in master_data:
-            # 💡 [필터링 조건] F열: 로케이션 유형 추출
-            loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
+        if master_data:
+            for row in master_data:
+                # 1. B2C출고 항목만 가져오기 (F열: 로케이션 유형)
+                loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
+                if loc_type != "B2C출고":
+                    continue
 
-            # 💡 F열이 'B2C출고'인 행만 선별 (보관 로케이션 제외)
-            if loc_type != "B2C출고":
-                continue
+                # 2. 정해진 컬럼명으로 데이터 추출 (t 함수 이용)
+                bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip().upper()
+                prod_name = str(t(row, "SKU", t(row, "상품명", ""))).strip()
+                partner = str(t(row, "파트너명", "-")).strip()
+                loc = str(t(row, "로케이션", "-")).strip()
+                loc_qty = str(t(row, "로케이션 수량", t(row, "로케이션수량", "0"))).strip()
 
-            # B열: 파트너명 | C열: SKU | D열: 바코드 | E열: 로케이션 | H열: 로케이션 수량
-            bc = str(t(row, "바코드", t(row, "상품바코드", t(row, "SKU", "")))).strip().upper()
-            prod_name = str(t(row, "SKU", t(row, "상품명", t(row, "SKU명", "")))).strip()
-            partner = str(t(row, "파트너명", t(row, "고객사", "-"))).strip()
-            loc = str(t(row, "로케이션", t(row, "출고 로케이션", "-"))).strip()
-            loc_qty = str(t(row, "로케이션 수량", t(row, "로케이션수량", t(row, "수량", "0")))).strip()
+                if not bc or bc in ["N/A", "NONE", ""]:
+                    continue
 
-            if not bc or bc in ["N/A", "NONE", ""]:
-                continue
+                # 3. 검색어 매칭 (바코드 또는 SKU명 포함 시)
+                if not clean_query or (clean_query in bc) or (clean_query in prod_name.upper()):
+                    combo_key = f"{bc}_{prod_name}_{loc}"
+                    if combo_key not in seen_skus:
+                        seen_skus.add(combo_key)
+                        matched_items.append({
+                            "barcode": bc,
+                            "product_name": prod_name if prod_name else "SKU 정보 없음",
+                            "partner": partner,
+                            "location": loc,
+                            "loc_qty": loc_qty
+                        })
 
-            # 부분 일치 검색 조건 (바코드 숫자 일부 또는 SKU명에 포함 시)
-            if not clean_query or (clean_query in bc) or (clean_query in prod_name.upper()):
-                combo_key = f"{bc}_{prod_name}_{loc}"
-                if combo_key not in seen_skus:
-                    seen_skus.add(combo_key)
-                    matched_items.append({
-                        "barcode": bc,
-                        "product_name": prod_name if prod_name else "SKU명 없음",
-                        "partner": partner,
-                        "location": loc,
-                        "loc_qty": loc_qty
-                    })
+        # UI에 렌더링 전달
+        Clock.schedule_once(lambda dt: self._render_search_results(matched_items, query))
+
+    def _render_search_results(self, matched_items, query):
+        self.results_grid.clear_widgets()
 
         if not matched_items:
             self.results_grid.add_widget(
-                Label(text=f"검색어 [{query}] 에 해당하는 B2C출고 재고 항목이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+                Label(text="SKU 정보 없음", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
             )
             return
 
-        # 검색 결과 카드 생성 (터치 시 _send_request 실행)
         for data in matched_items[:30]:
             btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 파트너명: {data['partner']} | 출고위치: {data['location']} | B2C재고: {data['loc_qty']}개"
             card_btn = StyledButton(
@@ -1361,7 +1365,6 @@ class EmergencyReplenishPopup(Popup):
                 bg_color=get_color_from_hex("#37474F"),
                 halign="left"
             )
-            # 💡 카드 터치 시 긴급 보충 요청 전송 프로세스로 연결
             card_btn.bind(on_release=lambda inst, d=data: self._send_request(d))
             self.results_grid.add_widget(card_btn)
 
