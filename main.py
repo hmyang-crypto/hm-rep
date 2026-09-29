@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.8"
+CURRENT_VERSION = "1.9.1.9"
 
 
 def check_and_apply_update():
@@ -1296,16 +1296,16 @@ class EmergencyReplenishPopup(Popup):
         
         master_data = []
         try:
-            # 어플 내 검증된 시트 데이터 호출 방식 사용
+            # 어플 내 검증된 시트 데이터 호출
             master_data = get_sheet_data_cached("로케이션별재고 raw")
             if not master_data:
                 master_data = get_sheet_data("로케이션별재고 raw", force_refresh=False)
         except Exception as e:
-            print(f"⚠️ 로케이션별재고 raw 참조 실패: {e}")
+            print(f" 로케이션별재고 raw 참조 실패: {e}")
 
         if not master_data:
             self.results_grid.add_widget(
-                Label(text="마스터 데이터(로케이션별재고 raw)를 불러올 수 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+                Label(text="SKU 정보 없.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
             )
             return
 
@@ -1314,7 +1314,14 @@ class EmergencyReplenishPopup(Popup):
         clean_query = query.strip().upper()
 
         for row in master_data:
-            # 💡 어플 내 검증된 t() 도우미 함수를 사용하여 안전하게 컬럼 추출
+            # 💡 [필터링 조건] F열: 로케이션 유형 추출
+            loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
+
+            # 💡 F열이 'B2C출고'인 행만 선별 (보관 로케이션 제외)
+            if loc_type != "B2C출고":
+                continue
+
+            # B열: 파트너명 | C열: SKU | D열: 바코드 | E열: 로케이션 | H열: 로케이션 수량
             bc = str(t(row, "바코드", t(row, "상품바코드", t(row, "SKU", "")))).strip().upper()
             prod_name = str(t(row, "SKU", t(row, "상품명", t(row, "SKU명", "")))).strip()
             partner = str(t(row, "파트너명", t(row, "고객사", "-"))).strip()
@@ -1324,7 +1331,7 @@ class EmergencyReplenishPopup(Popup):
             if not bc or bc in ["N/A", "NONE", ""]:
                 continue
 
-            # 부분 일치 검색 (바코드 숫자 일부 또는 SKU명에 포함 시)
+            # 부분 일치 검색 조건 (바코드 숫자 일부 또는 SKU명에 포함 시)
             if not clean_query or (clean_query in bc) or (clean_query in prod_name.upper()):
                 combo_key = f"{bc}_{prod_name}_{loc}"
                 if combo_key not in seen_skus:
@@ -1339,13 +1346,13 @@ class EmergencyReplenishPopup(Popup):
 
         if not matched_items:
             self.results_grid.add_widget(
-                Label(text=f"검색어 [{query}] 에 해당하는 마스터 항목이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+                Label(text=f"검색어 [{query}] 에 해당하는 B2C출고 재고 항목이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
             )
             return
 
-        # 결과 카드는 상위 30건 표시
+        # 검색 결과 카드 생성 (터치 시 _send_request 실행)
         for data in matched_items[:30]:
-            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 파트너명: {data['partner']} | 로케이션: {data['location']} | 수량: {data['loc_qty']}개"
+            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 파트너명: {data['partner']} | 출고위치: {data['location']} | B2C재고: {data['loc_qty']}개"
             card_btn = StyledButton(
                 text=btn_text,
                 font_size=dp(12),
@@ -1354,6 +1361,7 @@ class EmergencyReplenishPopup(Popup):
                 bg_color=get_color_from_hex("#37474F"),
                 halign="left"
             )
+            # 💡 카드 터치 시 긴급 보충 요청 전송 프로세스로 연결
             card_btn.bind(on_release=lambda inst, d=data: self._send_request(d))
             self.results_grid.add_widget(card_btn)
 
