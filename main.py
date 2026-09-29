@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.3"
+CURRENT_VERSION = "1.9.2.4"
 
 
 def check_and_apply_update():
@@ -1454,90 +1454,153 @@ class EmergencyReplenishPopup(Popup):
         )
 
     # --- 2. 내 요청 현황 & 데스크 회신 확인 ---
+    # --- 2. 내 요청 현황 & 데스크 회신 확인 (가독성 개편 & 자동 삭제/필터링 적용) ---
     def _render_status_view(self):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
         scroll = ScrollView(size_hint=(1, 1))
-        status_grid = GridLayout(cols=1, spacing=dp(8), size_hint_y=None)
+        status_grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None)
         status_grid.bind(minimum_height=status_grid.setter("height"))
         scroll.add_widget(status_grid)
 
-        my_requests = []
+        raw_requests = []
         try:
             sheet_data = get_sheet_data("도급 보충 요청 시트", force_refresh=True)
             if sheet_data:
                 for r in sheet_data:
                     req_user = str(t(r, "요청자", t(r, "요청 자", ""))).strip().lower()
                     if req_user == user_name:
-                        my_requests.append(r)
+                        raw_requests.append(r)
         except Exception as e:
             print(f"요청 현황 데이터 로드 실패: {e}")
 
-        if not my_requests:
+        # 💡 [자동 삭제/필터링 기준 적용]
+        now = datetime.now()
+        cutoff_time = now - timedelta(hours=24) # 24시간 지난 요청 자동 삭제(제외)
+        
+        valid_requests = []
+        for req in raw_requests:
+            ts_str = str(t(req, "요청시각", "")).strip()
+            
+            # 24시간 지난 요청 필터링
+            if ts_str:
+                try:
+                    req_dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                    if req_dt < cutoff_time:
+                        continue # 24시간 지난 건은 어플 목록에서 제외
+                except Exception:
+                    pass
+            valid_requests.append(req)
+
+        # 💡 최근 15건으로 제한하여 가독성 유지
+        display_requests = valid_requests[-15:]
+
+        if not display_requests:
             status_grid.add_widget(
-                Label(text="등록된 내 보충 요청 내역이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(50), color=TEXT_MUTED)
+                Label(text="등록되었거나 유효한 내 보충 요청 내역이 없습니다.\n(24시간 경과 내역 자동 정리됨)", 
+                      font_name=FONT_NAME, font_size=dp(13), size_hint_y=None, height=dp(60), color=TEXT_MUTED, halign="center")
             )
         else:
-            for req in reversed(my_requests[-20:]):
+            for req in reversed(display_requests):
                 status = str(t(req, "처리상태", "요청중")).strip()
                 reply_msg = str(t(req, "회신 메세지", t(req, "회신메시지", ""))).strip()
                 manager_name = str(t(req, "담당자", "")).strip()
                 bc = str(t(req, "바코드", "")).strip()
                 sku_name = str(t(req, "SKU명", t(req, "상품명", ""))).strip()
+                partner_name = str(t(req, "고객사", t(req, "파트너명", "-"))).strip()
                 ts_raw = str(t(req, "요청시각", "")).strip()
                 ts = ts_raw.split()[-1] if len(ts_raw.split()) > 1 else ts_raw
 
-                bg_col = "#FFFFFF"  # 기본 요청중 (화이트)
-                if "조치안내" in status or "회신" in status:
-                    bg_col = "#FFE0B2"  # 회신도착 (파스텔 주황)
-                elif "보충진행중" in status or "진행중" in status:
-                    bg_col = "#E0F2F1"  # 진행중 (파스텔 청록)
-                elif "보충완료" in status or "완료" in status:
-                    bg_col = "#C8E6C9"  # 완료 (파스텔 초록)
-                elif "품절" in status or "재고없음" in status:
-                    bg_col = "#FFCDD2"  # 품절 (파스텔 빨강)
+                # 4가지 처리상태 맞춤 파스텔 배경 색상
+                bg_col = "#FFFFFF"  # 기본 '요청중' (화이트)
+                if "보충지시 완료" in status or "보충지시완료" in status or "지시" in status:
+                    bg_col = "#E0F2F1"  # 파스텔 청록
+                elif "조치안내" in status or "회신" in status:
+                    bg_col = "#FFE0B2"  # 파스텔 주황
+                elif "재고없음" in status or "품절" in status:
+                    bg_col = "#FFCDD2"  # 파스텔 빨강
 
-                card_box = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(4), size_hint_y=None, height=dp(85))
+                # 💡 [가독성 개편] 카드 높이를 dp(110)으로 확대하고 4개 영역으로 명확히 구별
+                card_box = TouchableBox(
+                    orientation="vertical", 
+                    padding=(dp(12), dp(8)), 
+                    spacing=dp(3), 
+                    size_hint_y=None, 
+                    height=dp(110)
+                )
                 with card_box.canvas.before:
                     Color(*get_color_from_hex(bg_col))
                     bg_r = RoundedRectangle(pos=card_box.pos, size=card_box.size, radius=[dp(8)])
                 card_box.bind(pos=lambda i, p, b=bg_r: setattr(b, "pos", p), size=lambda i, s, b=bg_r: setattr(b, "size", s))
 
-                mgr_text = f" (담당: {manager_name})" if manager_name else ""
-                title_lbl = Label(
-                    text=f"[{ts}] [{status}]{mgr_text}  {bc}\n{sku_name}",
+                # 1행: 바코드 / SKU명
+                lbl_sku = Label(
+                    text=f"[{bc}] {sku_name}",
                     font_name=FONT_NAME,
                     font_size=dp(13),
                     bold=True,
-                    color=TEXT_DARK,
+                    color=get_color_from_hex("#1565C0"),
                     size_hint_y=None,
-                    height=dp(36),
+                    height=dp(22),
                     halign="left",
                     valign="middle",
                     shorten=True,
                     shorten_from="right"
                 )
-                title_lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
-                card_box.add_widget(title_lbl)
+                lbl_sku.bind(size=lambda i, s: setattr(i, "text_size", s))
+                card_box.add_widget(lbl_sku)
 
-                reply_text = f"[데스크 회신] {reply_msg}" if reply_msg else "[데스크 회신 대기 중...]"
+                # 2행: 고객사명
+                lbl_client = Label(
+                    text=f"• 고객사명: {partner_name}",
+                    font_name=FONT_NAME,
+                    font_size=dp(12),
+                    color=TEXT_DARK,
+                    size_hint_y=None,
+                    height=dp(18),
+                    halign="left",
+                    valign="middle",
+                    shorten=True,
+                    shorten_from="right"
+                )
+                lbl_client.bind(size=lambda i, s: setattr(i, "text_size", s))
+                card_box.add_widget(lbl_client)
+
+                # 3행: 상태 및 요청시각 (담당자)
+                mgr_text = f" (담당: {manager_name})" if manager_name else ""
+                lbl_status_row = Label(
+                    text=f"• 상태: [b]{status}[/b]{mgr_text}  |  요청시각: {ts}",
+                    font_name=FONT_NAME,
+                    font_size=dp(12),
+                    markup=True,
+                    color=TEXT_DARK,
+                    size_hint_y=None,
+                    height=dp(18),
+                    halign="left",
+                    valign="middle"
+                )
+                lbl_status_row.bind(size=lambda i, s: setattr(i, "text_size", s))
+                card_box.add_widget(lbl_status_row)
+
+                # 4행: 회신내용
+                reply_text = f"• 회신내용: {reply_msg}" if reply_msg else "• 회신내용: 데스크 회신 대기 중..."
                 reply_color = get_color_from_hex("#D84315") if reply_msg else TEXT_MUTED
-                reply_lbl = Label(
+                lbl_reply = Label(
                     text=reply_text,
                     font_name=FONT_NAME,
                     font_size=dp(12),
                     bold=True if reply_msg else False,
                     color=reply_color,
                     size_hint_y=None,
-                    height=dp(24),
+                    height=dp(20),
                     halign="left",
                     valign="middle",
                     shorten=True,
                     shorten_from="right"
                 )
-                reply_lbl.bind(size=lambda i, s: setattr(i, "text_size", s))
-                card_box.add_widget(reply_lbl)
+                lbl_reply.bind(size=lambda i, s: setattr(i, "text_size", s))
+                card_box.add_widget(lbl_reply)
 
                 status_grid.add_widget(card_box)
 
