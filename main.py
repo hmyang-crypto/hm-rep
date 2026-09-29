@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.1.5"
+CURRENT_VERSION = "1.9.1.6"
 
 
 def check_and_apply_update():
@@ -1265,54 +1265,66 @@ class EmergencyReplenishPopup(Popup):
         
         master_data = []
         try:
-            stock_sheet_data = get_sheet_data_cached("로케이션별재고 raw")
-            if stock_sheet_data:
-                master_data = stock_sheet_data
+            # 1. 캐시 데이터 조회 후 없으면 직접 시트 데이터 강제 로드
+            master_data = get_sheet_data_cached("로케이션별재고 raw")
+            if not master_data:
+                master_data = get_sheet_data("로케이션별재고 raw", force_refresh=False)
         except Exception as e:
             print(f"⚠️ 로케이션별재고 raw 참조 실패: {e}")
 
+        if not master_data:
+            self.results_grid.add_widget(
+                Label(text="마스터 데이터(로케이션별재고 raw)를 불러올 수 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+            )
+            return
+
         seen_skus = set()
         matched_items = []
+        clean_query = query.strip().upper()
 
         for row in master_data:
-            bc = str(row.get("바코드", row.get("SKU", ""))).strip().upper()
-            prod_name = str(row.get("SKU명", row.get("상품명", ""))).strip()
-            customer = str(row.get("고객사", row.get("고객", "-"))).strip()
-            loc = str(row.get("출고 로케이션", row.get("로케이션", "-"))).strip()
+            # 💡 [시트 구조 정확한 매핑]
+            bc = str(row.get("바코드", "")).strip().upper()                  # D열
+            prod_name = str(row.get("SKU", "")).strip()                     # C열
+            partner = str(row.get("파트너명", "-")).strip()                  # B열
+            loc = str(row.get("로케이션", "-")).strip()                      # E열
+            loc_qty = str(row.get("로케이션 수량", row.get("수량", "0"))).strip() # H열
 
-            if not bc:
+            if not bc or bc == "N/A":
                 continue
 
-            if not query or (query in bc) or (query in prod_name.upper()):
-                combo_key = f"{bc}_{prod_name}"
+            # 검색어 조건 (바코드 또는 SKU명에 포함 시)
+            if not clean_query or (clean_query in bc) or (clean_query in prod_name.upper()):
+                combo_key = f"{bc}_{prod_name}_{loc}"
                 if combo_key not in seen_skus:
                     seen_skus.add(combo_key)
                     matched_items.append({
                         "barcode": bc,
-                        "product_name": prod_name,
-                        "customer": customer,
+                        "product_name": prod_name if prod_name else "SKU명 없음",
+                        "partner": partner,
                         "location": loc,
+                        "loc_qty": loc_qty
                     })
 
         if not matched_items:
             self.results_grid.add_widget(
-                Label(text="검색된 재고 마스터 항목이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
+                Label(text=f"검색어 [{query}] 에 해당하는 마스터 항목이 없습니다.", font_name=FONT_NAME, size_hint_y=None, height=dp(40))
             )
             return
 
-        for data in matched_items[:25]:
-            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 고객사: {data['customer']} | 로케이션: {data['location']}"
+        # 결과 목록 카드 생성 (상위 30건)
+        for data in matched_items[:30]:
+            btn_text = f"[{data['barcode']}] {data['product_name'][:20]}\n• 파트너명: {data['partner']} | 로케이션: {data['location']} | 수량: {data['loc_qty']}개"
             card_btn = StyledButton(
                 text=btn_text,
                 font_size=dp(12),
                 size_hint_y=None,
-                height=dp(55),
+                height=dp(58),
                 bg_color=get_color_from_hex("#37474F"),
                 halign="left"
             )
             card_btn.bind(on_release=lambda inst, d=data: self._send_request(d))
             self.results_grid.add_widget(card_btn)
-
     def _send_request(self, data):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip()
@@ -1326,17 +1338,17 @@ class EmergencyReplenishPopup(Popup):
                 # 💡 [새 헤더 순서 맞춤 (A~K열)]
                 # A:요청ID | B:요청시각 | C:요청자 | D:고객사 | E:SKU명 | F:바코드 | G:출고 로케이션 | H:요청사유 | I:처리상태 | J:회신 메세지 | K:담당자
                 row_data = [
-                    req_id,                                 # A열: 요청 ID
-                    ts,                                     # B열: 요청시각
-                    user_name,                              # C열: 요청자
-                    data["customer"],                       # D열: 고객사
-                    data["product_name"],                   # E열: SKU명
-                    data["barcode"],                        # F열: 바코드
-                    data["location"],                       # G열: 출고 로케이션
-                    "라인 재고 부족 / 보충 필요",          # H열: 요청사유
-                    "요청중",                               # I열: 처리상태
-                    "",                                     # J열: 회신 메세지
-                    ""                                      # K열: 담당자
+                    req_id,                  # A: 요청 ID
+                    ts,                      # B: 요청시각
+                    user_name,               # C: 요청자
+                    data["partner"],         # D: 파트너명
+                    data["product_name"],    # E: SKU명
+                    data["barcode"],         # F: 바코드
+                    data["location"],        # G: 출고 로케이션
+                    "라인 재고 부족 / 보충 필요", # H: 요청사유
+                    "요청중",                # I: 처리상태
+                    "",                      # J: 회신 메세지
+                    ""                       # K: 담당자
                 ]
                 sheet.append_row(row_data)
                 invalidate_cache("도급 보충 요청 시트")
