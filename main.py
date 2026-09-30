@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.4"
+CURRENT_VERSION = "1.9.2.5"
 
 
 def check_and_apply_update():
@@ -1294,7 +1294,8 @@ class EmergencyReplenishPopup(Popup):
     def _on_search_input_touch(self, instance, touch):
         if instance.collide_point(*touch.pos):
             def set_search_query(val):
-                instance.text = str(val).strip().upper()
+                # 💡 .upper() 제거하여 소문자 및 언더바 그대로 유지
+                instance.text = str(val).strip()
                 self._start_async_search(instance.text)
 
             open_native_korean_input(
@@ -1312,7 +1313,7 @@ class EmergencyReplenishPopup(Popup):
 
         seen_skus = set()
         matched_items = []
-        clean_query = query.strip().upper()
+        clean_query = query.strip().lower() # 💡 소문자로 변환하여 비교
 
         if master_data:
             for row in master_data:
@@ -1320,21 +1321,26 @@ class EmergencyReplenishPopup(Popup):
                 if loc_type != "B2C출고":
                     continue
 
-                bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip().upper()
+                # 💡 바코드 원본 문자열 유지 (소문자/언더바 보존)
+                bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip()
                 prod_name = str(t(row, "SKU", t(row, "상품명", ""))).strip()
                 partner = str(t(row, "파트너명", t(row, "고객사", "-"))).strip()
                 loc = str(t(row, "로케이션", "-")).strip()
                 loc_qty = str(t(row, "로케이션 수량", t(row, "로케이션수량", "0"))).strip()
 
-                if not bc or bc in ["N/A", "NONE", ""]:
+                if not bc or bc.upper() in ["N/A", "NONE", ""]:
                     continue
 
-                if not clean_query or (clean_query in bc) or (clean_query in prod_name.upper()):
+                # 💡 대소문자 구분 없이 비대소문자 비교 (lower() 매칭)
+                bc_lower = bc.lower()
+                prod_lower = prod_name.lower()
+
+                if not clean_query or (clean_query in bc_lower) or (clean_query in prod_lower):
                     combo_key = f"{bc}_{prod_name}_{loc}"
                     if combo_key not in seen_skus:
                         seen_skus.add(combo_key)
                         matched_items.append({
-                            "barcode": bc,
+                            "barcode": bc, # 원본 대소문자 형태 유지
                             "product_name": prod_name if prod_name else "SKU 정보 없음",
                             "partner": partner,
                             "location": loc,
@@ -1455,6 +1461,7 @@ class EmergencyReplenishPopup(Popup):
 
     # --- 2. 내 요청 현황 & 데스크 회신 확인 ---
     # --- 2. 내 요청 현황 & 데스크 회신 확인 (가독성 개편 & 자동 삭제/필터링 적용) ---
+    # --- 2. 내 요청 현황 & 데스크 회신 확인 (회신 대기 문구 제어 & 재요청 버튼 도입) ---
     def _render_status_view(self):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
@@ -1475,25 +1482,22 @@ class EmergencyReplenishPopup(Popup):
         except Exception as e:
             print(f"요청 현황 데이터 로드 실패: {e}")
 
-        # 💡 [자동 삭제/필터링 기준 적용]
+        # 24시간 이내 유효한 내역만 필터링
         now = datetime.now()
-        cutoff_time = now - timedelta(hours=24) # 24시간 지난 요청 자동 삭제(제외)
+        cutoff_time = now - timedelta(hours=24)
         
         valid_requests = []
         for req in raw_requests:
             ts_str = str(t(req, "요청시각", "")).strip()
-            
-            # 24시간 지난 요청 필터링
             if ts_str:
                 try:
                     req_dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
                     if req_dt < cutoff_time:
-                        continue # 24시간 지난 건은 어플 목록에서 제외
+                        continue
                 except Exception:
                     pass
             valid_requests.append(req)
 
-        # 💡 최근 15건으로 제한하여 가독성 유지
         display_requests = valid_requests[-15:]
 
         if not display_requests:
@@ -1509,6 +1513,7 @@ class EmergencyReplenishPopup(Popup):
                 bc = str(t(req, "바코드", "")).strip()
                 sku_name = str(t(req, "SKU명", t(req, "상품명", ""))).strip()
                 partner_name = str(t(req, "고객사", t(req, "파트너명", "-"))).strip()
+                req_id = str(t(req, "요청 ID", t(req, "요청ID", ""))).strip()
                 ts_raw = str(t(req, "요청시각", "")).strip()
                 ts = ts_raw.split()[-1] if len(ts_raw.split()) > 1 else ts_raw
 
@@ -1521,22 +1526,22 @@ class EmergencyReplenishPopup(Popup):
                 elif "재고없음" in status or "품절" in status:
                     bg_col = "#FFCDD2"  # 파스텔 빨강
 
-                # 💡 [가독성 개편] 카드 높이를 dp(110)으로 확대하고 4개 영역으로 명확히 구별
                 card_box = TouchableBox(
                     orientation="vertical", 
                     padding=(dp(12), dp(8)), 
                     spacing=dp(3), 
                     size_hint_y=None, 
-                    height=dp(110)
+                    height=dp(115)
                 )
                 with card_box.canvas.before:
                     Color(*get_color_from_hex(bg_col))
                     bg_r = RoundedRectangle(pos=card_box.pos, size=card_box.size, radius=[dp(8)])
                 card_box.bind(pos=lambda i, p, b=bg_r: setattr(b, "pos", p), size=lambda i, s, b=bg_r: setattr(b, "size", s))
 
-                # 1행: 바코드 / SKU명
+                # 1행: [요청ID] [바코드] SKU명
+                id_tag = f"[{req_id}] " if req_id else ""
                 lbl_sku = Label(
-                    text=f"[{bc}] {sku_name}",
+                    text=f"{id_tag}[{bc}] {sku_name}",
                     font_name=FONT_NAME,
                     font_size=dp(13),
                     bold=True,
@@ -1583,28 +1588,93 @@ class EmergencyReplenishPopup(Popup):
                 lbl_status_row.bind(size=lambda i, s: setattr(i, "text_size", s))
                 card_box.add_widget(lbl_status_row)
 
-                # 4행: 회신내용
-                reply_text = f"• 회신내용: {reply_msg}" if reply_msg else "• 회신내용: 데스크 회신 대기 중..."
-                reply_color = get_color_from_hex("#D84315") if reply_msg else TEXT_MUTED
+                # 4행: 회신내용 & [재요청] 버튼 바
+                reply_row = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(24))
+
+                # 💡 [핵심 요청 1] '요청중' 상태일 때만 대기 문구 표출, 나머지 상태에서 회신 없으면 빈칸
+                if reply_msg:
+                    reply_text = f"• 회신내용: {reply_msg}"
+                    reply_color = get_color_from_hex("#D84315")
+                elif status == "요청중":
+                    reply_text = "• 회신내용: 데스크 회신 대기 중..."
+                    reply_color = TEXT_MUTED
+                else:
+                    reply_text = "• 회신내용: -"
+                    reply_color = TEXT_MUTED
+
                 lbl_reply = Label(
                     text=reply_text,
                     font_name=FONT_NAME,
                     font_size=dp(12),
                     bold=True if reply_msg else False,
                     color=reply_color,
-                    size_hint_y=None,
-                    height=dp(20),
                     halign="left",
                     valign="middle",
                     shorten=True,
                     shorten_from="right"
                 )
                 lbl_reply.bind(size=lambda i, s: setattr(i, "text_size", s))
-                card_box.add_widget(lbl_reply)
+                reply_row.add_widget(lbl_reply)
 
+                # 💡 [핵심 요청 2] 조치안내/재고없음/회신도착 상태 시 [재요청] 버튼 노출
+                if ("조치안내" in status or "재고없음" in status or reply_msg) and "완료" not in status:
+                    btn_rereq = StyledButton(
+                        text="재요청",
+                        size_hint_x=None,
+                        width=dp(60),
+                        font_size=dp(11),
+                        bg_color=get_color_from_hex("#E65100") # 오렌지 계열
+                    )
+                    btn_rereq.bind(on_release=lambda inst, r=req: self._prompt_re_request(r))
+                    reply_row.add_widget(btn_rereq)
+
+                card_box.add_widget(reply_row)
                 status_grid.add_widget(card_box)
 
         self.content_area.add_widget(scroll)
+
+    # 💡 [신규] 재요청 수행 로직
+    def _prompt_re_request(self, req_data):
+        app = App.get_running_app()
+        req_id = str(t(req_data, "요청 ID", t(req_data, "요청ID", ""))).strip()
+        sku_name = str(t(req_data, "SKU명", "")).strip()
+
+        def _async_re_send():
+            try:
+                sheet = get_worksheet("도급 보충 요청 시트")
+                headers = [str(h).strip() for h in sheet.row_values(1)]
+                
+                # 시트에서 해당 요청 ID의 행 찾기
+                req_id_col = headers.index("요청 ID") + 1 if "요청 ID" in headers else headers.index("요청ID") + 1
+                all_ids = sheet.col_values(req_id_col)
+
+                if req_id in all_ids:
+                    row_idx = all_ids.index(req_id) + 1
+                    
+                    # 식별용 새 ID 생성 (예: REQ-1430 -> REQ-1430-R1)
+                    new_id = f"{req_id}-R1" if "-R" not in req_id else f"{req_id.split('-R')[0]}-R{int(req_id.split('-R')[1])+1}"
+                    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    # 시트 셀 갱신 (요청ID, 요청시각, 요청사유, 처리상태=요청중, 회신메세지 초기화)
+                    cells = [
+                        gspread.Cell(row_idx, req_id_col, new_id),
+                        gspread.Cell(row_idx, headers.index("요청시각") + 1, now_ts),
+                        gspread.Cell(row_idx, headers.index("요청사유") + 1, "[재요청] 라인 재고 재확인 요청"),
+                        gspread.Cell(row_idx, headers.index("처리상태") + 1, "요청중"),
+                        gspread.Cell(row_idx, headers.index("회신 메세지") + 1, "")
+                    ]
+                    sheet.update_cells(cells)
+                    invalidate_cache("도급 보충 요청 시트")
+                    app.show_toast("데스크로 재요청이 전송되었습니다!")
+                    Clock.schedule_once(lambda dt: self._render_status_view())
+            except Exception as e:
+                app.show_info_popup("오류", f"재요청 전송 실패: {e}")
+
+        app.show_confirmation_popup(
+            title="보충 재요청",
+            message=f"[{sku_name[:18]}]\n\n데스크로 보충 재요청을 전송하시겠습니까?\n(요청 ID가 -R1로 구분되어 전송됩니다)",
+            on_yes=lambda: threading.Thread(target=_async_re_send, daemon=True).start()
+        )
 
 class ScanFailureReasonPopup(Popup):
     def __init__(self, on_select_callback, **kwargs):
@@ -5437,8 +5507,8 @@ class MainApp(App):
     def process_global_scan(self, barcode):
         raw_str = str(barcode).replace('\ufeff', '').strip()
 
-        # 💡 [핵심] 순수 영문(A-Z, a-z), 숫자(0-9), 하이픈(-) 제외한 모든 기호/제어문자/☒ 원천 제거
-        clean_barcode = re.sub(r'[^A-Za-z0-9\-]', '', raw_str).strip().upper()
+        # 💡 [보정] 언더바(_) 및 하이픈(-) 모두 허용
+        clean_barcode = re.sub(r'[^A-Za-z0-9\-_]', '', raw_str).strip()
 
         if self.root and clean_barcode:
             curr_screen = self.root.current_screen
