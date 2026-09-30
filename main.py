@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.5"
+CURRENT_VERSION = "1.9.2.6"
 
 
 def check_and_apply_update():
@@ -1940,12 +1940,11 @@ class InspectionPopup(Popup):
         )
         loc_input_row.add_widget(self.final_location_input)
 
-        # 💡 [신규] QR없음 버튼 추가
         btn_no_qr = StyledButton(
             text="QR없음",
             size_hint_x=0.3,
             font_size=dp(13),
-            bg_color=get_color_from_hex("#E65100"), # 시인성 높은 오렌지 계열
+            bg_color=get_color_from_hex("#E65100"),
         )
         btn_no_qr.bind(on_press=self.process_no_qr_action)
         loc_input_row.add_widget(btn_no_qr)
@@ -1980,7 +1979,6 @@ class InspectionPopup(Popup):
             return True
         return False
 
-    # 💡 [신규] QR없음 버튼 클릭 처리 로직
     def process_no_qr_action(self, instance):
         app = App.get_running_app()
 
@@ -1989,7 +1987,7 @@ class InspectionPopup(Popup):
         rem_qty_str = self.rem_qty_input.text.strip() or "0"
 
         if not box_size_str.isdigit() or not box_count_str.isdigit() or not rem_qty_str.isdigit():
-            app.show_info_popup("입력 오류 🚨", "수량을 올바르게 입력해주세요.")
+            app.show_info_popup("입력 오류", "수량을 올바르게 입력해주세요.")
             return
 
         box_size = int(box_size_str)
@@ -2000,13 +1998,28 @@ class InspectionPopup(Popup):
 
         if calculated_total_qty <= 0:
             app.show_info_popup(
-                "수량 입력 필요 🚨",
-                "수량이 입력되지 않았습니다!\n\n"
-                "박스 수량 또는 낱개 수량을 먼저 입력해 주세요.",
+                "수량 입력 필요",
+                "수량이 입력되지 않았습니다!\n\n박스 수량 또는 낱개 수량을 먼저 입력해 주세요.",
             )
             return
 
-        # 비고에 [자석로케이션 필요] 추가
+        # 수량 불일치 검증
+        target_qty = safe_int(t(self.task_data, "지시수량", 0))
+        if calculated_total_qty != target_qty:
+            def proceed_no_qr():
+                self._execute_no_qr_finalize(calculated_total_qty)
+
+            app.show_confirmation_popup(
+                title="[수량 이슈 경고]",
+                message=f"[color=ffffff]지시수량([color=FF8A80][b]{target_qty}개[/b][/color])과 검수수량([color=81C784][b]{calculated_total_qty}개[/b][/color])이 다릅니다!\n\n수량을 다시 한번 확인해주세요.\n이대로 진행하시겠습니까?[/color]",
+                on_yes=proceed_no_qr
+            )
+            return
+
+        self._execute_no_qr_finalize(calculated_total_qty)
+
+    def _execute_no_qr_finalize(self, calculated_total_qty):
+        app = App.get_running_app()
         ts = datetime.now().strftime("%H:%M")
         no_qr_note = f"[{ts} 자석로케이션 필요]"
         updated_remarks = (
@@ -2017,7 +2030,6 @@ class InspectionPopup(Popup):
 
         self.final_location_input.text = self.target_location
 
-        # 목표 로케이션으로 자동 완료 처리
         self.task_list_screen._finalize_task_processing(
             card=self.card,
             final_qty=calculated_total_qty,
@@ -2032,14 +2044,14 @@ class InspectionPopup(Popup):
         app = App.get_running_app()
 
         raw_loc = str(scanned_location).replace('\ufeff', '').strip()
-        scanned_loc = re.sub(r'[^A-Za-z0-9\-]', '', raw_loc).strip().upper()
+        scanned_loc = re.sub(r'[^A-Za-z0-9\-_]', '', raw_loc).strip().upper()
 
         box_size_str = self.box_size_input.text.strip()
         box_count_str = self.box_count_input.text.strip() or "0"
         rem_qty_str = self.rem_qty_input.text.strip() or "0"
 
         if not box_size_str.isdigit() or not box_count_str.isdigit() or not rem_qty_str.isdigit():
-            app.show_info_popup("입력 오류 🚨", "수량을 올바르게 입력해주세요.")
+            app.show_info_popup("입력 오류", "수량을 올바르게 입력해주세요.")
             return False
 
         box_size = int(box_size_str)
@@ -2050,25 +2062,41 @@ class InspectionPopup(Popup):
 
         if calculated_total_qty <= 0:
             app.show_info_popup(
-                "수량 입력 필요 🚨",
-                "수량이 입력되지 않았습니다!\n\n"
-                "박스 수량 또는 낱개 수량을 먼저 입력한 뒤\n"
-                "로케이션 QR을 스캔해 주세요.",
+                "수량 입력 필요",
+                "수량이 입력되지 않았습니다!\n\n박스 수량 또는 낱개 수량을 먼저 입력한 뒤\n로케이션 QR을 스캔해 주세요.",
             )
             return False
 
         self.final_location_input.text = scanned_loc
 
+        # 로케이션 불일치 시 대형 강조
         if scanned_loc != self.target_location:
             app.show_info_popup(
-                "🛑 로케이션 미일치 🚨",
-                f"스캔한 로케이션이 일치하지 않습니다!\n\n"
-                f"• 목표 로케이션: [ {self.target_location} ]\n"
-                f"• 스캔 로케이션: [ {scanned_loc} ]\n\n"
-                f"올바른 로케이션에 적치 후 다시 스캔해 주세요.",
+                "[로케이션 오류]",
+                f"[color=FF8A80][b]스캔한 로케이션이 일치하지 않습니다![/b][/color]\n\n"
+                f"• 올바른 적치 위치 : [size=22dp][color=64B5F6][b]{self.target_location}[/b][/color][/size]\n"
+                f"• 현재 스캔 위치 : [color=FF5252][b]{scanned_loc}[/b][/color]\n\n"
+                f"지정된 올바른 위치에 적치 후 다시 스캔해 주세요.",
             )
             return False
 
+        # 지시수량과 검수수량 불일치 검증
+        target_qty = safe_int(t(self.task_data, "지시수량", 0))
+        if calculated_total_qty != target_qty:
+            def proceed_scan_finalize():
+                self._execute_scan_finalize(calculated_total_qty, scanned_loc)
+
+            app.show_confirmation_popup(
+                title="[수량 이슈 경고]",
+                message=f"[color=ffffff]지시수량([color=FF8A80][b]{target_qty}개[/b][/color])과 검수수량([color=81C784][b]{calculated_total_qty}개[/b][/color])이 다릅니다!\n\n수량을 다시 한번 확인해주세요.\n이대로 검수 완료하시겠습니까?[/color]",
+                on_yes=proceed_scan_finalize
+            )
+            return False
+
+        self._execute_scan_finalize(calculated_total_qty, scanned_loc)
+        return True
+
+    def _execute_scan_finalize(self, calculated_total_qty, scanned_loc):
         self.task_list_screen._finalize_task_processing(
             card=self.card,
             final_qty=calculated_total_qty,
@@ -2077,12 +2105,11 @@ class InspectionPopup(Popup):
             updated_remarks=self.current_remarks,
         )
         self.dismiss()
-        return True
 
     def confirm_inspection(self, instance):
         scanned_location = self.final_location_input.text.strip().upper()
         if not scanned_location:
-            App.get_running_app().show_info_popup("스캔 필요 🚨", "적치할 로케이션 QR/바코드를 스캔해 주세요.")
+            App.get_running_app().show_info_popup("스캔 필요", "적치할 로케이션 QR/바코드를 스캔해 주세요.")
             return
         self.process_location_scan(scanned_location)
 
