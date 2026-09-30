@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.8"
+CURRENT_VERSION = "1.9.2.9"
 
 
 def check_and_apply_update():
@@ -4486,22 +4486,21 @@ class TaskListScreen(Screen):
     ):
         app = App.get_running_app()
 
-        # 💡 [신규 추가] 입수량 변동 체크 및 타임스탬프 비고 기록 생성 로직
+        # 💡 [시간 제외] 입수량 변동 체크 및 '입수량 변경 : n' 비고 기록 생성 로직
         original_qty = safe_int(t(card.task_data, "지시수량", t(card.task_data, "확인수량", 0)))
         inspected_qty = safe_int(final_qty)
 
         # 기존 지시/입수량과 최종 입력 수량이 다른 경우
         if original_qty != inspected_qty and inspected_qty > 0:
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            change_log = f"[{now_str}] 입수량 변경 : {inspected_qty}"
-
+            change_log = f"입수량 변경 : {inspected_qty}"
             current_rem_str = str(updated_remarks or "").strip()
             
             # 기존 비고가 있는 경우 연결, 중복 문구가 있다면 최신 문구로 갱신
             if current_rem_str:
                 if "입수량 변경" in current_rem_str:
+                    # 기존 타임스탬프 형태 또는 단순 '입수량 변경 : n' 패턴 모두 갱신
                     updated_remarks = re.sub(
-                        r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] 입수량 변경 : \d+",
+                        r"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] )?입수량 변경 : \d+",
                         change_log,
                         current_rem_str
                     )
