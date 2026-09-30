@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.6"
+CURRENT_VERSION = "1.9.2.7"
 
 
 def check_and_apply_update():
@@ -856,30 +856,36 @@ class InfoPopup(Popup):
         super().__init__(**kwargs)
         self.title = title
         self.title_font = FONT_NAME
-        self.size_hint = (0.9, 0.5)
+        self.size_hint = (0.9, 0.5)  # 팝업 높이 비율 확장 (짤림 방지)
+        
         content = BoxLayout(
-            orientation="vertical", padding=dp(10), spacing=dp(10)
+            orientation="vertical", padding=dp(15), spacing=dp(10)
         )
+        
         message_label = Label(
             text=str(message),
             font_name=FONT_NAME,
-            font_size=dp(14),
+            font_size=dp(15),
+            markup=True,  # 💡 [핵심] BBCode 태그([color], [size]) 정상 적용 설정
             halign="center",
-            valign="top",
+            valign="middle",
         )
         message_label.bind(
             width=lambda *x: message_label.setter("text_size")(
                 message_label, (message_label.width, None)
             )
         )
-        scroll_view = ScrollView(size_hint_y=1)
+        
+        scroll_view = ScrollView(size_hint=(1, 1))
         scroll_view.add_widget(message_label)
         content.add_widget(scroll_view)
+        
         ok_button = StyledButton(
             text="확인", size_hint_y=None, height=dp(45)
         )
         ok_button.bind(on_press=self.dismiss)
         content.add_widget(ok_button)
+        
         self.content = content
 
 
@@ -2003,7 +2009,7 @@ class InspectionPopup(Popup):
             )
             return
 
-        # 수량 불일치 검증
+        # 💡 [수량 이슈] 수량 불일치 검증
         target_qty = safe_int(t(self.task_data, "지시수량", 0))
         if calculated_total_qty != target_qty:
             def proceed_no_qr():
@@ -2011,13 +2017,18 @@ class InspectionPopup(Popup):
 
             app.show_confirmation_popup(
                 title="[수량 이슈 경고]",
-                message=f"[color=ffffff]지시수량([color=FF8A80][b]{target_qty}개[/b][/color])과 검수수량([color=81C784][b]{calculated_total_qty}개[/b][/color])이 다릅니다!\n\n수량을 다시 한번 확인해주세요.\n이대로 진행하시겠습니까?[/color]",
+                message=(
+                    f"지시수량: [color=FF8A80][b]{target_qty}개[/b][/color]\n"
+                    f"검수수량: [color=81C784][b]{calculated_total_qty}개[/b][/color]\n\n"
+                    f"수량이 일치하지 않습니다!\n다시 한번 확인 후 진행해주세요."
+                ),
                 on_yes=proceed_no_qr
             )
             return
 
         self._execute_no_qr_finalize(calculated_total_qty)
 
+    # 💡 [핵심] QR없음 완결 처리 전용 메서드 (유지 필수!)
     def _execute_no_qr_finalize(self, calculated_total_qty):
         app = App.get_running_app()
         ts = datetime.now().strftime("%H:%M")
@@ -2069,18 +2080,20 @@ class InspectionPopup(Popup):
 
         self.final_location_input.text = scanned_loc
 
-        # 로케이션 불일치 시 대형 강조
+        # 💡 [로케이션 오류] 불일치 시 대형 색상 강조 및 깨지는 문구 완전 제거
         if scanned_loc != self.target_location:
-            app.show_info_popup(
-                "[로케이션 오류]",
+            loc_msg = (
                 f"[color=FF8A80][b]스캔한 로케이션이 일치하지 않습니다![/b][/color]\n\n"
-                f"• 올바른 적치 위치 : [size=22dp][color=64B5F6][b]{self.target_location}[/b][/color][/size]\n"
-                f"• 현재 스캔 위치 : [color=FF5252][b]{scanned_loc}[/b][/color]\n\n"
-                f"지정된 올바른 위치에 적치 후 다시 스캔해 주세요.",
+                f"• 올바른 적치 위치:\n"
+                f"[size=22dp][color=64B5F6][b]{self.target_location}[/b][/color][/size]\n\n"
+                f"• 현재 스캔 위치:\n"
+                f"[color=FF5252][b]{scanned_loc}[/b][/color]\n\n"
+                f"지정된 올바른 위치에 적치 후 다시 스캔해 주세요."
             )
+            app.show_info_popup("[로케이션 오류]", loc_msg)
             return False
 
-        # 지시수량과 검수수량 불일치 검증
+        # 💡 [수량 이슈] 수량 불일치 검증
         target_qty = safe_int(t(self.task_data, "지시수량", 0))
         if calculated_total_qty != target_qty:
             def proceed_scan_finalize():
@@ -2088,7 +2101,11 @@ class InspectionPopup(Popup):
 
             app.show_confirmation_popup(
                 title="[수량 이슈 경고]",
-                message=f"[color=ffffff]지시수량([color=FF8A80][b]{target_qty}개[/b][/color])과 검수수량([color=81C784][b]{calculated_total_qty}개[/b][/color])이 다릅니다!\n\n수량을 다시 한번 확인해주세요.\n이대로 검수 완료하시겠습니까?[/color]",
+                message=(
+                    f"지시수량: [color=FF8A80][b]{target_qty}개[/b][/color]\n"
+                    f"검수수량: [color=81C784][b]{calculated_total_qty}개[/b][/color]\n\n"
+                    f"수량이 일치하지 않습니다!\n이대로 검수 완료하시겠습니까?"
+                ),
                 on_yes=proceed_scan_finalize
             )
             return False
@@ -5731,7 +5748,7 @@ class MainApp(App):
 
     def show_confirmation_popup(self, title, message, on_yes, on_no=None):
         popup_content = BoxLayout(
-            orientation="vertical", spacing=dp(10), padding=dp(20)
+            orientation="vertical", spacing=dp(10), padding=dp(15)
         )
         msg_label = Label(
             text=str(message),
@@ -5740,10 +5757,11 @@ class MainApp(App):
             markup=True,
             color=(1, 1, 1, 1),
             size_hint_y=1,
-            font_size=dp(18),
+            font_size=dp(16),
             font_name=FONT_NAME,
         )
         msg_label.bind(size=msg_label.setter("text_size"))
+        
         button_layout = BoxLayout(
             size_hint_y=None, height=dp(45), spacing=dp(10)
         )
@@ -5751,14 +5769,15 @@ class MainApp(App):
         btn_no = StyledButton(text="아니오")
         button_layout.add_widget(btn_yes)
         button_layout.add_widget(btn_no)
+        
         popup_content.add_widget(msg_label)
         popup_content.add_widget(button_layout)
+        
         popup = Popup(
             title=title,
             title_font=FONT_NAME,
             content=popup_content,
-            size_hint=(0.8, None),
-            height=dp(280),
+            size_hint=(0.88, 0.45),  # 💡 [핵심] 팝업 창 높이 및 비율 증대
             auto_dismiss=False,
             background_color=(0.3, 0.3, 0.3, 0.95),
         )
