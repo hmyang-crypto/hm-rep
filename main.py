@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.1"
+CURRENT_VERSION = "1.9.4.2"
 
 
 def check_and_apply_update():
@@ -4193,17 +4193,18 @@ class TaskListScreen(Screen):
         Clock.schedule_once(_safe_refresh_ui, 0.2)
 
 # --- 💡 라인 보충 긴급 요청 및 소통 전용 독립 화면 (Screen) ---
+# --- 💡 라인 보충 긴급 요청 및 소통 전용 독립 화면 (속도 최적화 적용) ---
 class EmergencyReplenishScreen(Screen):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.active_tab = "NEW"
         self.status_filter = "ALL"
-        self.hidden_req_ids = set()  # 💡 [신규] 어플에서 삭제(숨김)한 요청 ID 저장용
+        self.hidden_req_ids = set()
+        self.raw_requests_cache = []  # 💡 [핵심] 시트 데이터 메모리 캐시 변수
 
         self.layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
 
-        # 상단 네비게이션 헤더
         top_bar = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(8))
         btn_back = StyledButton(
             text="< 메인",
@@ -4220,11 +4221,18 @@ class EmergencyReplenishScreen(Screen):
             color=TEXT_DARK
         )
 
+        btn_refresh = StyledButton(
+            text="갱신",
+            size_hint_x=0.18,
+            font_size=dp(12)
+        )
+        btn_refresh.bind(on_press=lambda x: self.fetch_status_data(force_refresh=True))
+
         top_bar.add_widget(btn_back)
         top_bar.add_widget(lbl_title)
+        top_bar.add_widget(btn_refresh)
         self.layout.add_widget(top_bar)
 
-        # 메인 탭 선택 바
         tab_box = BoxLayout(orientation="horizontal", spacing=dp(6), size_hint_y=None, height=dp(40))
         self.btn_tab_new = StyledToggleButton(
             text="긴급 보충 요청", state="down", font_size=dp(13)
@@ -4240,15 +4248,16 @@ class EmergencyReplenishScreen(Screen):
         tab_box.add_widget(self.btn_tab_status)
         self.layout.add_widget(tab_box)
 
-        # 동적 콘텐츠 구성 영역
         self.content_area = BoxLayout(orientation="vertical", spacing=dp(5))
         self.layout.add_widget(self.content_area)
 
         self.add_widget(self.layout)
 
     def on_enter(self):
+        self.fetch_status_data(force_refresh=False)
         self.switch_view(self.active_tab)
 
+    # 💡 [속도 개편] 탭 전환 시 딜레이 없이 메모리 데이터로 즉시 UI 전환
     def switch_view(self, view_mode):
         self.active_tab = view_mode
         self.content_area.clear_widgets()
@@ -4261,6 +4270,30 @@ class EmergencyReplenishScreen(Screen):
             self.btn_tab_new.set_active_visual(False)
             self.btn_tab_status.set_active_visual(True)
             self._render_status_view()
+
+    # 💡 [신규] 네트워크 시트 데이터 비동기 백그라운드 수집
+    def fetch_status_data(self, force_refresh=False):
+        app = App.get_running_app()
+        user_name = str(app.user_real_name).strip().lower()
+
+        def _async_fetch():
+            try:
+                sheet_data = get_sheet_data("도급 보충 요청 시트", force_refresh=force_refresh)
+                my_reqs = []
+                if sheet_data:
+                    for r in sheet_data:
+                        req_user = str(t(r, "요청자", t(r, "요청 자", ""))).strip().lower()
+                        if req_user == user_name:
+                            my_reqs.append(r)
+                self.raw_requests_cache = my_reqs
+                
+                # STATUS 탭 표시 중일 때만 UI 갱신
+                if self.active_tab == "STATUS":
+                    Clock.schedule_once(lambda dt: self._render_status_view())
+            except Exception as e:
+                print(f"요청 현황 데이터 로드 실패: {e}")
+
+        threading.Thread(target=_async_fetch, daemon=True).start()
 
     # 1. 신규 보충 요청 뷰
     def _render_new_request_view(self):
@@ -4467,6 +4500,9 @@ class EmergencyReplenishScreen(Screen):
                 sheet.append_row(row_data)
                 invalidate_cache("도급 보충 요청 시트")
                 app.show_toast("데스크로 보충 요청이 전송되었습니다!")
+                
+                # 전송 후 메모리 강제 갱신 및 탭 전환
+                self.fetch_status_data(force_refresh=True)
                 Clock.schedule_once(lambda dt: self.switch_view("STATUS"))
             except Exception as e:
                 app.show_info_popup("오류", f"보충 요청 전송 실패: {e}")
@@ -4477,18 +4513,12 @@ class EmergencyReplenishScreen(Screen):
             on_yes=lambda: threading.Thread(target=_async_send, daemon=True).start()
         )
 
-    # 2. 내 요청 현황 & 데스크 회신 확인 (간소화 필터 3종 + 삭제 기능)
-    # 2. 내 요청 현황 & 데스크 회신 확인 (버튼 증식 버그 수정 완본)
-    # 2. 내 요청 현황 & 데스크 회신 확인 (예외 크래시 및 화면 겹침 완전 방지)
+    # 💡 [속도 보완] 메모리 데이터(`self.raw_requests_cache`)를 사용하여 초고속 화면 렌더링
     def _render_status_view(self):
         self.content_area.clear_widgets()
 
-        app = App.get_running_app()
-        user_name = str(app.user_real_name).strip().lower()
-
         status_container = BoxLayout(orientation="vertical", spacing=dp(6))
 
-        # 필터 3종 바 (전체 / 요청중 / 확인완료)
         filter_bar = BoxLayout(orientation="horizontal", spacing=dp(6), size_hint_y=None, height=dp(34))
         
         statuses = [
@@ -4515,25 +4545,13 @@ class EmergencyReplenishScreen(Screen):
         status_grid.bind(minimum_height=status_grid.setter("height"))
         scroll.add_widget(status_grid)
 
-        raw_requests = []
-        try:
-            sheet_data = get_sheet_data("도급 보충 요청 시트", force_refresh=True)
-            if sheet_data:
-                for r in sheet_data:
-                    req_user = str(t(r, "요청자", t(r, "요청 자", ""))).strip().lower()
-                    if req_user == user_name:
-                        raw_requests.append(r)
-        except Exception as e:
-            print(f"요청 현황 데이터 로드 실패: {e}")
-
         now = datetime.now()
         cutoff_time = now - timedelta(hours=24)
         
         valid_requests = []
-        for req in raw_requests:
+        for req in self.raw_requests_cache:
             req_id = str(t(req, "요청 ID", t(req, "요청ID", ""))).strip()
             
-            # 어플 내에서 삭제(숨김)한 요청 항목은 제외
             if req_id in self.hidden_req_ids:
                 continue
 
@@ -4589,8 +4607,6 @@ class EmergencyReplenishScreen(Screen):
                     size_hint_y=None, 
                     height=dp(118)
                 )
-                
-                # 💡 [핵심 보완] Color(rgba=...) 안전 바인딩 처리
                 with card_box.canvas.before:
                     Color(rgba=get_color_from_hex(bg_hex))
                     bg_r = RoundedRectangle(pos=card_box.pos, size=card_box.size, radius=[dp(8)])
@@ -4628,7 +4644,6 @@ class EmergencyReplenishScreen(Screen):
                     shorten=True,
                     shorten_from="right"
                 )
-                # 💡 [핵심 보완] 바인딩 식별자 인자 정리
                 lbl_client.bind(size=lambda inst, val: setattr(inst, "text_size", val))
                 card_box.add_widget(lbl_client)
 
@@ -4704,8 +4719,6 @@ class EmergencyReplenishScreen(Screen):
         self.status_filter = code
         self._render_status_view()
 
-    # 💡 [신규] 요청자 자체 삭제 수행 함수
-    # 💡 [핵심] 구글 시트는 일절 건드리지 않고 어플 화면에서만 삭제(숨김)
     def _prompt_delete_request(self, req_data):
         app = App.get_running_app()
         req_id = str(t(req_data, "요청 ID", t(req_data, "요청ID", ""))).strip()
@@ -4751,7 +4764,8 @@ class EmergencyReplenishScreen(Screen):
                     sheet.update_cells(cells)
                     invalidate_cache("도급 보충 요청 시트")
                     app.show_toast("데스크로 재요청이 전송되었습니다!")
-                    Clock.schedule_once(lambda dt: self._render_status_view())
+                    
+                    self.fetch_status_data(force_refresh=True)
             except Exception as e:
                 app.show_info_popup("오류", f"재요청 전송 실패: {e}")
 
