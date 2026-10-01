@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.3.5"
+CURRENT_VERSION = "1.9.3.6"
 
 
 def check_and_apply_update():
@@ -4793,16 +4793,20 @@ class AdminDashboardScreen(Screen):
             )
         )
 
-        # 💡 [정확한 위치] 작업현황판 상단 우측에 '🚨 보충요청/소통' 버튼 연결
+        # AdminDashboardScreen __init__ 내 상단 바 구역
         btn_emergency_chat = StyledButton(
             text="보충요청/소통",
             size_hint_x=0.35,
             font_size=dp(12),
-            bg_color=get_color_from_hex("#D32F2F")  # 눈에 띄는 빨간색
+            bg_color=get_color_from_hex("#D32F2F")
         )
-        btn_emergency_chat.bind(on_release=lambda inst: setattr(self.manager, "current", "emergency_replenish"))
+        # 💡 [보정] 안전한 화면 전환 바인딩
+        btn_emergency_chat.bind(
+            on_release=lambda inst: Clock.schedule_once(
+                lambda dt: setattr(self.manager, "current", "emergency_replenish"), 0.05
+            )
+        )
         top_bar.add_widget(btn_emergency_chat)
-
         self.layout.add_widget(top_bar)
 
         search_bar = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
@@ -5660,7 +5664,10 @@ class MainApp(App):
         sm.add_widget(TaskListScreen(name="task_list"))
         sm.add_widget(AdminDashboardScreen(name="admin_dashboard"))
         sm.add_widget(SkuLocationSearchScreen(name="sku_location_search"))
+        
+        # 💡 [필수] 독립 화면 정상 등록 확인!
         sm.add_widget(EmergencyReplenishScreen(name="emergency_replenish"))
+        
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
 
@@ -5781,18 +5788,23 @@ class MainApp(App):
         except Exception as e:
             print(f"⚠️ 백그라운드 체크 오류 (무시): {e}")
 
-    # 💡 데스크 회신 전용 바로가기 알림 배너
+    # 💡 [안전 보정] 데스크 회신 알림 클릭 시 독립 화면 안전 전환
     def show_desk_reply_banner(self, message):
         self.play_notification_sound()
         
-        def open_reply_status_screen():
+        def safe_go_to_status_screen():
             if self.root:
-                em_screen = self.root.get_screen("emergency_replenish")
-                em_screen.active_tab = "STATUS"
+                try:
+                    em_screen = self.root.get_screen("emergency_replenish")
+                    em_screen.switch_view("STATUS") # 쓰레드 안전 전환
+                except Exception as e:
+                    print(f"⚠️️ 화면 전환 예외 무시: {e}")
                 self.root.current = "emergency_replenish"
 
         banner = NotificationBanner(
-            text=message, on_press_callback=open_reply_status_screen, duration=5
+            text=message, 
+            on_press_callback=lambda: Clock.schedule_once(lambda dt: safe_go_to_status_screen(), 0.1), 
+            duration=5
         )
         banner.show(Window)
 
