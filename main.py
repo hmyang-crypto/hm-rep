@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.3.6"
+CURRENT_VERSION = "1.9.3.7"
 
 
 def check_and_apply_update():
@@ -88,9 +88,11 @@ if "updated_main.py" not in os.path.basename(__file__):
             )
             sys.exit(0)
         except Exception as _exec_err:
-            print(
-                f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}"
-            )
+            print("=" * 60)
+            print("🚨 updated_main.py 실행 중 발생한 상세 에러:")
+            traceback.print_exc()  # 💡 [핵심] 몇번째 줄에서 무슨 에러가 났는지 콘솔에 출력!
+            print("=" * 60)
+            print(f"⚠️ 업데이트 코드 실행 실패 (기본 main.py로 대체 실행): {_exec_err}")
 
 from kivy.animation import Animation
 from kivy.app import App
