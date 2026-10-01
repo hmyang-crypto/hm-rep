@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.3.3"
+CURRENT_VERSION = "1.9.3.4"
 
 
 def check_and_apply_update():
@@ -2009,7 +2009,11 @@ class InspectionPopup(Popup):
             )
             return
 
-        # 💡 [수량 이슈] 수량 불일치 검증
+        # 💡 작업자가 입력한 박스 입수량을 card 객체에 저장
+        self.card.changed_box_size = box_size_str
+        self.task_data["changed_box_size"] = box_size_str
+
+        # 수량 불일치 검증
         target_qty = safe_int(t(self.task_data, "지시수량", 0))
         if calculated_total_qty != target_qty:
             def proceed_no_qr():
@@ -2027,29 +2031,6 @@ class InspectionPopup(Popup):
             return
 
         self._execute_no_qr_finalize(calculated_total_qty)
-
-    # 💡 [핵심] QR없음 완결 처리 전용 메서드 (유지 필수!)
-    def _execute_no_qr_finalize(self, calculated_total_qty):
-        app = App.get_running_app()
-        ts = datetime.now().strftime("%H:%M")
-        no_qr_note = f"[{ts} 자석로케이션 필요]"
-        updated_remarks = (
-            f"{self.current_remarks}\n{no_qr_note}"
-            if self.current_remarks.strip()
-            else no_qr_note
-        )
-
-        self.final_location_input.text = self.target_location
-
-        self.task_list_screen._finalize_task_processing(
-            card=self.card,
-            final_qty=calculated_total_qty,
-            split_qty=0,
-            final_location=self.target_location,
-            updated_remarks=updated_remarks,
-        )
-        app.show_toast("QR없음 처리: '자석로케이션 필요' 비고 등록 완료")
-        self.dismiss()
 
     def process_location_scan(self, scanned_location):
         app = App.get_running_app()
@@ -2078,9 +2059,13 @@ class InspectionPopup(Popup):
             )
             return False
 
+        # 💡 작업자가 입력한 박스 입수량을 card 객체에 저장
+        self.card.changed_box_size = box_size_str
+        self.task_data["changed_box_size"] = box_size_str
+
         self.final_location_input.text = scanned_loc
 
-        # 💡 [로케이션 오류] 불일치 시 대형 색상 강조 및 깨지는 문구 완전 제거
+        # 로케이션 오류 검증
         if scanned_loc != self.target_location:
             loc_msg = (
                 f"[color=FF8A80][b]스캔한 로케이션이 일치하지 않습니다![/b][/color]\n\n"
@@ -2093,7 +2078,7 @@ class InspectionPopup(Popup):
             app.show_info_popup("[로케이션 오류]", loc_msg)
             return False
 
-        # 💡 [수량 이슈] 수량 불일치 검증
+        # 수량 불일치 검증
         target_qty = safe_int(t(self.task_data, "지시수량", 0))
         if calculated_total_qty != target_qty:
             def proceed_scan_finalize():
@@ -4491,19 +4476,22 @@ class TaskListScreen(Screen):
     ):
         app = App.get_running_app()
 
-        # 💡 [시간 제외] 입수량 변동 체크 및 '입수량 변경 : n' 비고 기록 생성 로직
-        original_qty = safe_int(t(card.task_data, "지시수량", t(card.task_data, "확인수량", 0)))
-        inspected_qty = safe_int(final_qty)
+        # 💡 [정밀 보완] 지시수량이 아닌 '박스당 입수량(기본입수량)'의 실제 변경 여부만 판별
+        default_box_size = safe_int(
+            t(card.task_data, "박스입수량", t(card.task_data, "박스 입수량", 1))
+        )
+        
+        # 팝업이나 카드에서 변경되어 들어온 박스 입수량 확인 (입력창 변경값)
+        changed_box_size = getattr(card, "changed_box_size", None) or card.task_data.get("changed_box_size", None)
 
-        # 기존 지시/입수량과 최종 입력 수량이 다른 경우
-        if original_qty != inspected_qty and inspected_qty > 0:
-            change_log = f"입수량 변경 : {inspected_qty}"
+        # 박스당 입수량이 기존과 다르게 실제로 변경된 경우에만 '입수량 변경 : n' 기록
+        if changed_box_size and safe_int(changed_box_size) > 0 and safe_int(changed_box_size) != default_box_size:
+            new_box_size = safe_int(changed_box_size)
+            change_log = f"입수량 변경 : {new_box_size}"
             current_rem_str = str(updated_remarks or "").strip()
             
-            # 기존 비고가 있는 경우 연결, 중복 문구가 있다면 최신 문구로 갱신
             if current_rem_str:
                 if "입수량 변경" in current_rem_str:
-                    # 기존 타임스탬프 형태 또는 단순 '입수량 변경 : n' 패턴 모두 갱신
                     updated_remarks = re.sub(
                         r"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] )?입수량 변경 : \d+",
                         change_log,
