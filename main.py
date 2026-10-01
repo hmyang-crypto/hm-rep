@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.3.7"
+CURRENT_VERSION = "1.9.3.8"
 
 
 def check_and_apply_update():
@@ -4463,13 +4463,17 @@ class EmergencyReplenishScreen(Screen):
         )
 
     # 2. 내 요청 현황 & 데스크 회신 확인 (간소화 필터 3종 + 삭제 기능)
+    # 2. 내 요청 현황 & 데스크 회신 확인 (버튼 증식 버그 수정 완본)
     def _render_status_view(self):
+        # 💡 [핵심] 뷰 생성 전 기존 화면 요소(필터바 및 스크롤) 전체 초기화
+        self.content_area.clear_widgets()
+
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
         status_container = BoxLayout(orientation="vertical", spacing=dp(6))
 
-        # 💡 [필터 3종] 전체 / 요청중 / 확인완료 (요청중 제외 상태)
+        # 💡 필터 3종 바 (전체 / 요청중 / 확인완료)
         filter_bar = BoxLayout(orientation="horizontal", spacing=dp(6), size_hint_y=None, height=dp(34))
         
         statuses = [
@@ -4523,7 +4527,7 @@ class EmergencyReplenishScreen(Screen):
             
             req_status = str(t(req, "처리상태", "요청중")).strip()
 
-            # 💡 [필터링 판단]
+            # 💡 필터링 조건 분기
             if self.status_filter == "PENDING" and req_status != "요청중":
                 continue
             elif self.status_filter == "DONE" and req_status == "요청중":
@@ -4659,7 +4663,7 @@ class EmergencyReplenishScreen(Screen):
                     btn_rereq.bind(on_release=lambda inst, r=req: self._prompt_re_request(r))
                     reply_row.add_widget(btn_rereq)
 
-                # 💡 [신규 추가] 자체 삭제 버튼
+                # 삭제 버튼
                 btn_delete = StyledButton(
                     text="삭제",
                     size_hint_x=None,
