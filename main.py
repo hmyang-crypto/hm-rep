@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.0"
+CURRENT_VERSION = "1.9.4.1"
 
 
 def check_and_apply_update():
@@ -4479,6 +4479,7 @@ class EmergencyReplenishScreen(Screen):
 
     # 2. 내 요청 현황 & 데스크 회신 확인 (간소화 필터 3종 + 삭제 기능)
     # 2. 내 요청 현황 & 데스크 회신 확인 (버튼 증식 버그 수정 완본)
+    # 2. 내 요청 현황 & 데스크 회신 확인 (예외 크래시 및 화면 겹침 완전 방지)
     def _render_status_view(self):
         self.content_area.clear_widgets()
 
@@ -4532,7 +4533,7 @@ class EmergencyReplenishScreen(Screen):
         for req in raw_requests:
             req_id = str(t(req, "요청 ID", t(req, "요청ID", ""))).strip()
             
-            # 💡 [핵심] 작업자가 어플 내에서 삭제 처리한 항목은 화면 출력 제외
+            # 어플 내에서 삭제(숨김)한 요청 항목은 제외
             if req_id in self.hidden_req_ids:
                 continue
 
@@ -4547,7 +4548,6 @@ class EmergencyReplenishScreen(Screen):
             
             req_status = str(t(req, "처리상태", "요청중")).strip()
 
-            # 필터링 조건 판단
             if self.status_filter == "PENDING" and req_status != "요청중":
                 continue
             elif self.status_filter == "DONE" and req_status == "요청중":
@@ -4574,13 +4574,13 @@ class EmergencyReplenishScreen(Screen):
                 ts_raw = str(t(req, "요청시각", "")).strip()
                 ts = ts_raw.split()[-1] if len(ts_raw.split()) > 1 else ts_raw
 
-                bg_col = "#FFFFFF"
+                bg_hex = "#FFFFFF"
                 if "보충지시 완료" in status or "보충지시완료" in status or "지시" in status:
-                    bg_col = "#E0F2F1"
+                    bg_hex = "#E0F2F1"
                 elif "조치안내" in status or "회신" in status:
-                    bg_col = "#FFE0B2"
+                    bg_hex = "#FFE0B2"
                 elif "재고없음" in status or "품절" in status:
-                    bg_col = "#FFCDD2"
+                    bg_hex = "#FFCDD2"
 
                 card_box = TouchableBox(
                     orientation="vertical", 
@@ -4589,10 +4589,15 @@ class EmergencyReplenishScreen(Screen):
                     size_hint_y=None, 
                     height=dp(118)
                 )
+                
+                # 💡 [핵심 보완] Color(rgba=...) 안전 바인딩 처리
                 with card_box.canvas.before:
-                    Color(*get_color_from_hex(bg_col))
+                    Color(rgba=get_color_from_hex(bg_hex))
                     bg_r = RoundedRectangle(pos=card_box.pos, size=card_box.size, radius=[dp(8)])
-                card_box.bind(pos=lambda i, p, b=bg_r: setattr(b, "pos", p), size=lambda i, s: setattr(b, "size", s))
+                card_box.bind(
+                    pos=lambda inst, val, b=bg_r: setattr(b, "pos", val), 
+                    size=lambda inst, val, b=bg_r: setattr(b, "size", val)
+                )
 
                 id_tag = f"[{req_id}] " if req_id else ""
                 lbl_sku = Label(
@@ -4608,7 +4613,7 @@ class EmergencyReplenishScreen(Screen):
                     shorten=True,
                     shorten_from="right"
                 )
-                lbl_sku.bind(size=lambda i, s: setattr(i, "text_size", s))
+                lbl_sku.bind(size=lambda inst, val: setattr(inst, "text_size", val))
                 card_box.add_widget(lbl_sku)
 
                 lbl_client = Label(
@@ -4623,7 +4628,8 @@ class EmergencyReplenishScreen(Screen):
                     shorten=True,
                     shorten_from="right"
                 )
-                lbl_client.bind(size=lambda i, s: setattr(i, "text_size", s))
+                # 💡 [핵심 보완] 바인딩 식별자 인자 정리
+                lbl_client.bind(size=lambda inst, val: setattr(inst, "text_size", val))
                 card_box.add_widget(lbl_client)
 
                 mgr_text = f" (담당: {manager_name})" if manager_name else ""
@@ -4638,7 +4644,7 @@ class EmergencyReplenishScreen(Screen):
                     halign="left",
                     valign="middle"
                 )
-                lbl_status_row.bind(size=lambda i, s: setattr(i, "text_size", s))
+                lbl_status_row.bind(size=lambda inst, val: setattr(inst, "text_size", val))
                 card_box.add_widget(lbl_status_row)
 
                 reply_row = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(26))
@@ -4664,7 +4670,7 @@ class EmergencyReplenishScreen(Screen):
                     shorten=True,
                     shorten_from="right"
                 )
-                lbl_reply.bind(size=lambda i, s: setattr(i, "text_size", s))
+                lbl_reply.bind(size=lambda inst, val: setattr(inst, "text_size", val))
                 reply_row.add_widget(lbl_reply)
 
                 if ("조치안내" in status or "재고없음" in status or reply_msg) and "완료" not in status:
