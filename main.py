@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.3"
+CURRENT_VERSION = "1.9.4.4"
 
 
 def check_and_apply_update():
@@ -4257,7 +4257,7 @@ class EmergencyReplenishScreen(Screen):
         self.fetch_status_data(force_refresh=False)
         self.switch_view(self.active_tab)
 
-    # 💡 [속도 개편] 탭 전환 시 딜레이 없이 메모리 데이터로 즉시 UI 전환
+    # 💡 [핵심] 현황 탭 클릭/이동 시 시트 최신화 자동 수집
     def switch_view(self, view_mode):
         self.active_tab = view_mode
         self.content_area.clear_widgets()
@@ -4269,9 +4269,10 @@ class EmergencyReplenishScreen(Screen):
         else:
             self.btn_tab_new.set_active_visual(False)
             self.btn_tab_status.set_active_visual(True)
+            # 💡 현황 탭으로 넘어올 때 강제 갱신 트리거
+            self.fetch_status_data(force_refresh=True)
             self._render_status_view()
 
-    # 💡 [신규] 네트워크 시트 데이터 비동기 백그라운드 수집
     def fetch_status_data(self, force_refresh=False):
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
@@ -4287,7 +4288,7 @@ class EmergencyReplenishScreen(Screen):
                             my_reqs.append(r)
                 self.raw_requests_cache = my_reqs
                 
-                # STATUS 탭 표시 중일 때만 UI 갱신
+                # 요청 현황 탭을 보는 중이면 메인 UI 스레드에서 안전하게 화면 즉시 새로고침
                 if self.active_tab == "STATUS":
                     Clock.schedule_once(lambda dt: self._render_status_view())
             except Exception as e:
@@ -4499,13 +4500,15 @@ class EmergencyReplenishScreen(Screen):
                 ]
                 sheet.append_row(row_data)
                 invalidate_cache("도급 보충 요청 시트")
-                app.show_toast("데스크로 보충 요청이 전송되었습니다!")
                 
-                # 💡 [핵심] 보충 요청 전송 즉시 백그라운드 시트 강제 갱신 후 화면 전환
+                # 💡 [핵심 보완] 구글 시트 저장 반영 대기(0.5초) 후 강제 최신화 갱신
+                time.sleep(0.5)
                 self.fetch_status_data(force_refresh=True)
-                Clock.schedule_once(lambda dt: self.switch_view("STATUS"), 0.1)
+
+                Clock.schedule_once(lambda dt: app.show_toast("데스크로 보충 요청이 전송되었습니다!"))
+                Clock.schedule_once(lambda dt: self.switch_view("STATUS"))
             except Exception as e:
-                app.show_info_popup("오류", f"보충 요청 전송 실패: {e}")
+                Clock.schedule_once(lambda dt: app.show_info_popup("오류", f"보충 요청 전송 실패: {e}"))
 
         app.show_confirmation_popup(
             title="긴급 보충 요청",
