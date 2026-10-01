@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.5"
+CURRENT_VERSION = "1.9.4.6"
 
 
 def check_and_apply_update():
@@ -1299,8 +1299,6 @@ class InspectionPopup(Popup):
         self.task_data = card.task_data
         self.task_list_screen = task_list_screen
         self.current_remarks = str(t(self.task_data, "비고", ""))
-        
-        # 목표 보충 로케이션 추출
         self.target_location = str(t(self.task_data, "보충로케이션", "")).strip().upper()
 
         self.title = "검수 및 최종 로케이션 스캔"
@@ -1411,7 +1409,6 @@ class InspectionPopup(Popup):
 
         main_layout.add_widget(input_grid)
 
-        # 로케이션 스캔 및 [QR없음] 영역
         loc_box = BoxLayout(
             orientation="vertical", spacing=dp(4), size_hint_y=None, height=dp(80)
         )
@@ -1510,11 +1507,9 @@ class InspectionPopup(Popup):
             )
             return
 
-        # 💡 작업자가 입력한 박스 입수량을 card 객체에 저장
         self.card.changed_box_size = box_size_str
         self.task_data["changed_box_size"] = box_size_str
 
-        # 수량 불일치 검증
         target_qty = safe_int(t(self.task_data, "지시수량", 0))
         if calculated_total_qty != target_qty:
             def proceed_no_qr():
@@ -1532,6 +1527,24 @@ class InspectionPopup(Popup):
             return
 
         self._execute_no_qr_finalize(calculated_total_qty)
+
+    # 💡 [핵심] 누락되었던 누락 QR 수기 완결 메서드 구현 (튕김 및 먹통 원인 차단)
+    def _execute_no_qr_finalize(self, calculated_total_qty):
+        # QR이 없어 목표 위치로 자동 기록 및 비고에 [QR없음 적치] 사유 자동 기재
+        final_loc = self.target_location
+        no_qr_remark = "[QR없음 수기완결]"
+        
+        curr_rem = str(self.current_remarks).strip()
+        updated_rem = f"{curr_rem} | {no_qr_remark}" if curr_rem else no_qr_remark
+
+        self.task_list_screen._finalize_task_processing(
+            card=self.card,
+            final_qty=calculated_total_qty,
+            split_qty=0,
+            final_location=final_loc,
+            updated_remarks=updated_rem,
+        )
+        self.dismiss()
 
     def process_location_scan(self, scanned_location):
         app = App.get_running_app()
@@ -1560,13 +1573,11 @@ class InspectionPopup(Popup):
             )
             return False
 
-        # 💡 작업자가 입력한 박스 입수량을 card 객체에 저장
         self.card.changed_box_size = box_size_str
         self.task_data["changed_box_size"] = box_size_str
 
         self.final_location_input.text = scanned_loc
 
-        # 로케이션 오류 검증
         if scanned_loc != self.target_location:
             loc_msg = (
                 f"[color=FF8A80][b]스캔한 로케이션이 일치하지 않습니다![/b][/color]\n\n"
@@ -1579,7 +1590,6 @@ class InspectionPopup(Popup):
             app.show_info_popup("[로케이션 오류]", loc_msg)
             return False
 
-        # 수량 불일치 검증
         target_qty = safe_int(t(self.task_data, "지시수량", 0))
         if calculated_total_qty != target_qty:
             def proceed_scan_finalize():
@@ -3677,17 +3687,20 @@ class TaskListScreen(Screen):
             if not app.user_real_name:
                 self.manager.current = "name_entry"
                 return
-        self.refresh_list(force_refresh=True)
+        # 💡 진입 시에도 깜빡임 없도록 show_loading=False
+        self.refresh_list(force_refresh=True, show_loading=False)
 
-    def refresh_list(self, force_refresh=True):
-        App.get_running_app().show_loading_popup()
+    # 💡 show_loading 파라미터로 백그라운드 자동 갱신 팝업 차단
+    def refresh_list(self, force_refresh=True, show_loading=False):
+        if show_loading:
+            App.get_running_app().show_loading_popup()
         threading.Thread(
             target=self._perform_get_tasks,
-            args=(force_refresh,),
+            args=(force_refresh, show_loading),
             daemon=True,
         ).start()
 
-    def _perform_get_tasks(self, force_refresh):
+    def _perform_get_tasks(self, force_refresh, show_loading=False):
         try:
             all_tasks = get_sheet_data(
                 TASK_SHEET_NAME, force_refresh=force_refresh
@@ -3721,9 +3734,11 @@ class TaskListScreen(Screen):
                 )
             )
         finally:
-            Clock.schedule_once(
-                lambda dt: App.get_running_app().dismiss_loading_popup()
-            )
+            # 💡 버튼을 직접 클릭한 경우에만 로딩 팝업 닫기
+            if show_loading:
+                Clock.schedule_once(
+                    lambda dt: App.get_running_app().dismiss_loading_popup()
+                )
 
     def update_recycle_view(self):
         query = (
@@ -5491,7 +5506,7 @@ Builder.load_string(
             StyledButton:
                 text: '새로고침'
                 size_hint_x: 0.25
-                on_press: root.refresh_list(True)
+                on_press: root.refresh_list(force_refresh=True, show_loading=True)
 
         BoxLayout:
             size_hint_y: None
