@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.3.0"
+CURRENT_VERSION = "1.9.3.1"
 
 
 def check_and_apply_update():
@@ -1754,7 +1754,7 @@ class MultipleSkuSelectPopup(Popup):
         self.size_hint = (0.95, 0.85)
         self.matches = matches
         self.on_select_callback = on_select_callback
-        self.selected_items = set()
+        self.selected_items = []
 
         main_layout = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
 
@@ -1772,8 +1772,6 @@ class MultipleSkuSelectPopup(Popup):
         scroll = ScrollView(size_hint=(1, 1))
         grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
-
-        self.checkboxes = {}
 
         for idx, item in enumerate(matches):
             task = item["task_data"]
@@ -1820,9 +1818,12 @@ class MultipleSkuSelectPopup(Popup):
 
             chk = CheckBox(size_hint_x=None, width=dp(35), color=PRIMARY_BLUE)
             
-            # 카드 터치 시 체크박스 토글
-            card_box.bind(on_release=lambda inst, c=chk: setattr(c, "active", not c.active))
-            chk.bind(active=partial(self._on_check_change, item))
+            # 안전한 클로저(Closure) 바인딩
+            def _bind_chk(target_chk, target_item):
+                card_box.bind(on_release=lambda inst: setattr(target_chk, "active", not target_chk.active))
+                target_chk.bind(active=lambda instance, val: self._toggle_item_selection(target_item, val))
+
+            _bind_chk(chk, item)
 
             card_box.add_widget(info_box)
             card_box.add_widget(chk)
@@ -1831,7 +1832,6 @@ class MultipleSkuSelectPopup(Popup):
         scroll.add_widget(grid)
         main_layout.add_widget(scroll)
 
-        # 하단 통합 검수 버튼 바
         self.btn_confirm = StyledButton(
             text="선택한 항목 검수 진행 (0건)",
             size_hint_y=None,
@@ -1843,11 +1843,13 @@ class MultipleSkuSelectPopup(Popup):
 
         self.content = main_layout
 
-    def _on_check_change(self, item, checkbox, value):
+    def _toggle_item_selection(self, item, value):
         if value:
-            self.selected_items.add(item)
+            if item not in self.selected_items:
+                self.selected_items.append(item)
         else:
-            self.selected_items.discard(item)
+            if item in self.selected_items:
+                self.selected_items.remove(item)
 
         cnt = len(self.selected_items)
         if cnt > 0:
@@ -1865,27 +1867,21 @@ class MultipleSkuSelectPopup(Popup):
         selected_list = list(self.selected_items)
         self.dismiss()
 
-        # 💡 [단일 선택 시]: 기존 카드 단독 검수
         if len(selected_list) == 1:
             self.on_select_callback(selected_list[0])
-        # 💡 [다중 선택 시]: 수량 합산 카드 생성 (원출처 카드 배열 세팅)
         else:
             merged_task = self._merge_task_data([i["task_data"] for i in selected_list])
             merged_item = {
                 "task_data": merged_task, 
                 "is_merged": True, 
-                "merged_sources": selected_list  # 원본 카드들의 정보 보존
+                "merged_sources": selected_list
             }
             self.on_select_callback(merged_item)
 
     def _merge_task_data(self, task_list):
         base_task = dict(task_list[0])
         total_instructed_qty = sum(safe_int(t(tk, "지시수량", 0)) for tk in task_list)
-        
-        # 지시수량만 전체 합산
         base_task["지시수량"] = total_instructed_qty
-        
-        # 💡 요청사항 반영: 비고란에 별도의 통합검수 문구는 추가하지 않고 기존 비고 유지
         return base_task
 
 
@@ -4685,18 +4681,19 @@ class TaskListScreen(Screen):
             sheet = get_worksheet(TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
             
-            # 다중 선택 통합 검수건인지 확인
-            is_merged = getattr(card, "is_merged", False) or card.task_data.get("is_merged", False)
-            merged_sources = getattr(card, "merged_sources", []) or card.task_data.get("merged_sources", [])
+            # 다중 통합 검수 여부 안전 확인
+            card_task_data = getattr(card, "task_data", {})
+            is_merged = card_task_data.get("is_merged", False) or getattr(card, "is_merged", False)
+            merged_sources = card_task_data.get("merged_sources", []) or getattr(card, "merged_sources", [])
 
-            # 💡 A. 다중 선택 통합 검수 완료 시: 선택된 모든 원본 행 일괄 업데이트
+            # 💡 A. 다중 선택 통합 검수 완료 시: 선택되었던 모든 원본 행 일괄 '최종완료' 업데이트
             if is_merged and merged_sources:
                 task_id_col_idx = headers.index("작업ID") + 1
                 all_task_ids = sheet.col_values(task_id_col_idx)
                 
                 cells = []
                 for src_item in merged_sources:
-                    src_task = src_item["task_data"]
+                    src_task = src_item.get("task_data", {})
                     target_id = str(t(src_task, "작업ID")).strip()
                     
                     if target_id in all_task_ids:
@@ -4704,7 +4701,6 @@ class TaskListScreen(Screen):
                         for key, val in updates.items():
                             if key in headers:
                                 col_idx = headers.index(key) + 1
-                                # 각 원본 행별 확인수량은 원본 지시수량 기준으로 분할 기재하거나 지정 수량 반영
                                 cells.append(gspread.Cell(row_idx, col_idx, str(val)))
 
                 if cells:
@@ -4730,7 +4726,6 @@ class TaskListScreen(Screen):
                 if cells:
                     sheet.update_cells(cells)
 
-            # 캐시 초기화 및 성공 처리
             invalidate_cache(TASK_SHEET_NAME)
             invalidate_cache(LOG_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
