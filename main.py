@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.3.8"
+CURRENT_VERSION = "1.9.3.9"
 
 
 def check_and_apply_update():
@@ -2079,8 +2079,22 @@ class MainMenuScreen(Screen):
         )
         menu_box.add_widget(create_compact_menu_row(btn_dashboard))
 
+        # 💡 [신규 추가] 작업현황판 바로 밑에 보충요청/소통 화면 버튼 배치
+        btn_emergency = StyledButton(
+            text="보충 요청",
+            bg_color=get_color_from_hex("#D32F2F"), # 빨간색 강조
+            size_hint_x=None,
+            width=dp(220),
+        )
+        btn_emergency.bind(
+            on_press=lambda x: setattr(
+                self.manager, "current", "emergency_replenish"
+            )
+        )
+        menu_box.add_widget(create_compact_menu_row(btn_emergency))
+
         btn_sku_loc = StyledButton(
-            text="🔍 SKU별 로케이션 검색",
+            text="SKU별 로케이션 검색",
             bg_color=get_color_from_hex("#E65100"),
             size_hint_x=None,
             width=dp(220),
@@ -2093,13 +2107,15 @@ class MainMenuScreen(Screen):
         menu_box.add_widget(create_compact_menu_row(btn_sku_loc))
 
         btn_recent = StyledButton(
-            text="📋 금일 완료 이력 (최근)",
+            text="금일 완료 이력 (최근)",
             bg_color=get_color_from_hex("#43A047"),
             size_hint_x=None,
             width=dp(220),
         )
         btn_recent.bind(on_press=lambda x: RecentCompletedPopup.open_safely())
         menu_box.add_widget(create_compact_menu_row(btn_recent))
+
+        self.layout.add_widget(menu_box)
 
         self.layout.add_widget(menu_box)
         self.layout.add_widget(Widget())
@@ -4184,7 +4200,8 @@ class EmergencyReplenishScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.active_tab = "NEW"
-        self.status_filter = "ALL"  # ALL / PENDING / DONE
+        self.status_filter = "ALL"
+        self.hidden_req_ids = set()  # 💡 [신규] 어플에서 삭제(숨김)한 요청 ID 저장용
 
         self.layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
 
@@ -4465,7 +4482,6 @@ class EmergencyReplenishScreen(Screen):
     # 2. 내 요청 현황 & 데스크 회신 확인 (간소화 필터 3종 + 삭제 기능)
     # 2. 내 요청 현황 & 데스크 회신 확인 (버튼 증식 버그 수정 완본)
     def _render_status_view(self):
-        # 💡 [핵심] 뷰 생성 전 기존 화면 요소(필터바 및 스크롤) 전체 초기화
         self.content_area.clear_widgets()
 
         app = App.get_running_app()
@@ -4473,7 +4489,7 @@ class EmergencyReplenishScreen(Screen):
 
         status_container = BoxLayout(orientation="vertical", spacing=dp(6))
 
-        # 💡 필터 3종 바 (전체 / 요청중 / 확인완료)
+        # 필터 3종 바 (전체 / 요청중 / 확인완료)
         filter_bar = BoxLayout(orientation="horizontal", spacing=dp(6), size_hint_y=None, height=dp(34))
         
         statuses = [
@@ -4516,6 +4532,12 @@ class EmergencyReplenishScreen(Screen):
         
         valid_requests = []
         for req in raw_requests:
+            req_id = str(t(req, "요청 ID", t(req, "요청ID", ""))).strip()
+            
+            # 💡 [핵심] 작업자가 어플 내에서 삭제 처리한 항목은 화면 출력 제외
+            if req_id in self.hidden_req_ids:
+                continue
+
             ts_str = str(t(req, "요청시각", "")).strip()
             if ts_str:
                 try:
@@ -4527,7 +4549,7 @@ class EmergencyReplenishScreen(Screen):
             
             req_status = str(t(req, "처리상태", "요청중")).strip()
 
-            # 💡 필터링 조건 분기
+            # 필터링 조건 판단
             if self.status_filter == "PENDING" and req_status != "요청중":
                 continue
             elif self.status_filter == "DONE" and req_status == "요청중":
@@ -4572,9 +4594,8 @@ class EmergencyReplenishScreen(Screen):
                 with card_box.canvas.before:
                     Color(*get_color_from_hex(bg_col))
                     bg_r = RoundedRectangle(pos=card_box.pos, size=card_box.size, radius=[dp(8)])
-                card_box.bind(pos=lambda i, p, b=bg_r: setattr(b, "pos", p), size=lambda i, s, b=bg_r: setattr(b, "size", s))
+                card_box.bind(pos=lambda i, p, b=bg_r: setattr(b, "pos", p), size=lambda i, s: setattr(b, "size", s))
 
-                # 1행: [요청ID] SKU명
                 id_tag = f"[{req_id}] " if req_id else ""
                 lbl_sku = Label(
                     text=f"{id_tag}[{bc}] {sku_name}",
@@ -4592,7 +4613,6 @@ class EmergencyReplenishScreen(Screen):
                 lbl_sku.bind(size=lambda i, s: setattr(i, "text_size", s))
                 card_box.add_widget(lbl_sku)
 
-                # 2행: 고객사명
                 lbl_client = Label(
                     text=f"• 고객사명: {partner_name}",
                     font_name=FONT_NAME,
@@ -4608,7 +4628,6 @@ class EmergencyReplenishScreen(Screen):
                 lbl_client.bind(size=lambda i, s: setattr(i, "text_size", s))
                 card_box.add_widget(lbl_client)
 
-                # 3행: 상태 및 요청시각
                 mgr_text = f" (담당: {manager_name})" if manager_name else ""
                 lbl_status_row = Label(
                     text=f"• 상태: [b]{status}[/b]{mgr_text}  |  요청시각: {ts}",
@@ -4624,7 +4643,6 @@ class EmergencyReplenishScreen(Screen):
                 lbl_status_row.bind(size=lambda i, s: setattr(i, "text_size", s))
                 card_box.add_widget(lbl_status_row)
 
-                # 4행: 회신내용 및 [재요청] / [삭제] 버튼 바
                 reply_row = BoxLayout(orientation="horizontal", spacing=dp(5), size_hint_y=None, height=dp(26))
 
                 if reply_msg:
@@ -4651,7 +4669,6 @@ class EmergencyReplenishScreen(Screen):
                 lbl_reply.bind(size=lambda i, s: setattr(i, "text_size", s))
                 reply_row.add_widget(lbl_reply)
 
-                # 재요청 버튼
                 if ("조치안내" in status or "재고없음" in status or reply_msg) and "완료" not in status:
                     btn_rereq = StyledButton(
                         text="재요청",
@@ -4663,7 +4680,6 @@ class EmergencyReplenishScreen(Screen):
                     btn_rereq.bind(on_release=lambda inst, r=req: self._prompt_re_request(r))
                     reply_row.add_widget(btn_rereq)
 
-                # 삭제 버튼
                 btn_delete = StyledButton(
                     text="삭제",
                     size_hint_x=None,
@@ -4685,34 +4701,22 @@ class EmergencyReplenishScreen(Screen):
         self._render_status_view()
 
     # 💡 [신규] 요청자 자체 삭제 수행 함수
+    # 💡 [핵심] 구글 시트는 일절 건드리지 않고 어플 화면에서만 삭제(숨김)
     def _prompt_delete_request(self, req_data):
         app = App.get_running_app()
         req_id = str(t(req_data, "요청 ID", t(req_data, "요청ID", ""))).strip()
         sku_name = str(t(req_data, "SKU명", t(req_data, "상품명", ""))).strip()
 
-        def _async_delete():
-            try:
-                sheet = get_worksheet("도급 보충 요청 시트")
-                headers = [str(h).strip() for h in sheet.row_values(1)]
-                
-                req_id_col = headers.index("요청 ID") + 1 if "요청 ID" in headers else headers.index("요청ID") + 1
-                all_ids = sheet.col_values(req_id_col)
-
-                if req_id in all_ids:
-                    row_idx = all_ids.index(req_id) + 1
-                    sheet.delete_rows(row_idx)
-                    invalidate_cache("도급 보충 요청 시트")
-                    app.show_toast("해당 보충 요청이 완전히 삭제되었습니다.")
-                    Clock.schedule_once(lambda dt: self._render_status_view())
-                else:
-                    app.show_info_popup("알림", "이미 삭제되었거나 찾을 수 없는 요청입니다.")
-            except Exception as e:
-                app.show_info_popup("오류", f"요청 삭제 실패: {e}")
+        def _do_local_delete():
+            if req_id:
+                self.hidden_req_ids.add(req_id)
+            app.show_toast("어플 화면에서 삭제되었습니다. (시트 데이터 변경 없음)")
+            self._render_status_view()
 
         app.show_confirmation_popup(
             title="보충 요청 삭제",
-            message=f"[{sku_name[:18]}]\n\n이 요청 항목을 목록에서 완전히 삭제하시겠습니까?",
-            on_yes=lambda: threading.Thread(target=_async_delete, daemon=True).start()
+            message=f"[{sku_name[:18]}]\n\n이 요청 항목을 어플 목록에서 지우시겠습니까?\n(구글 시트에는 영향을 주지 않습니다)",
+            on_yes=_do_local_delete
         )
 
     def _prompt_re_request(self, req_data):
