@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.2"
+CURRENT_VERSION = "1.9.4.3"
 
 
 def check_and_apply_update():
@@ -4501,9 +4501,9 @@ class EmergencyReplenishScreen(Screen):
                 invalidate_cache("도급 보충 요청 시트")
                 app.show_toast("데스크로 보충 요청이 전송되었습니다!")
                 
-                # 전송 후 메모리 강제 갱신 및 탭 전환
+                # 💡 [핵심] 보충 요청 전송 즉시 백그라운드 시트 강제 갱신 후 화면 전환
                 self.fetch_status_data(force_refresh=True)
-                Clock.schedule_once(lambda dt: self.switch_view("STATUS"))
+                Clock.schedule_once(lambda dt: self.switch_view("STATUS"), 0.1)
             except Exception as e:
                 app.show_info_popup("오류", f"보충 요청 전송 실패: {e}")
 
@@ -5780,18 +5780,34 @@ class MainApp(App):
 
             self.last_known_pending_task_ids = current_pending_task_ids
 
-            # 💡 [질문 3 해결] 데스크 회신 실시간 체크 및 알림 생성
+            # 2. 💡 [자동 갱신 추가] 30초마다 '도급 보충 요청 시트' 백그라운드 자동 캐시 갱신
             if self.user_real_name:
                 user_name = str(self.user_real_name).strip().lower()
                 replenish_requests = get_sheet_data("도급 보충 요청 시트", force_refresh=True)
                 
+                # 현재 활성화된 화면이 EmergencyReplenishScreen이면 메모리 캐시 갱신 및 UI 자동 리프레시
+                if self.root:
+                    try:
+                        em_screen = self.root.get_screen("emergency_replenish")
+                        my_reqs = [
+                            r for r in replenish_requests 
+                            if str(t(r, "요청자", t(r, "요청 자", ""))).strip().lower() == user_name
+                        ]
+                        em_screen.raw_requests_cache = my_reqs
+                        
+                        # 요청 현황 탭을 보고 있다면 화면 자동 반영
+                        if em_screen.active_tab == "STATUS":
+                            Clock.schedule_once(lambda dt: em_screen._render_status_view())
+                    except Exception as e:
+                        pass
+                
+                # 3. 데스크 회신 실시간 알림 체크
                 for req in replenish_requests:
                     req_user = str(t(req, "요청자", "")).strip().lower()
                     status = str(t(req, "처리상태", "")).strip()
                     reply = str(t(req, "회신 메세지", t(req, "회신메시지", ""))).strip()
                     req_id = str(t(req, "요청 ID", t(req, "요청ID", ""))).strip()
 
-                    # 내 요청 중 회신이 작성되었거나 조치안내 상태인 경우
                     if req_user == user_name and (reply or "조치안내" in status):
                         last_reply_key = f"REPLY_SEEN_{req_id}_{reply}_{status}"
                         if not getattr(self, last_reply_key, False):
@@ -5799,7 +5815,6 @@ class MainApp(App):
                             sku_name = str(t(req, "SKU명", "")).strip()[:12]
                             msg = f"💬 [데스크 회신 도착] [{sku_name}]\n내용: {reply if reply else status}"
                             
-                            # 알림 터치 시 현황 탭으로 즉시 팝업 오픈
                             Clock.schedule_once(
                                 lambda dt, m=msg: self.show_desk_reply_banner(m)
                             )
