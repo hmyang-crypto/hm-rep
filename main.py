@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.3.9"
+CURRENT_VERSION = "1.9.4.0"
 
 
 def check_and_apply_update():
@@ -2114,8 +2114,6 @@ class MainMenuScreen(Screen):
         )
         btn_recent.bind(on_press=lambda x: RecentCompletedPopup.open_safely())
         menu_box.add_widget(create_compact_menu_row(btn_recent))
-
-        self.layout.add_widget(menu_box)
 
         self.layout.add_widget(menu_box)
         self.layout.add_widget(Widget())
