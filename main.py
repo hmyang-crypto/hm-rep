@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.4"
+CURRENT_VERSION = "1.9.4.5"
 
 
 def check_and_apply_update():
@@ -4178,6 +4178,7 @@ class TaskListScreen(Screen):
         App.get_running_app().dismiss_loading_popup()
         App.get_running_app().show_toast(msg)
 
+        # 💡 [핵심 수정] 작업 처리 직후 0.5초 서버 저장 안정화 후 화면 즉시 자동 최신화
         def _safe_refresh_ui(dt):
             try:
                 app = App.get_running_app()
@@ -4190,7 +4191,7 @@ class TaskListScreen(Screen):
             except Exception as e:
                 print(f"🔴 UI 리프레시 예외 무시: {e}")
 
-        Clock.schedule_once(_safe_refresh_ui, 0.2)
+        Clock.schedule_once(_safe_refresh_ui, 0.5)
 
 # --- 💡 라인 보충 긴급 요청 및 소통 전용 독립 화면 (Screen) ---
 # --- 💡 라인 보충 긴급 요청 및 소통 전용 독립 화면 (속도 최적화 적용) ---
@@ -5023,7 +5024,8 @@ class AdminDashboardScreen(Screen):
                     f"[{action_name}] 처리가 완료되었습니다."
                 )
             )
-            Clock.schedule_once(lambda dt: self.search_tasks())
+            # 💡 [핵심] 처리 완료 직후 현황판 즉시 자동 갱신
+            Clock.schedule_once(lambda dt: self.refresh(None), 0.2)
 
         except Exception as e:
             Clock.schedule_once(
@@ -5761,7 +5763,7 @@ class MainApp(App):
 
     def _perform_task_check(self):
         try:
-            # 1. 신규 작업 지시서 알림 체크
+            # 1. 신규 작업 지시서 알림 및 백그라운드 갱신 데이터 동기화
             all_tasks = get_sheet_data(TASK_SHEET_NAME, force_refresh=True)
             pending_tasks = [
                 task for task in all_tasks if str(t(task, "상태")).strip() == "대기"
@@ -5783,28 +5785,50 @@ class MainApp(App):
 
             self.last_known_pending_task_ids = current_pending_task_ids
 
-            # 2. 💡 [자동 갱신 추가] 30초마다 '도급 보충 요청 시트' 백그라운드 자동 캐시 갱신
-            if self.user_real_name:
-                user_name = str(self.user_real_name).strip().lower()
-                replenish_requests = get_sheet_data("도급 보충 요청 시트", force_refresh=True)
+            # 2. 💡 [핵심 추가] 현재 열려있는 화면별 30초 주기 백그라운드 자동 최신화
+            if self.root:
+                curr_screen_name = self.root.current
                 
-                # 현재 활성화된 화면이 EmergencyReplenishScreen이면 메모리 캐시 갱신 및 UI 자동 리프레시
-                if self.root:
+                # A. 검수 탭 화면 자동 갱신
+                if curr_screen_name == "task_list":
                     try:
+                        task_screen = self.root.get_screen("task_list")
+                        Clock.schedule_once(lambda dt: task_screen.refresh_list(force_refresh=False))
+                    except Exception:
+                        pass
+                        
+                # B. 전체 작업 현황판 자동 갱신
+                elif curr_screen_name == "admin_dashboard":
+                    try:
+                        dash_screen = self.root.get_screen("admin_dashboard")
+                        dash_screen.all_tasks = all_tasks
+                        Clock.schedule_once(lambda dt: dash_screen.search_tasks())
+                    except Exception:
+                        pass
+
+                # C. 도급 보충 요청 및 소통 화면 자동 갱신
+                elif curr_screen_name == "emergency_replenish" and self.user_real_name:
+                    try:
+                        user_name = str(self.user_real_name).strip().lower()
+                        replenish_requests = get_sheet_data("도급 보충 요청 시트", force_refresh=True)
                         em_screen = self.root.get_screen("emergency_replenish")
+                        
                         my_reqs = [
                             r for r in replenish_requests 
                             if str(t(r, "요청자", t(r, "요청 자", ""))).strip().lower() == user_name
                         ]
                         em_screen.raw_requests_cache = my_reqs
                         
-                        # 요청 현황 탭을 보고 있다면 화면 자동 반영
                         if em_screen.active_tab == "STATUS":
                             Clock.schedule_once(lambda dt: em_screen._render_status_view())
-                    except Exception as e:
+                    except Exception:
                         pass
+
+            # 3. 데스크 회신 실시간 알림 체크
+            if self.user_real_name:
+                user_name = str(self.user_real_name).strip().lower()
+                replenish_requests = g_cached_sheets.get("도급 보충 요청 시트", [])
                 
-                # 3. 데스크 회신 실시간 알림 체크
                 for req in replenish_requests:
                     req_user = str(t(req, "요청자", "")).strip().lower()
                     status = str(t(req, "처리상태", "")).strip()
