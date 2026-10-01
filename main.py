@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.2.9"
+CURRENT_VERSION = "1.9.3.0"
 
 
 def check_and_apply_update():
@@ -1748,46 +1748,145 @@ class ScanFailureReasonPopup(Popup):
 
 class MultipleSkuSelectPopup(Popup):
 
-    def __init__(self, matches, on_select, **kwargs):
+    def __init__(self, matches, on_select_callback, **kwargs):
         super().__init__(**kwargs)
-        self.title = "검수 대상 선택 (중복 SKU)"
-        self.size_hint = (0.9, 0.7)
-        layout = BoxLayout(
-            orientation="vertical", padding=dp(10), spacing=dp(10)
-        )
-        layout.add_widget(
-            Label(
-                text="스캔한 바코드가 여러 건 존재합니다.\n대상을 선택해주세요.",
-                font_name=FONT_NAME,
-                size_hint_y=None,
-                height=dp(40),
-            )
-        )
+        self.title = "검수 대상 선택 및 다중 통합 검수 🚨"
+        self.size_hint = (0.95, 0.85)
+        self.matches = matches
+        self.on_select_callback = on_select_callback
+        self.selected_items = set()
 
-        scroll = ScrollView()
-        grid = GridLayout(cols=1, size_hint_y=None, spacing=dp(5))
+        main_layout = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
+
+        lbl_guide = Label(
+            text="동일 바코드의 보충건이 [color=1E88E5][b]" + str(len(matches)) + "건[/b][/color] 존재합니다.\n도착한 물품에 해당하는 항목을 체크해 주세요. (다중 선택 가능)",
+            font_name=FONT_NAME,
+            font_size=dp(13),
+            markup=True,
+            halign="center",
+            size_hint_y=None,
+            height=dp(36)
+        )
+        main_layout.add_widget(lbl_guide)
+
+        scroll = ScrollView(size_hint=(1, 1))
+        grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
         grid.bind(minimum_height=grid.setter("height"))
 
-        for item in matches:
+        self.checkboxes = {}
+
+        for idx, item in enumerate(matches):
             task = item["task_data"]
-            loc = t(task, "기존로케이션", t(task, "보충로케이션", "N/A"))
-            qty = t(task, "지시수량", "0")
-            btn = StyledButton(
-                text=f"보관위치: {loc} | 지시수량: {qty}",
+            task_id = str(t(task, "작업ID", f"ITEM_{idx}"))
+            from_loc = str(t(task, "기존로케이션", t(task, "보충로케이션", "N/A")))
+            to_loc = str(t(task, "보충로케이션", "N/A"))
+            qty = safe_int(t(task, "지시수량", 0))
+
+            card_box = TouchableBox(
+                orientation="horizontal",
                 size_hint_y=None,
-                height=dp(55),
+                height=dp(60),
+                padding=(dp(10), dp(5)),
+                spacing=dp(8)
             )
-            btn.bind(
-                on_release=lambda instance, i=item: (
-                    on_select(i),
-                    self.dismiss(),
-                )
+            with card_box.canvas.before:
+                Color(*get_color_from_hex("#FFFFFF"))
+                bg_r = RoundedRectangle(pos=card_box.pos, size=card_box.size, radius=[dp(8)])
+            card_box.bind(pos=lambda i, p, b=bg_r: setattr(b, "pos", p), size=lambda i, s, b=bg_r: setattr(b, "size", s))
+
+            info_box = BoxLayout(orientation="vertical", spacing=dp(2))
+            lbl_top = Label(
+                text=f"ID: [b]{task_id}[/b] | 지시수량: [color=D32F2F][b]{qty}개[/b][/color]",
+                font_name=FONT_NAME,
+                font_size=dp(13),
+                markup=True,
+                halign="left",
+                valign="middle"
             )
-            grid.add_widget(btn)
+            lbl_top.bind(size=lambda i, s: setattr(i, "text_size", s))
+            
+            lbl_loc = Label(
+                text=f"위치: {from_loc} ➔ [color=1E88E5][b]{to_loc}[/b][/color]",
+                font_name=FONT_NAME,
+                font_size=dp(12),
+                markup=True,
+                halign="left",
+                valign="middle"
+            )
+            lbl_loc.bind(size=lambda i, s: setattr(i, "text_size", s))
+
+            info_box.add_widget(lbl_top)
+            info_box.add_widget(lbl_loc)
+
+            chk = CheckBox(size_hint_x=None, width=dp(35), color=PRIMARY_BLUE)
+            
+            # 카드 터치 시 체크박스 토글
+            card_box.bind(on_release=lambda inst, c=chk: setattr(c, "active", not c.active))
+            chk.bind(active=partial(self._on_check_change, item))
+
+            card_box.add_widget(info_box)
+            card_box.add_widget(chk)
+            grid.add_widget(card_box)
 
         scroll.add_widget(grid)
-        layout.add_widget(scroll)
-        self.content = layout
+        main_layout.add_widget(scroll)
+
+        # 하단 통합 검수 버튼 바
+        self.btn_confirm = StyledButton(
+            text="선택한 항목 검수 진행 (0건)",
+            size_hint_y=None,
+            height=dp(45),
+            bg_color=get_color_from_hex("#78909C")
+        )
+        self.btn_confirm.bind(on_press=self._process_selected_inspection)
+        main_layout.add_widget(self.btn_confirm)
+
+        self.content = main_layout
+
+    def _on_check_change(self, item, checkbox, value):
+        if value:
+            self.selected_items.add(item)
+        else:
+            self.selected_items.discard(item)
+
+        cnt = len(self.selected_items)
+        if cnt > 0:
+            self.btn_confirm.text = f"선택한 {cnt}건 통합 검수 진행하기"
+            self.btn_confirm.set_bg_color(PRIMARY_BLUE)
+        else:
+            self.btn_confirm.text = "선택한 항목 검수 진행 (0건)"
+            self.btn_confirm.set_bg_color(get_color_from_hex("#78909C"))
+
+    def _process_selected_inspection(self, instance):
+        if not self.selected_items:
+            App.get_running_app().show_toast("검수할 항목을 최소 1개 이상 선택해 주세요.")
+            return
+
+        selected_list = list(self.selected_items)
+        self.dismiss()
+
+        # 💡 [단일 선택 시]: 기존 카드 단독 검수
+        if len(selected_list) == 1:
+            self.on_select_callback(selected_list[0])
+        # 💡 [다중 선택 시]: 수량 합산 카드 생성 (원출처 카드 배열 세팅)
+        else:
+            merged_task = self._merge_task_data([i["task_data"] for i in selected_list])
+            merged_item = {
+                "task_data": merged_task, 
+                "is_merged": True, 
+                "merged_sources": selected_list  # 원본 카드들의 정보 보존
+            }
+            self.on_select_callback(merged_item)
+
+    def _merge_task_data(self, task_list):
+        base_task = dict(task_list[0])
+        total_instructed_qty = sum(safe_int(t(tk, "지시수량", 0)) for tk in task_list)
+        
+        # 지시수량만 전체 합산
+        base_task["지시수량"] = total_instructed_qty
+        
+        # 💡 요청사항 반영: 비고란에 별도의 통합검수 문구는 추가하지 않고 기존 비고 유지
+        return base_task
 
 
 class InspectionPopup(Popup):
@@ -4232,6 +4331,7 @@ class TaskListScreen(Screen):
                 child.process_location_scan(clean_bc)
                 return
 
+        # 💡 [핵심] 로케이션 상관없이 동일 바코드를 가진 모든 검수 카드 검색
         matches = [
             item for item in self.all_tasks_data
             if get_barcode_from_task(item["task_data"]) == clean_bc
@@ -4243,17 +4343,32 @@ class TaskListScreen(Screen):
             )
             return
 
+        # 1건만 존재할 경우 즉시 검수 팝업 열기
         if len(matches) == 1:
             self.open_task_from_scan(matches[0])
+        # 2건 이상 존재할 경우 다중 선택/합산 팝업 열기
         else:
             MultipleSkuSelectPopup(
-                matches=matches, on_select=self.open_task_from_scan
+                matches=matches, on_select_callback=self.open_task_from_scan
             ).open()
 
-    def open_task_from_scan(self, item_data):
-        dummy_card = type(
-            "DummyCard", (), {"task_data": item_data["task_data"]}
-        )()
+   def open_task_from_scan(self, item_data):
+        target_task = item_data["task_data"]
+        clean_bc = get_barcode_from_task(target_task)
+
+        # 💡 카드를 직접 손으로 터치해서 들어온 경우에도 동일 바코드 중복 체크
+        if not item_data.get("is_merged", False):
+            matches = [
+                item for item in self.all_tasks_data
+                if get_barcode_from_task(item["task_data"]) == clean_bc
+            ]
+            if len(matches) > 1:
+                MultipleSkuSelectPopup(
+                    matches=matches, on_select_callback=self.open_task_from_scan
+                ).open()
+                return
+
+        dummy_card = type("DummyCard", (), {"task_data": target_task})()
         InspectionPopup(card=dummy_card, task_list_screen=self).open()
 
     def return_task(self, card):
@@ -4569,41 +4684,57 @@ class TaskListScreen(Screen):
         try:
             sheet = get_worksheet(TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
-            task_id = str(t(card.task_data, "작업ID"))
-
-            task_id_col_idx = headers.index("작업ID") + 1
-            all_task_ids = sheet.col_values(task_id_col_idx)
-
-            if task_id not in all_task_ids:
-                raise Exception(
-                    f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다."
-                )
-
-            row_idx = all_task_ids.index(task_id) + 1
-            cells = []
-
-            for key, val in updates.items():
-                if key in headers:
-                    col_idx = headers.index(key) + 1
-                    cells.append(gspread.Cell(row_idx, col_idx, str(val)))
-
-            if cells:
-                sheet.update_cells(cells)
-
-            updated_task_data = dict(card.task_data)
-            updated_task_data.update(updates)
             
-            try:
-                log_sheet = get_worksheet(LOG_SHEET_NAME)
-                log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
-                log_row = [str(updated_task_data.get(h, "")) for h in log_headers]
-                log_sheet.append_row(log_row)
-            except Exception as log_err:
-                print(f"⚠️ 로그 시트 기록 중 경고 (지시서는 업데이트됨): {log_err}")
+            # 다중 선택 통합 검수건인지 확인
+            is_merged = getattr(card, "is_merged", False) or card.task_data.get("is_merged", False)
+            merged_sources = getattr(card, "merged_sources", []) or card.task_data.get("merged_sources", [])
 
+            # 💡 A. 다중 선택 통합 검수 완료 시: 선택된 모든 원본 행 일괄 업데이트
+            if is_merged and merged_sources:
+                task_id_col_idx = headers.index("작업ID") + 1
+                all_task_ids = sheet.col_values(task_id_col_idx)
+                
+                cells = []
+                for src_item in merged_sources:
+                    src_task = src_item["task_data"]
+                    target_id = str(t(src_task, "작업ID")).strip()
+                    
+                    if target_id in all_task_ids:
+                        row_idx = all_task_ids.index(target_id) + 1
+                        for key, val in updates.items():
+                            if key in headers:
+                                col_idx = headers.index(key) + 1
+                                # 각 원본 행별 확인수량은 원본 지시수량 기준으로 분할 기재하거나 지정 수량 반영
+                                cells.append(gspread.Cell(row_idx, col_idx, str(val)))
+
+                if cells:
+                    sheet.update_cells(cells)
+                    
+            # 💡 B. 단일 선택 검수 완료 시: 해당 1개 행만 업데이트
+            else:
+                task_id = str(t(card.task_data, "작업ID"))
+                task_id_col_idx = headers.index("작업ID") + 1
+                all_task_ids = sheet.col_values(task_id_col_idx)
+
+                if task_id not in all_task_ids:
+                    raise Exception(f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다.")
+
+                row_idx = all_task_ids.index(task_id) + 1
+                cells = []
+
+                for key, val in updates.items():
+                    if key in headers:
+                        col_idx = headers.index(key) + 1
+                        cells.append(gspread.Cell(row_idx, col_idx, str(val)))
+
+                if cells:
+                    sheet.update_cells(cells)
+
+            # 캐시 초기화 및 성공 처리
             invalidate_cache(TASK_SHEET_NAME)
             invalidate_cache(LOG_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
+
         except Exception as e:
             Clock.schedule_once(
                 lambda dt, err=str(e): App.get_running_app().show_info_popup(
