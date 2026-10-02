@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.8"
+CURRENT_VERSION = "1.9.4.9"
 
 
 def check_and_apply_update():
@@ -1965,7 +1965,7 @@ class MainMenuScreen(Screen):
             worker = str(t(task, "보충담당자", t(task, "작업 담당자", ""))).strip().lower()
             eq = str(t(task, "장비")).strip()
 
-            if st in ["보충완료", "최종완료", "완료"] and worker == user_name_lower:
+            if st in ["적치대기", "최종완료", "완료"] and worker == user_name_lower:
                 if eq == "리치":
                     rc_count += 1
                 else:
@@ -3705,7 +3705,7 @@ class TaskListScreen(Screen):
             filtered_task_data = [
                 task
                 for task in all_tasks
-                if str(t(task, "상태")).strip() == "보충완료"
+                if str(t(task, "상태")).strip() == "적치대기"
             ]
 
             task_map = {
@@ -4084,7 +4084,7 @@ class TaskListScreen(Screen):
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         updates = {
-            "상태": "보충완료",
+            "상태": "적치대기",
             "보충담당자": app.user_real_name,
             "완료일시": now_str,
             "확인수량": str(final_qty),
@@ -4103,7 +4103,7 @@ class TaskListScreen(Screen):
             app.show_loading_popup()
             threading.Thread(
                 target=self._perform_update_and_log,
-                args=(card, updates, "보충완료 처리 되었습니다."),
+                args=(card, updates, "작업이 완료되어 '적치대기' 상태로 전환되었습니다."),
                 daemon=True,
             ).start()
 
@@ -5089,7 +5089,7 @@ class AdminDashboardScreen(Screen):
             if status == "작업중"
             else (
                 "[color=00897B]"
-                if status in ["보충완료", "최종완료"]
+                if status in ["적치대기", "최종완료"]
                 else (
                     "[color=E65100]" if status == "보충실패" else "[color=757575]"
                 )
@@ -5177,7 +5177,7 @@ class AdminDashboardScreen(Screen):
         raw_time = str(t(task, "완료일시", t(task, "최종완료일시", ""))).strip()
 
         time_str = ""
-        if status in ["보충완료", "최종완료", "완료"] and raw_time:
+        if status in ["적치대기", "최종완료", "완료"] and raw_time:
             time_str = f" | [color=2E7D32][b]완료시간: {raw_time}[/b][/color]"
 
         lbl_sub = Label(
