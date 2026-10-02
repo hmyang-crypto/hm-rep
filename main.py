@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.6"
+CURRENT_VERSION = "1.9.4.7"
 
 
 def check_and_apply_update():
@@ -1729,7 +1729,7 @@ class MainMenuScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.layout = BoxLayout(
-            orientation="vertical", padding=dp(15), spacing=dp(8)
+            orientation="vertical", padding=dp(10), spacing=dp(6)
         )
         self.add_widget(self.layout)
 
@@ -1737,6 +1737,7 @@ class MainMenuScreen(Screen):
         self.layout.clear_widgets()
         app = App.get_running_app()
 
+        # 1. 상단 인삿말 & 프린터 버튼 (기존 유지)
         top_bar = BoxLayout(size_hint_y=None, height=dp(40))
         welcome_box = BoxLayout(orientation="vertical", size_hint_x=0.75)
         welcome_box.add_widget(
@@ -1776,11 +1777,12 @@ class MainMenuScreen(Screen):
         top_bar.add_widget(btn_printer)
         self.layout.add_widget(top_bar)
 
+        # 2. 실시간 보충 현황 요약 카드 (기존 유지)
         dash_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(130),
-            padding=dp(10),
+            height=dp(125),
+            padding=dp(8),
             spacing=dp(3),
         )
         with dash_card.canvas.before:
@@ -1900,7 +1902,7 @@ class MainMenuScreen(Screen):
         dash_card.add_widget(sep)
 
         grid_tot = GridLayout(
-            cols=3, size_hint_y=None, height=dp(25), spacing=dp(2)
+            cols=3, size_hint_y=None, height=dp(23), spacing=dp(2)
         )
         self.lbl_all_pending = Label(
             text="0 [color=D32F2F](0)[/color]",
@@ -1933,10 +1935,11 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(dash_card)
 
+        # 3. 누적 처리량 정보 카드 (기존 유지)
         perf_card = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(68),
+            height=dp(64),
             padding=(dp(10), dp(4)),
             spacing=dp(2),
         )
@@ -2008,7 +2011,7 @@ class MainMenuScreen(Screen):
             op_msg = f"{op_pace}개/h (목표30) [color=D32F2F]★ 최고의 속도!⭐[/color]"
 
         self.lbl_row1 = Label(
-            text=f"  ■ 오더피커: {op_count}건 │ {op_msg}",
+            text=f"   ■ 오더피커: {op_count}건 │ {op_msg}",
             font_name=FONT_NAME,
             font_size=dp(10),
             color=TEXT_DARK,
@@ -2024,7 +2027,7 @@ class MainMenuScreen(Screen):
         perf_card.add_widget(self.lbl_row1)
 
         self.lbl_row2 = Label(
-            text=f"  ■ 리    치: {rc_count}건 │ --개/h (목표 미정) [color=757575]● 기준 미설정[/color]",
+            text=f"   ■ 리    치: {rc_count}건 │ --개/h (목표 미정) [color=757575]● 기준 미설정[/color]",
             font_name=FONT_NAME,
             font_size=dp(10),
             color=TEXT_DARK,
@@ -2041,95 +2044,88 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(perf_card)
 
-        # 메인 메뉴 버튼들
-        menu_box = BoxLayout(
-            orientation="vertical", spacing=dp(6), size_hint_y=None
+        # 💡 [수정 구역] 메인 버튼들 6개 ( 한 줄에 2개씩 2열 GridLayout 적용 )
+        menu_grid = GridLayout(
+            cols=2,
+            spacing=dp(6),
+            size_hint_y=None,
+            height=dp(140)  # 3행 2열 높이에 맞춰 최적화
         )
-        menu_box.bind(minimum_height=menu_box.setter("height"))
-
-        def create_compact_menu_row(btn_widget):
-            row = BoxLayout(size_hint_y=None, height=dp(42))
-            row.add_widget(Widget())
-            row.add_widget(btn_widget)
-            row.add_widget(Widget())
-            return row
 
         btn_replenish = StyledButton(
             text="[보충] 보충 작업",
             bg_color=PRIMARY_BLUE,
-            size_hint_x=None,
-            width=dp(220),
+            font_size=dp(12),
         )
         btn_replenish.bind(
             on_press=lambda x: setattr(
                 self.manager, "current", "unified_replenish"
             )
         )
-        menu_box.add_widget(create_compact_menu_row(btn_replenish))
 
         btn_inspect = StyledButton(
             text="[검수] 검수 목록 보기",
             bg_color=get_color_from_hex("#00897B"),
-            size_hint_x=None,
-            width=dp(220),
+            font_size=dp(12),
         )
         btn_inspect.bind(on_press=self.go_to_inspect)
-        menu_box.add_widget(create_compact_menu_row(btn_inspect))
 
         btn_dashboard = StyledButton(
             text="[현황] 전체 작업 현황판",
             bg_color=get_color_from_hex("#3F51B5"),
-            size_hint_x=None,
-            width=dp(220),
+            font_size=dp(12),
         )
         btn_dashboard.bind(
             on_press=lambda x: setattr(
                 self.manager, "current", "admin_dashboard"
             )
         )
-        menu_box.add_widget(create_compact_menu_row(btn_dashboard))
 
-        # 💡 [신규 추가] 작업현황판 바로 밑에 보충요청/소통 화면 버튼 배치
         btn_emergency = StyledButton(
             text="보충 요청",
-            bg_color=get_color_from_hex("#D32F2F"), # 빨간색 강조
-            size_hint_x=None,
-            width=dp(220),
+            bg_color=get_color_from_hex("#D32F2F"),
+            font_size=dp(12),
         )
         btn_emergency.bind(
             on_press=lambda x: setattr(
                 self.manager, "current", "emergency_replenish"
             )
         )
-        menu_box.add_widget(create_compact_menu_row(btn_emergency))
 
         btn_sku_loc = StyledButton(
             text="SKU별 로케이션 검색",
             bg_color=get_color_from_hex("#E65100"),
-            size_hint_x=None,
-            width=dp(220),
+            font_size=dp(11),
         )
         btn_sku_loc.bind(
             on_press=lambda x: setattr(
                 self.manager, "current", "sku_location_search"
             )
         )
-        menu_box.add_widget(create_compact_menu_row(btn_sku_loc))
 
         btn_recent = StyledButton(
             text="금일 완료 이력 (최근)",
             bg_color=get_color_from_hex("#43A047"),
-            size_hint_x=None,
-            width=dp(220),
+            font_size=dp(11),
         )
         btn_recent.bind(on_press=lambda x: RecentCompletedPopup.open_safely())
-        menu_box.add_widget(create_compact_menu_row(btn_recent))
 
-        self.layout.add_widget(menu_box)
+        # 버튼 6개 순서대로 추가
+        menu_grid.add_widget(btn_replenish)
+        menu_grid.add_widget(btn_inspect)
+        menu_grid.add_widget(btn_dashboard)
+        menu_grid.add_widget(btn_emergency)
+        menu_grid.add_widget(btn_sku_loc)
+        menu_grid.add_widget(btn_recent)
+
+        self.layout.add_widget(menu_grid)
+
+        # 💡 버튼들과 하단 이름 변경 버튼 사이의 유격 확보
         self.layout.add_widget(Widget())
 
+        # 4. 하단 우측 작업자 이름 변경 버튼 (기존 위치 및 여백 유지)
         bottom_box = BoxLayout(size_hint_y=None, height=dp(34))
-        bottom_box.add_widget(Widget())
+        bottom_box.add_widget(Widget())  # 왼쪽 빈 공간 밀어내기
         change_btn = StyledButton(
             text="작업자 이름 변경",
             size_hint_x=None,
@@ -2143,6 +2139,7 @@ class MainMenuScreen(Screen):
         bottom_box.add_widget(change_btn)
         self.layout.add_widget(bottom_box)
 
+        # 백그라운드 데이터 로드
         threading.Thread(
             target=self._fetch_summary_counts, daemon=True
         ).start()
