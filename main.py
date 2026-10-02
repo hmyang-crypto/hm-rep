@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.7"
+CURRENT_VERSION = "1.9.4.8"
 
 
 def check_and_apply_update():
@@ -1532,7 +1532,7 @@ class InspectionPopup(Popup):
     def _execute_no_qr_finalize(self, calculated_total_qty):
         # QR이 없어 목표 위치로 자동 기록 및 비고에 [QR없음 적치] 사유 자동 기재
         final_loc = self.target_location
-        no_qr_remark = "[QR없음 수기완결]"
+        no_qr_remark = "[자석로케이션 필요]"
         
         curr_rem = str(self.current_remarks).strip()
         updated_rem = f"{curr_rem} | {no_qr_remark}" if curr_rem else no_qr_remark
