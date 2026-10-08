@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.5.1"
+CURRENT_VERSION = "1.9.5.2"
 
 
 def check_and_apply_update():
@@ -1535,7 +1535,7 @@ class InspectionPopup(Popup):
         no_qr_remark = "[자석로케이션 필요]"
         
         curr_rem = str(self.current_remarks).strip()
-        updated_rem = f"{curr_rem} | {no_qr_remark}" if curr_rem else no_qr_remark
+        updated_rem = f"{curr_rem}\n{no_qr_remark}" if curr_rem else no_qr_remark
 
         self.task_list_screen._finalize_task_processing(
             card=self.card,
@@ -4039,15 +4039,12 @@ class TaskListScreen(Screen):
     ):
         app = App.get_running_app()
 
-        # 💡 [정밀 보완] 지시수량이 아닌 '박스당 입수량(기본입수량)'의 실제 변경 여부만 판별
         default_box_size = safe_int(
             t(card.task_data, "박스입수량", t(card.task_data, "박스 입수량", 1))
         )
         
-        # 팝업이나 카드에서 변경되어 들어온 박스 입수량 확인 (입력창 변경값)
         changed_box_size = getattr(card, "changed_box_size", None) or card.task_data.get("changed_box_size", None)
 
-        # 박스당 입수량이 기존과 다르게 실제로 변경된 경우에만 '입수량 변경 : n' 기록
         if changed_box_size and safe_int(changed_box_size) > 0 and safe_int(changed_box_size) != default_box_size:
             new_box_size = safe_int(changed_box_size)
             change_log = f"입수량 변경 : {new_box_size}"
@@ -4061,11 +4058,30 @@ class TaskListScreen(Screen):
                         current_rem_str
                     )
                 else:
-                    updated_remarks = f"{current_rem_str} | {change_log}"
+                    updated_remarks = f"{current_rem_str}\n{change_log}"
             else:
                 updated_remarks = change_log
 
+        # 💡 [핵심 추가] 검수 작업일 때, 보충 수량과 검수 수량이 다르면 비고란에 자동 기록
         if app.current_list_type == "검수인원":
+            # 보충 작업 시 입력했던 기존 수량 (확인수량 필드 참조)
+            replenished_qty = safe_int(t(card.task_data, "확인수량", t(card.task_data, "지시수량", 0)))
+            
+            # 수량이 서로 불일치할 경우
+            if final_qty != replenished_qty:
+                diff = final_qty - replenished_qty
+                diff_str = f"+{diff}" if diff > 0 else f"{diff}"
+                
+                # 형식 1 텍스트 포맷 생성
+                mismatch_log = f"[수량 불일치] 보충: {replenished_qty}개 ➔ 검수: {final_qty}개 (차이: {diff_str}개)"
+                
+                curr_rem = str(updated_remarks or "").strip()
+                # 기존 비고가 있으면 줄바꿈(\n) 후 추가
+                if curr_rem:
+                    updated_remarks = f"{curr_rem}\n{mismatch_log}"
+                else:
+                    updated_remarks = mismatch_log
+
             updates = {
                 "상태": "최종완료",
                 "검수담당자": app.user_real_name,
@@ -4083,6 +4099,7 @@ class TaskListScreen(Screen):
             return
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         updates = {
             "상태": "적치대기",
             "보충담당자": app.user_real_name,
@@ -4103,7 +4120,7 @@ class TaskListScreen(Screen):
             app.show_loading_popup()
             threading.Thread(
                 target=self._perform_update_and_log,
-                args=(card, updates, "작업이 완료되어 '적치대기' 상태로 전환되었습니다."),
+                args=(card, updates, "보충작업이 완료되어 '적치대기' 상태로 전환되었습니다."),
                 daemon=True,
             ).start()
 
@@ -4116,7 +4133,7 @@ class TaskListScreen(Screen):
 
         app.show_confirmation_popup(
             title="인쇄 및 완료",
-            message="[color=ffffff]보충완료 처리합니다.\n라벨 1장을 인쇄하시겠습니까?[/color]",
+            message="[color=ffffff]보충 완료 및 적치대기 처리합니다.\n라벨 1장을 인쇄하시겠습니까?[/color]",
             on_yes=on_yes_print,
             on_no=run_sheet_update,
         )
@@ -4781,7 +4798,7 @@ class EmergencyReplenishScreen(Screen):
                     
                     new_reason = f"[재요청 {now_ts[-8:-3]}] 라인 재고 재확인 요청{history_text}"
                     if old_reason:
-                        updated_reason = f"{old_reason} | {new_reason}"
+                        updated_reason = f"{old_reason}\n{new_reason}"
                     else:
                         updated_reason = new_reason
 
