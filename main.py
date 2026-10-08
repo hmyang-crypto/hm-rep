@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.4.9"
+CURRENT_VERSION = "1.9.5.0"
 
 
 def check_and_apply_update():
@@ -4754,40 +4754,61 @@ class EmergencyReplenishScreen(Screen):
 
     def _prompt_re_request(self, req_data):
         app = App.get_running_app()
-        req_id = str(t(req_data, "요청 ID", t(req_data, "요청ID", ""))).strip()
-        sku_name = str(t(req_data, "SKU명", "")).strip()
+        user_name = str(app.user_real_name).strip()
+        
+        # 기존 데이터 추출
+        old_req_id = str(t(req_data, "요청 ID", t(req_data, "요청ID", ""))).strip()
+        sku_name = str(t(req_data, "SKU명", t(req_data, "상품명", ""))).strip()
+        barcode = str(t(req_data, "바코드", "")).strip()
+        location = str(t(req_data, "출고위치", t(req_data, "로케이션", "-"))).strip()
+        partner = str(t(req_data, "고객사", t(req_data, "파트너명", "-"))).strip()
+        old_reply = str(t(req_data, "회신 메세지", t(req_data, "회신메시지", ""))).strip()
 
         def _async_re_send():
             try:
                 sheet = get_worksheet("도급 보충 요청 시트")
-                headers = [str(h).strip() for h in sheet.row_values(1)]
+                now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # 💡 1. 요청 ID 생성: 원본 ID에 (재요청) 접미사 부여 (예: REQ-1234(재요청))
+                if "(재요청)" not in old_req_id:
+                    new_req_id = f"{old_req_id}(재요청)"
+                else:
+                    new_req_id = old_req_id  # 이미 (재요청) 문구가 있으면 그대로 유지
+
+                # 💡 2. 사유/비고 기록 보존 (이전 데스크 회신 메시지가 있었다면 함께 기록)
+                req_reason = "[재요청] 라인 재고 재확인 필요"
+                if old_reply:
+                    req_reason += f" (이전 회신: {old_reply})"
+
+                # 💡 3. 기존 행 수정이 아닌 '신규 행 추가' (append_row)
+                new_row_data = [
+                    new_req_id,      # A열: 요청 ID (원ID + (재요청))
+                    now_ts,          # B열: 요청시각 (현재 시각)
+                    user_name,       # C열: 요청자
+                    partner,         # D열: 고객사
+                    sku_name,        # E열: SKU명
+                    barcode,         # F열: 바코드
+                    location,        # G열: 로케이션
+                    req_reason,      # H열: 요청사유 (이전 기록 보존)
+                    "요청중",        # I열: 처리상태
+                    "",              # J열: 회신 메세지 (초기화)
+                    ""               # K열: 담당자
+                ]
+
+                sheet.append_row(new_row_data)
+                invalidate_cache("도급 보충 요청 시트")
                 
-                req_id_col = headers.index("요청 ID") + 1 if "요청 ID" in headers else headers.index("요청ID") + 1
-                all_ids = sheet.col_values(req_id_col)
+                # 시트 반영 대기 후 현황 갱신
+                time.sleep(0.5)
+                self.fetch_status_data(force_refresh=True)
 
-                if req_id in all_ids:
-                    row_idx = all_ids.index(req_id) + 1
-                    new_id = f"{req_id}-R1" if "-R" not in req_id else f"{req_id.split('-R')[0]}-R{int(req_id.split('-R')[1])+1}"
-                    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                    cells = [
-                        gspread.Cell(row_idx, req_id_col, new_id),
-                        gspread.Cell(row_idx, headers.index("요청시각") + 1, now_ts),
-                        gspread.Cell(row_idx, headers.index("요청사유") + 1, "[재요청] 라인 재고 재확인 요청"),
-                        gspread.Cell(row_idx, headers.index("처리상태") + 1, "요청중"),
-                        gspread.Cell(row_idx, headers.index("회신 메세지") + 1, "")
-                    ]
-                    sheet.update_cells(cells)
-                    invalidate_cache("도급 보충 요청 시트")
-                    app.show_toast("데스크로 재요청이 전송되었습니다!")
-                    
-                    self.fetch_status_data(force_refresh=True)
+                Clock.schedule_once(lambda dt: app.show_toast("데스크로 재요청 신규 건이 전송되었습니다!"))
             except Exception as e:
-                app.show_info_popup("오류", f"재요청 전송 실패: {e}")
+                Clock.schedule_once(lambda dt: app.show_info_popup("오류", f"재요청 전송 실패: {e}"))
 
         app.show_confirmation_popup(
             title="보충 재요청",
-            message=f"[{sku_name[:18]}]\n\n데스크로 보충 재요청을 전송하시겠습니까?",
+            message=f"[{sku_name[:18]}]\n\n이전 요청 ID({old_req_id})에 대한\n신규 재요청을 전송하시겠습니까?",
             on_yes=lambda: threading.Thread(target=_async_re_send, daemon=True).start()
         )
 
