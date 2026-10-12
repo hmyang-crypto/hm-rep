@@ -15,7 +15,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.5.2"
+CURRENT_VERSION = "1.9.5.3"
 
 
 def check_and_apply_update():
@@ -4143,12 +4143,13 @@ class TaskListScreen(Screen):
             sheet = get_worksheet(TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
             
-            # 다중 통합 검수 여부 안전 확인
             card_task_data = getattr(card, "task_data", {})
             is_merged = card_task_data.get("is_merged", False) or getattr(card, "is_merged", False)
             merged_sources = card_task_data.get("merged_sources", []) or getattr(card, "merged_sources", [])
 
-            # 💡 A. 다중 선택 통합 검수 완료 시: 선택되었던 모든 원본 행 일괄 '최종완료' 업데이트
+            log_entries = []  # 💡 기록용 로그 데이터 수집 배열
+
+            # 💡 다중 선택 통합 검수 완료 시
             if is_merged and merged_sources:
                 task_id_col_idx = headers.index("작업ID") + 1
                 all_task_ids = sheet.col_values(task_id_col_idx)
@@ -4164,11 +4165,16 @@ class TaskListScreen(Screen):
                             if key in headers:
                                 col_idx = headers.index(key) + 1
                                 cells.append(gspread.Cell(row_idx, col_idx, str(val)))
+                    
+                    # 로그 기록을 위한 데이터 세팅
+                    merged_updated_task = dict(src_task)
+                    merged_updated_task.update(updates)
+                    log_entries.append(merged_updated_task)
 
                 if cells:
                     sheet.update_cells(cells)
                     
-            # 💡 B. 단일 선택 검수 완료 시: 해당 1개 행만 업데이트
+            # 💡 단일 선택 검수 완료 시
             else:
                 task_id = str(t(card.task_data, "작업ID"))
                 task_id_col_idx = headers.index("작업ID") + 1
@@ -4187,9 +4193,37 @@ class TaskListScreen(Screen):
 
                 if cells:
                     sheet.update_cells(cells)
+                
+                # 로그 기록을 위한 데이터 세팅
+                single_updated_task = dict(card.task_data)
+                single_updated_task.update(updates)
+                log_entries.append(single_updated_task)
+
+            # ==========================================
+            # 💡 [조건 추가 구역] 작업완료 로그 시트 기록
+            # ==========================================
+            # 🚨 "상태"가 "최종완료"일 때만 로그 시트에 기록되도록 조건문(if) 추가
+            if log_entries and updates.get("상태") == "최종완료":
+                try:
+                    log_sheet = get_worksheet(LOG_SHEET_NAME)
+                    log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
+                    
+                    rows_to_append = []
+                    for entry in log_entries:
+                        row = [str(entry.get(h, "")) for h in log_headers]
+                        rows_to_append.append(row)
+                    
+                    # 1건이면 append_row, 다중건이면 append_rows 사용
+                    if len(rows_to_append) == 1:
+                        log_sheet.append_row(rows_to_append[0])
+                    else:
+                        log_sheet.append_rows(rows_to_append)
+                        
+                    invalidate_cache(LOG_SHEET_NAME)
+                except Exception as log_err:
+                    print(f"⚠️ 로그 시트 기록 중 경고: {log_err}")
 
             invalidate_cache(TASK_SHEET_NAME)
-            invalidate_cache(LOG_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
 
         except Exception as e:
