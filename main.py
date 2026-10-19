@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.5.5"
+CURRENT_VERSION = "1.9.5.6"
 
 
 def check_and_apply_update():
@@ -6695,8 +6695,17 @@ class ReturnTaskListScreen(Screen):
 
         try:
             from plyer import camera
-            app_dir = App.get_running_app().user_data_dir
-            self.current_photo_path = os.path.join(app_dir, "return_temp.jpg")
+            import time
+            from jnius import autoclass
+            
+            # 💡 [핵심 해결 1] 카메라 앱이 접근해서 사진을 저장할 수 있는 '외부 공용 사진 폴더' 경로 추출
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Environment = autoclass('android.os.Environment')
+            ext_pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES).getAbsolutePath()
+            
+            # 💡 [핵심 해결 2] 사진을 덮어쓰다 꼬이는 것을 방지하기 위해 파일명에 현재 시간(타임스탬프) 부여
+            file_name = f"return_temp_{int(time.time())}.jpg"
+            self.current_photo_path = os.path.join(ext_pic_dir, file_name)
             
             self._current_task_data = task_data
             self._current_final_loc = final_loc
