@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.5.4"
+CURRENT_VERSION = "1.9.5.5"
 
 
 def check_and_apply_update():
@@ -6911,6 +6911,15 @@ class MainApp(App):
 
         if platform == "android":
             try:
+                # =======================================================
+                # 💡 [여기가 핵심!] 안드로이드 카메라 보안(FileUriExposedException) 우회
+                # =======================================================
+                from jnius import autoclass
+                StrictMode = autoclass('android.os.StrictMode')
+                builder = autoclass('android.os.StrictMode$VmPolicy$Builder')()
+                StrictMode.setVmPolicy(builder.build())
+                # =======================================================
+
                 request_permissions(
                     [
                         Permission.POST_NOTIFICATIONS,
@@ -6918,10 +6927,13 @@ class MainApp(App):
                         Permission.BLUETOOTH_CONNECT,
                         Permission.BLUETOOTH_ADMIN,
                         Permission.ACCESS_FINE_LOCATION,
+                        Permission.CAMERA,                 # 카메라 권한
+                        Permission.WRITE_EXTERNAL_STORAGE, # 저장소 권한
+                        Permission.READ_EXTERNAL_STORAGE,  # 저장소 권한
                     ]
                 )
             except Exception as e:
-                print(f"🔴 권한 요청 오류: {e}")
+                print(f"🔴 권한 및 보안 설정 오류: {e}")
 
     def check_for_new_tasks(self, *args):
         if self.root and any(
