@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.5.6"
+CURRENT_VERSION = "1.9.5.7"
 
 
 def check_and_apply_update():
@@ -6685,7 +6685,7 @@ class ReturnTaskListScreen(Screen):
                 threading.Thread(target=self._update_task_sheet_only, args=(task_data, updates, "원복 실패 처리되었습니다."), daemon=True).start()
             open_native_korean_input("실패 사유 입력", "원복 실패 사유 입력", "", on_confirm_fail)
     # ==========================
-    # 사진 촬영 및 최종 완료 처리 로직
+    # 사진 촬영 및 최종 완료 처리 로직 (안드로이드 순정 방식 업그레이드)
     # ==========================
     def open_camera(self, final_loc, task_data):
         if platform != "android":
@@ -6694,36 +6694,82 @@ class ReturnTaskListScreen(Screen):
             return
 
         try:
-            from plyer import camera
+            from jnius import autoclass, cast
+            from android import activity
             import time
-            from jnius import autoclass
-            
-            # 💡 [핵심 해결 1] 카메라 앱이 접근해서 사진을 저장할 수 있는 '외부 공용 사진 폴더' 경로 추출
+
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Environment = autoclass('android.os.Environment')
-            ext_pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES).getAbsolutePath()
-            
-            # 💡 [핵심 해결 2] 사진을 덮어쓰다 꼬이는 것을 방지하기 위해 파일명에 현재 시간(타임스탬프) 부여
-            file_name = f"return_temp_{int(time.time())}.jpg"
-            self.current_photo_path = os.path.join(ext_pic_dir, file_name)
-            
+            Intent = autoclass('android.content.Intent')
+            MediaStore = autoclass('android.provider.MediaStore')
+            ContentValues = autoclass('android.content.ContentValues')
+            Images_Media = autoclass('android.provider.MediaStore$Images$Media')
+
+            context = PythonActivity.mActivity.getApplicationContext()
+            resolver = context.getContentResolver()
+
+            # 💡 1. 갤러리 공용 공간에 빈 이미지 파일을 먼저 만들고 안전한 'content://' 경로 확보 (먹통 원인 해결)
+            values = ContentValues()
+            values.put("_display_name", f"return_photo_{int(time.time())}.jpg")
+            values.put("mime_type", "image/jpeg")
+
+            self.image_uri = resolver.insert(Images_Media.EXTERNAL_CONTENT_URI, values)
+
+            # 💡 2. 확보한 경로를 들고 기본 카메라 앱 호출
+            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, cast('android.os.Parcelable', self.image_uri))
+
             self._current_task_data = task_data
             self._current_final_loc = final_loc
-            camera.take_picture(filename=self.current_photo_path, on_complete=self.on_camera_complete)
+
+            # 💡 3. 사진을 찍고 체크(✓)를 눌렀을 때 실행될 콜백 지정
+            def on_activity_result(request_code, result_code, intent_data):
+                if request_code == 1001:
+                    activity.unbind(on_activity_result=on_activity_result)
+                    if result_code == -1:  # -1 은 안드로이드에서 RESULT_OK (체크 버튼 누름)를 의미함
+                        self.on_camera_complete_native()
+                    else:
+                        # 촬영 취소 시 만들어둔 빈 파일 깔끔하게 삭제
+                        try:
+                            resolver.delete(self.image_uri, None, None)
+                        except: pass
+                        App.get_running_app().show_info_popup("알림", "사진 촬영이 취소되었습니다.")
+
+            # Kivy 어플에 결과를 기다리라고 지시한 뒤 카메라 실행
+            activity.bind(on_activity_result=on_activity_result)
+            PythonActivity.mActivity.startActivityForResult(intent, 1001)
+
         except Exception as e:
-            App.get_running_app().show_info_popup("카메라 오류", f"카메라를 실행할 수 없습니다: {e}")
+            App.get_running_app().show_info_popup("카메라 연동 오류", f"기본 카메라를 열 수 없습니다: {e}")
 
-    def on_camera_complete(self, filepath):
-        if not os.path.exists(filepath):
-            App.get_running_app().show_info_popup("알림", "사진 촬영이 취소되었습니다.")
-            return
-
+    # 체크 버튼을 누른 후 백그라운드 업로드 시작
+    def on_camera_complete_native(self):
         App.get_running_app().show_loading_popup()
-        threading.Thread(target=self._upload_photo_and_complete, args=(filepath,), daemon=True).start()
+        threading.Thread(target=self._upload_photo_and_complete_native, daemon=True).start()
 
-    def _upload_photo_and_complete(self, filepath):
+    # 확보한 사진 파일을 구글 드라이브로 쏘는 함수
+    def _upload_photo_and_complete_native(self):
         try:
-            with open(filepath, "rb") as image_file:
+            from jnius import autoclass
+            import base64
+            import json
+            import urllib.request
+
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            context = PythonActivity.mActivity.getApplicationContext()
+            
+            # 💡 4. 보안 경로(content://)에서 실제 파일 경로(Real Path) 역추적
+            cursor = context.getContentResolver().query(self.image_uri, ["_data"], None, None, None)
+            real_path = None
+            if cursor:
+                if cursor.moveToFirst():
+                    real_path = cursor.getString(0)
+                cursor.close()
+
+            if not real_path or not os.path.exists(real_path):
+                raise Exception("저장된 사진 파일을 찾을 수 없거나 접근 권한이 없습니다.")
+
+            # 추출해낸 진짜 파일 경로로 사진을 읽어서 텍스트(Base64)로 변환
+            with open(real_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
 
             payload = {
@@ -6738,12 +6784,13 @@ class ReturnTaskListScreen(Screen):
 
             if res_data.get("status") == "success":
                 photo_url = res_data.get("url")
+                # 사진 업로드 성공 시 최종 완료 처리 함수로 릴레이
                 Clock.schedule_once(lambda dt: self._finalize_return(self._current_task_data, self._current_final_loc, photo_url))
             else:
-                raise Exception(res_data.get("message", "업로드 실패"))
+                raise Exception(res_data.get("message", "구글 드라이브 업로드 실패"))
                 
         except Exception as e:
-            Clock.schedule_once(lambda dt: App.get_running_app().show_info_popup("사진 업로드 오류", f"구글 드라이브 업로드 실패: {e}"))
+            Clock.schedule_once(lambda dt: App.get_running_app().show_info_popup("사진 업로드 오류", str(e)))
         finally:
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
