@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.4"
+CURRENT_VERSION = "1.9.6.5"
 
 
 def check_and_apply_update():
@@ -5862,12 +5862,24 @@ class ReturnInspectionPopup(Popup):
         
         main_layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10))
         
-        # 💡 1. 다중 추천/지정 로케이션 표시 영역 (흰색 글씨로 시인성 확보)
-        self.recommend_lbl = Label(
-            text="로케이션 정보를 분석 중입니다...", 
-            font_name=FONT_NAME, markup=True, color=(1, 1, 1, 1), size_hint_y=None, height=dp(100)
+ 
+        # 💡 1. 추천/지정 로케이션 표시 영역 (흰색 바탕에 검정/포인트 컬러 글씨)
+        self.recommend_box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(125), padding=dp(10))
+        with self.recommend_box.canvas.before:
+            Color(1, 1, 1, 1)  # 흰색 배경
+            self.rec_bg = RoundedRectangle(pos=self.recommend_box.pos, size=self.recommend_box.size, radius=[dp(8)])
+        self.recommend_box.bind(
+            pos=lambda i, p: setattr(self.rec_bg, "pos", p),
+            size=lambda i, s: setattr(self.rec_bg, "size", s)
         )
-        main_layout.add_widget(self.recommend_lbl)
+        
+        self.recommend_lbl = Label(
+            text="[color=212121]로케이션 정보를 분석 중입니다...[/color]", 
+            font_name=FONT_NAME, markup=True, halign="center", valign="middle"
+        )
+        self.recommend_lbl.bind(size=self.recommend_lbl.setter("text_size"))
+        self.recommend_box.add_widget(self.recommend_lbl)
+        main_layout.add_widget(self.recommend_box)
         
         # 💡 2. 수량 입력 구역 (보충 검수 화면과 완벽 동일)
         total_qty = safe_int(t(self.task_data, "지시수량", 0))
@@ -5907,6 +5919,7 @@ class ReturnInspectionPopup(Popup):
         btn_no_qr.bind(on_press=self.process_no_qr_action)
         loc_input_row.add_widget(btn_no_qr)
         main_layout.add_widget(loc_input_row)
+        main_layout.add_widget(Widget(size_hint_y=1))
         
         # 💡 4. 취소 및 수기입력 촬영 버튼
         top_button_grid = GridLayout(cols=2, size_hint_y=None, height=dp(50), spacing=dp(10))
@@ -5931,63 +5944,57 @@ class ReturnInspectionPopup(Popup):
             return True
         return False
 
-    # 💡 [요청 반영] 고객사 라인별 보유 수량 기반 복수 추천
-    # 💡 [요청 반영] 고객사 라인별 '보관' 로케이션 재고 수량 기반 표(Table) 형태 복수 추천 및 중앙 정렬
+    # 💡 [로직 확인 및 개선] 첫 알파벳(존) 기준 보관 행(PLT) 갯수 산출 및 표 출력
     def _check_recommendation(self, *args):
         if self.assign_type == "지정":
-            self.recommend_lbl.halign = "center"
-            self.recommend_lbl.valign = "middle"
-            self.recommend_lbl.bind(size=self.recommend_lbl.setter("text_size"))
-            self.recommend_lbl.text = f"지정된 적치위치: [size=20dp][b][color=64B5F6]{self.target_location}[/color][/b][/size]\n[color=B0BEC5](수량 입력 후 해당 위치를 스캔하세요)[/color]"
+            self.recommend_lbl.text = f"[color=212121]지정된 적치위치:[/color] [size=20dp][b][color=1976D2]{self.target_location}[/color][/b][/size]\n[color=757575](수량 입력 후 해당 위치를 스캔하세요)[/color]"
             return
             
         def _find_zone():
             client_name = str(t(self.task_data, "고객사", "")).strip()
-            sku_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", ""))).strip()
             
-            # 중앙 정렬 세팅을 미리 적용
-            Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'halign', 'center'))
-            Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'valign', 'middle'))
-            Clock.schedule_once(lambda dt: self.recommend_lbl.bind(size=self.recommend_lbl.setter('text_size')))
-            
-            if not client_name or not sku_name: 
-                Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', "💡 고객사 또는 SKU 정보가 없어 로케이션을 추천할 수 없습니다."))
+            if not client_name: 
+                Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', "[color=212121]💡 고객사 정보가 없어 위치를 추천할 수 없습니다.[/color]"))
                 return
             
             try:
                 inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME)
-                storage_locs = {}
+                zone_counts = defaultdict(int)
+                import re
                 
-                # 💡 [핵심] 해당 SKU이면서 F열(로케이션 유형)이 '보관'인 데이터만 추출
+                # 고객사 일치 & '보관' 유형 필터 후 로케이션의 첫 알파벳(존) 추출
                 for row in inventory:
-                    row_sku = str(t(row, "SKU", t(row, "상품명", ""))).strip()
+                    row_client = str(t(row, "고객사", t(row, "파트너명", ""))).strip()
                     row_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
                     
-                    if row_sku == sku_name and "보관" in row_type:
+                    if row_client == client_name and "보관" in row_type:
                         loc = str(t(row, "로케이션", "")).strip().upper()
-                        qty = safe_int(t(row, "로케이션 수량", t(row, "로케이션수량", 0)))
                         if loc:
-                            storage_locs[loc] = storage_locs.get(loc, 0) + qty
+                            # 정규식을 통해 공백 무시하고 가장 처음 나오는 알파벳만 확실하게 추출
+                            match = re.search(r'[A-Z]', loc)
+                            if match:
+                                zone = match.group(0) + "존"
+                                zone_counts[zone] += 1  # 행 1개당 1PLT로 누적 합산
                 
-                if storage_locs:
-                    # 수량이 많은 순으로 내림차순 정렬
-                    sorted_locs = sorted(storage_locs.items(), key=lambda x: x[1], reverse=True)
+                if zone_counts:
+                    sorted_zones = sorted(zone_counts.items(), key=lambda x: x[1], reverse=True)
+                    top_zone = sorted_zones[0][0]
                     
-                    # 💡 깔끔한 표(Table) 형태로 텍스트 조립
-                    disp_text = "[color=FFB300][b]💡 추천 보관 로케이션 (재고 많은 순)[/b][/color]\n"
-                    disp_text += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    # 흰색 바탕에 어울리는 색상과 PLT 표기 적용
+                    disp_text = f"[color=F57C00][b]💡 {client_name} 보관 로케이션 분포[/b][/color]\n"
+                    disp_text += "[color=B0BEC5]━━━━━━━━━━━━━━━━━━━━━━━[/color]\n"
                     
-                    # 상위 3~4개까지만 표로 출력 (화면이 너무 길어지지 않게 방지)
-                    for loc, qty in sorted_locs[:4]:
-                        disp_text += f"[b]{loc.ljust(15)}[/b] |   {str(qty).rjust(4)} 개 \n"
+                    for zone, cnt in sorted_zones[:3]:
+                        disp_text += f"[color=212121][b]{zone.ljust(10)}[/b] |   {str(cnt).rjust(3)} PLT[/color]\n"
                         
-                    disp_text += "━━━━━━━━━━━━━━━━━━━━━━━━"
+                    disp_text += "[color=B0BEC5]━━━━━━━━━━━━━━━━━━━━━━━[/color]\n"
+                    disp_text += f"[color=212121][{client_name}]의 원복건은 [size=18dp][color=1976D2][b]{top_zone}[/b][/color][/size] 빈 곳에 적치를 추천드립니다.[/color]"
                     
                     Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', disp_text))
                 else:
-                    Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', "💡 해당 상품의 [보관] 로케이션 재고가 없습니다."))
+                    Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', f"[color=212121]💡 [{client_name}]의 [보관] 로케이션이 없습니다.\n임의의 빈 보관 로케이션에 적치해 주세요.[/color]"))
             except Exception as e:
-                Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', f"💡 추천 로드 실패: {str(e)}"))
+                Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', f"[color=D32F2F]💡 추천 로드 실패: {str(e)}[/color]"))
                 
         threading.Thread(target=_find_zone, daemon=True).start()
 
