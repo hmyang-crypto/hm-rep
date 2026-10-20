@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.7"
+CURRENT_VERSION = "1.9.6.8"
 
 
 def check_and_apply_update():
@@ -2699,17 +2699,18 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
 
         # ========================================================
-        # 💡 [수정] 원복 화면일 땐 출고 로케이션을 가리고 원복 타겟만 노출
+        # 💡 [수정] 카드 내 적치 위치 문구 시인성 개선 (검은색 + 포인트 컬러 적용)
         # ========================================================
         is_return_mode = "원복로케이션" in self.task_data
 
         if is_return_mode:
             target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
-            if not target_loc or target_loc == "-" or target_loc == "N/A":
-                # 미지정일 경우 강조 표시
-                self.ids.lbl_loc.text = "[color=FF9800][b]미지정 (빈 곳 적치)[/b][/color]"
+            if not target_loc or target_loc in ["-", "N/A"]:
+                # 미지정일 경우: 주황색 강조
+                self.ids.lbl_loc.text = "[color=212121]적치 위치:[/color] [color=E65100][b]미지정 (빈 곳 적치)[/b][/color]"
             else:
-                self.ids.lbl_loc.text = f"적치 위치: [color=1E88E5][b]{target_loc}[/b][/color]"
+                # 지정일 경우: 진한 파란색 강조
+                self.ids.lbl_loc.text = f"[color=212121]적치 위치:[/color] [color=0D47A1][b]{target_loc}[/b][/color]"
         else:
             from_loc = str(t(self.task_data, "기존로케이션", "-"))
             to_loc = str(t(self.task_data, "보충로케이션", "-"))
