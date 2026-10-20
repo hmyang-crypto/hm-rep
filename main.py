@@ -5943,13 +5943,12 @@ class ReturnInspectionPopup(Popup):
             return True
         return False
 
-    # 💡 [개선] 표와 추천 문구를 분리하고 지정 적치위치 텍스트를 눈에 띄게 강조
+    # 💡 [개선] 스레드 조회 간극 동안 '로딩 중' 안내 표출 후 하얀 바탕 표 + 추천 문구 분리 렌더링
     def _check_recommendation(self, *args):
         if self.assign_type == "지정":
             def _draw_designated(dt):
                 self.recommend_container.clear_widgets()
                 lbl = Label(
-                    # 💡 [수정] 흰색 글씨, 빨간색 로케이션, 줄바꿈 및 폰트 크기 대폭 확대
                     text=f"[color=FFFFFF]지정된 적치위치:[/color]\n[size=32dp][b][color=FF5252]{self.target_location}[/color][/b][/size]\n[color=B0BEC5](수량 입력 후 해당 위치를 스캔하세요)[/color]",
                     font_name=FONT_NAME, markup=True, halign="center", valign="middle"
                 )
@@ -5961,10 +5960,22 @@ class ReturnInspectionPopup(Popup):
         def _find_zone():
             client_name = str(t(self.task_data, "고객사", "")).strip()
             
+            # 💡 [핵심 추가] 백그라운드 데이터 수집 전 '로딩 중' 안내 문구를 먼저 렌더링
+            def _show_loading(dt):
+                self.recommend_container.clear_widgets()
+                lbl_loading = Label(
+                    text=f"[color=FFB300][b] [{client_name}] 추천 로케이션 분석 중...[/b][/color]\n[size=12dp][color=B0BEC5]재고 데이터를 확인하고 있습니다. 잠시만 기다려주세요.[/color][/size]",
+                    font_name=FONT_NAME, markup=True, halign="center", valign="middle"
+                )
+                lbl_loading.bind(size=lbl_loading.setter("text_size"))
+                self.recommend_container.add_widget(lbl_loading)
+                
+            Clock.schedule_once(_show_loading)
+            
             if not client_name: 
                 def _draw_err1(dt):
                     self.recommend_container.clear_widgets()
-                    self.recommend_container.add_widget(Label(text="[color=FFFFFF]💡 고객사 정보가 없어 위치를 추천할 수 없습니다.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
+                    self.recommend_container.add_widget(Label(text="[color=FFFFFF] 고객사 정보가 없어 위치를 추천할 수 없습니다.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
                 Clock.schedule_once(_draw_err1)
                 return
             
@@ -5986,11 +5997,12 @@ class ReturnInspectionPopup(Popup):
                                 zone = match.group(0) + "존"
                                 zone_counts[zone] += 1
                 
+                # 데이터 수집이 끝나면 로딩 텍스트를 지우고 표 카드 렌더링
                 def _draw_table(dt):
                     self.recommend_container.clear_widgets()
                     
                     if not zone_counts:
-                        self.recommend_container.add_widget(Label(text=f"[color=FFFFFF]💡 [{client_name}]의 [보관] 로케이션이 없습니다.\n임의의 빈 보관 로케이션에 적치해 주세요.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
+                        self.recommend_container.add_widget(Label(text=f"[color=FFFFFF] [{client_name}]의 [보관] 로케이션이 없습니다.\n임의의 빈 보관 로케이션에 적치해 주세요.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
                         return
 
                     sorted_zones = sorted(zone_counts.items(), key=lambda x: x[1], reverse=True)
@@ -6046,7 +6058,7 @@ class ReturnInspectionPopup(Popup):
 
                     # 💡 2. 표 밖으로 추천 문구 분리 (흰색 텍스트)
                     lbl_rec = Label(
-                        text=f"{client_name}은 [size=16dp][color=64B5F6][b]{top_zone}[/b][/color][/size] 빈 에 적치를 추천드립니다.",
+                        text=f"{client_name}의 원복건은 [size=16dp][color=64B5F6][b]{top_zone}[/b][/color][/size] 빈 곳에 적치를 추천드립니다.",
                         font_name=FONT_NAME, font_size=dp(14), color=(1,1,1,1), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(30)
                     )
                     self.recommend_container.add_widget(lbl_rec)
@@ -6056,7 +6068,7 @@ class ReturnInspectionPopup(Popup):
             except Exception as e:
                 def _draw_err2(dt):
                     self.recommend_container.clear_widgets()
-                    self.recommend_container.add_widget(Label(text=f"[color=D32F2F]💡 추천 로드 실패: {str(e)}[/color]", font_name=FONT_NAME, markup=True, halign="center"))
+                    self.recommend_container.add_widget(Label(text=f"[color=D32F2F] 추천 로드 실패: {str(e)}[/color]", font_name=FONT_NAME, markup=True, halign="center"))
                 Clock.schedule_once(_draw_err2)
                 
         threading.Thread(target=_find_zone, daemon=True).start()
