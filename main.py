@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.1"
+CURRENT_VERSION = "1.9.6.2"
 
 
 def check_and_apply_update():
@@ -171,7 +171,7 @@ LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
 # 💡 [추가] 원복 작업 전용 상수 및 웹앱 URL
 RETURN_TASK_SHEET_NAME = "원복작업_지시서"
 RETURN_LOG_SHEET_NAME = "원복작업_로그"
-GAS_PHOTO_UPLOAD_URL = "https://script.google.com/macros/s/AKfycbwVAMVWbBgSt0JdeTx08zr8YKU93bTt8Wt6muRlyHTQlLjc08UdxTYspon2p3pRShdG/exec"
+GAS_PHOTO_UPLOAD_URL = "https://script.google.com/macros/s/AKfycbx1T2mf5sb6vigWo_8YdAR2djY7QlfE-VsJGfOFAkbM42CJEstnkSuAHE0RQ0PPp1Cx/exec"
 
 SHEET_RANGES = {
     USER_SHEET_NAME: "A:AZ",
