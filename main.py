@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.0"
+CURRENT_VERSION = "1.9.6.1"
 
 
 def check_and_apply_update():
@@ -6742,29 +6742,17 @@ class ReturnTaskListScreen(Screen):
         except Exception as e:
             App.get_running_app().show_info_popup("카메라 연동 오류", f"기본 카메라를 열 수 없습니다: {e}")
 
-    # 💡 0.5초 뒤 안전한 상태(메인 스레드)에서 처리중 팝업 띄우고 파일 추출 시작
+    # 💡 0.5초 뒤 안전한 상태(메인 UI 스레드)에서 경로를 먼저 추출 (여기서만 jnius 사용!)
     def on_camera_complete_native(self):
-        App.get_running_app().show_loading_popup()
-        threading.Thread(target=self._upload_photo_and_complete_native, daemon=True).start()
-
-    # 💡 시스템 코드 없이 순수하게 '구글 통신'만 담당하는 백그라운드 스레드
-    def _upload_photo_and_complete_native(self, real_path):
+        app = App.get_running_app()
+        app.show_loading_popup()
+        
         try:
             from jnius import autoclass
-            import base64
-            import json
-            import urllib.request
-            import os
-            import time
-            import ssl  # 💡 [추가] SSL 모듈 불러오기
-
-            # 안드로이드 시스템이 사진 파일을 디스크에 완전히 쓸 수 있도록 0.5초 여유 확보
-            time.sleep(0.5)
-
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             context = PythonActivity.mActivity.getApplicationContext()
             
-            # 보안 경로(content://)에서 실제 파일 경로(Real Path) 역추적
+            # 메인 스레드에서 안전하게 경로 역추적
             cursor = context.getContentResolver().query(self.image_uri, ["_data"], None, None, None)
             real_path = None
             if cursor:
@@ -6773,9 +6761,29 @@ class ReturnTaskListScreen(Screen):
                 cursor.close()
 
             if not real_path or not os.path.exists(real_path):
-                raise Exception(f"안드로이드 권한 정책으로 저장된 사진을 읽을 수 없습니다.\n경로: {real_path}")
+                raise Exception("사진 파일을 찾을 수 없거나 시스템 권한이 없습니다.")
+                
+            # 찾아낸 텍스트 경로(real_path)만 백그라운드 배달원(Thread)에게 넘김
+            threading.Thread(target=self._upload_photo_and_complete_native, args=(real_path,), daemon=True).start()
 
-            # 추출해낸 진짜 파일 경로로 사진을 읽어서 텍스트(Base64)로 변환
+        except Exception as e:
+            app.dismiss_loading_popup()
+            app.show_info_popup("사진 로드 오류", str(e))
+
+    # 💡 시스템(jnius) 코드 없이 순수하게 '구글 통신'만 담당하는 백그라운드 스레드
+    def _upload_photo_and_complete_native(self, real_path):
+        try:
+            # 🚨 jnius 관련 코드가 이곳에서 완전히 삭제되었습니다!
+            import base64
+            import json
+            import urllib.request
+            import ssl
+            import time
+
+            # 파일 작성이 끝날 때까지 0.5초 대기
+            time.sleep(0.5)
+
+            # 파일 읽어서 Base64 텍스트로 변환
             with open(real_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
 
@@ -6785,25 +6793,22 @@ class ReturnTaskListScreen(Screen):
                 "base64Data": encoded_string
             }
 
-            # 💡 [핵심 해결] 안드로이드 Kivy 환경의 SSL 인증서 검사 안전 우회
+            # SSL 인증서 무시 (에러 해결)
             ssl_context = ssl._create_unverified_context()
 
             req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            
-            # 💡 [핵심 해결] urlopen에 context=ssl_context 파라미터 추가
             with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
 
             if res_data.get("status") == "success":
                 photo_url = res_data.get("url")
-                # 사진 업로드 성공 시 최종 완료 처리 함수로 릴레이
+                # 팝업 닫기 및 마무리를 위해 다시 메인 스레드로 넘김
                 Clock.schedule_once(lambda dt: self._finalize_return(self._current_task_data, self._current_final_loc, photo_url))
             else:
                 raise Exception(res_data.get("message", "구글 드라이브 업로드 실패"))
                 
         except Exception as e:
             Clock.schedule_once(lambda dt, err=str(e): App.get_running_app().show_info_popup("사진 업로드 오류", err))
-        finally:
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
     def _finalize_return(self, task_data, final_loc, photo_url):
