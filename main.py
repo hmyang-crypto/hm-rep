@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.5.7"
+CURRENT_VERSION = "1.9.5.8"
 
 
 def check_and_apply_update():
@@ -6742,22 +6742,16 @@ class ReturnTaskListScreen(Screen):
             App.get_running_app().show_info_popup("카메라 연동 오류", f"기본 카메라를 열 수 없습니다: {e}")
 
     # 체크 버튼을 누른 후 백그라운드 업로드 시작
+   # 💡 [수정됨] 체크 버튼을 누른 후 메인 스레드에서 안전하게 경로를 추출
     def on_camera_complete_native(self):
         App.get_running_app().show_loading_popup()
-        threading.Thread(target=self._upload_photo_and_complete_native, daemon=True).start()
-
-    # 확보한 사진 파일을 구글 드라이브로 쏘는 함수
-    def _upload_photo_and_complete_native(self):
+        
         try:
             from jnius import autoclass
-            import base64
-            import json
-            import urllib.request
-
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             context = PythonActivity.mActivity.getApplicationContext()
             
-            # 💡 4. 보안 경로(content://)에서 실제 파일 경로(Real Path) 역추적
+            # 백그라운드 스레드가 아닌 메인 UI 스레드에서 시스템에 접근하여 먹통(무한로딩) 방지
             cursor = context.getContentResolver().query(self.image_uri, ["_data"], None, None, None)
             real_path = None
             if cursor:
@@ -6766,9 +6760,23 @@ class ReturnTaskListScreen(Screen):
                 cursor.close()
 
             if not real_path or not os.path.exists(real_path):
-                raise Exception("저장된 사진 파일을 찾을 수 없거나 접근 권한이 없습니다.")
+                raise Exception("사진 파일을 찾을 수 없거나 시스템 접근 권한이 없습니다.")
+                
+            # 안전하게 찾은 파일 경로를 백그라운드 배달원(Thread)에게 넘겨서 업로드 시작
+            threading.Thread(target=self._upload_photo_and_complete_native, args=(real_path,), daemon=True).start()
 
-            # 추출해낸 진짜 파일 경로로 사진을 읽어서 텍스트(Base64)로 변환
+        except Exception as e:
+            App.get_running_app().dismiss_loading_popup()
+            App.get_running_app().show_info_popup("사진 로드 오류", str(e))
+
+    # 💡 [수정됨] 추출해낸 사진 파일을 구글 드라이브로 쏘는 함수 (시스템 호출 제거됨)
+    def _upload_photo_and_complete_native(self, real_path):
+        try:
+            import base64
+            import json
+            import urllib.request
+            import os
+
             with open(real_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
 
