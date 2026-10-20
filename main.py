@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.2"
+CURRENT_VERSION = "1.9.6.4"
 
 
 def check_and_apply_update():
@@ -5932,42 +5932,62 @@ class ReturnInspectionPopup(Popup):
         return False
 
     # 💡 [요청 반영] 고객사 라인별 보유 수량 기반 복수 추천
+    # 💡 [요청 반영] 고객사 라인별 '보관' 로케이션 재고 수량 기반 표(Table) 형태 복수 추천 및 중앙 정렬
     def _check_recommendation(self, *args):
         if self.assign_type == "지정":
+            self.recommend_lbl.halign = "center"
+            self.recommend_lbl.valign = "middle"
+            self.recommend_lbl.bind(size=self.recommend_lbl.setter("text_size"))
             self.recommend_lbl.text = f"지정된 적치위치: [size=20dp][b][color=64B5F6]{self.target_location}[/color][/b][/size]\n[color=B0BEC5](수량 입력 후 해당 위치를 스캔하세요)[/color]"
             return
             
         def _find_zone():
             client_name = str(t(self.task_data, "고객사", "")).strip()
-            if not client_name: 
-                Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', "💡 고객사 정보가 없어 추천할 수 없습니다."))
+            sku_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", ""))).strip()
+            
+            # 중앙 정렬 세팅을 미리 적용
+            Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'halign', 'center'))
+            Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'valign', 'middle'))
+            Clock.schedule_once(lambda dt: self.recommend_lbl.bind(size=self.recommend_lbl.setter('text_size')))
+            
+            if not client_name or not sku_name: 
+                Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', "💡 고객사 또는 SKU 정보가 없어 로케이션을 추천할 수 없습니다."))
                 return
             
             try:
                 inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME)
-                zone_counts = defaultdict(int)
-                for row in inventory:
-                    if str(t(row, "고객사", t(row, "파트너명", ""))).strip() == client_name:
-                        loc = str(t(row, "로케이션", "")).strip().upper()
-                        if loc: zone_counts[loc[0] + "존"] += 1
+                storage_locs = {}
                 
-                if zone_counts:
-                    # 내림차순 정렬 후 상위 3개 추출
-                    sorted_zones = sorted(zone_counts.items(), key=lambda x: x[1], reverse=True)
-                    top_zone = sorted_zones[0][0]
+                # 💡 [핵심] 해당 SKU이면서 F열(로케이션 유형)이 '보관'인 데이터만 추출
+                for row in inventory:
+                    row_sku = str(t(row, "SKU", t(row, "상품명", ""))).strip()
+                    row_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
                     
-                    summary_lines = [f"{z}({cnt}라인)" for z, cnt in sorted_zones[:3]]
-                    summary_str = " / ".join(summary_lines)
+                    if row_sku == sku_name and "보관" in row_type:
+                        loc = str(t(row, "로케이션", "")).strip().upper()
+                        qty = safe_int(t(row, "로케이션 수량", t(row, "로케이션수량", 0)))
+                        if loc:
+                            storage_locs[loc] = storage_locs.get(loc, 0) + qty
+                
+                if storage_locs:
+                    # 수량이 많은 순으로 내림차순 정렬
+                    sorted_locs = sorted(storage_locs.items(), key=lambda x: x[1], reverse=True)
                     
-                    disp_text = (
-                        f"💡 [b]{client_name}[/b] 보관 라인: {summary_str}\n\n"
-                        f"➡️ 추천 빈 적치존: [size=20dp][b][color=FFB300]{top_zone}[/color][/b][/size]"
-                    )
+                    # 💡 깔끔한 표(Table) 형태로 텍스트 조립
+                    disp_text = "[color=FFB300][b]💡 추천 보관 로케이션 (재고 많은 순)[/b][/color]\n"
+                    disp_text += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    
+                    # 상위 3~4개까지만 표로 출력 (화면이 너무 길어지지 않게 방지)
+                    for loc, qty in sorted_locs[:4]:
+                        disp_text += f"[b]{loc.ljust(15)}[/b] |   {str(qty).rjust(4)} 개 \n"
+                        
+                    disp_text += "━━━━━━━━━━━━━━━━━━━━━━━━"
+                    
                     Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', disp_text))
                 else:
-                    Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', "💡 추천 불가 (고객사 재고 없음)"))
-            except Exception:
-                pass
+                    Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', "💡 해당 상품의 [보관] 로케이션 재고가 없습니다."))
+            except Exception as e:
+                Clock.schedule_once(lambda dt: setattr(self.recommend_lbl, 'text', f"💡 추천 로드 실패: {str(e)}"))
                 
         threading.Thread(target=_find_zone, daemon=True).start()
 
@@ -6678,7 +6698,7 @@ class ReturnTaskListScreen(Screen):
                     "상태": "원복실패",
                     "비고": f"[실패사유] {reason.strip()}",
                     # 💡 [헤더 반영] 작업자
-                    "작업자": app.user_real_name,
+                    "보충담당": app.user_real_name,
                     "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 app.show_loading_popup()
@@ -6838,7 +6858,7 @@ class ReturnTaskListScreen(Screen):
             "최종적치": final_loc,
             "확인수량": str(final_qty),
             "비고": updated_remarks,
-            "작업자": app.user_real_name,
+            "보충담당": app.user_real_name,
             "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "사진": photo_url
         }
