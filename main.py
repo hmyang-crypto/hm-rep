@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.6"
+CURRENT_VERSION = "1.9.6.7"
 
 
 def check_and_apply_update():
@@ -2698,11 +2698,23 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
         self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
 
-        from_loc = str(t(self.task_data, "기존로케이션", "-"))
-        to_loc = str(t(self.task_data, "보충로케이션", "-"))
-        self.ids.lbl_loc.text = (
-            f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
-        )
+        # ========================================================
+        # 💡 [수정] 원복 화면일 땐 출고 로케이션을 가리고 원복 타겟만 노출
+        # ========================================================
+        is_return_mode = "원복로케이션" in self.task_data
+
+        if is_return_mode:
+            target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
+            if not target_loc or target_loc == "-" or target_loc == "N/A":
+                # 미지정일 경우 강조 표시
+                self.ids.lbl_loc.text = "[color=FF9800][b]미지정 (빈 곳 적치)[/b][/color]"
+            else:
+                self.ids.lbl_loc.text = f"적치 위치: [color=1E88E5][b]{target_loc}[/b][/color]"
+        else:
+            from_loc = str(t(self.task_data, "기존로케이션", "-"))
+            to_loc = str(t(self.task_data, "보충로케이션", "-"))
+            self.ids.lbl_loc.text = f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
+        # ========================================================
 
         conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
         active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
@@ -5863,9 +5875,9 @@ class ReturnInspectionPopup(Popup):
         main_layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10))
         
  
-        # 💡 1. 표가 들어갈 빈 공간 (컨테이너) 세팅
+        # 💡 1. 표가 들어갈 빈 공간 (컨테이너) 세팅 (여백 및 높이 대폭 확대)
         self.recommend_container = BoxLayout(
-            orientation="vertical", size_hint_y=None, height=dp(170), padding=(0, dp(5))
+            orientation="vertical", size_hint_y=None, height=dp(195), padding=(0, dp(10)), spacing=dp(12)
         )
         main_layout.add_widget(self.recommend_container)
         
@@ -5931,13 +5943,14 @@ class ReturnInspectionPopup(Popup):
             return True
         return False
 
-    # 💡 [개선] SKU 검색 화면과 동일한 UI의 표(Table) 생성 및 추천 문구 추가
+    # 💡 [개선] 표와 추천 문구를 분리하고 지정 적치위치 텍스트를 눈에 띄게 강조
     def _check_recommendation(self, *args):
         if self.assign_type == "지정":
             def _draw_designated(dt):
                 self.recommend_container.clear_widgets()
                 lbl = Label(
-                    text=f"[color=212121]지정된 적치위치:[/color] [size=20dp][b][color=1976D2]{self.target_location}[/color][/b][/size]\n[color=757575](수량 입력 후 해당 위치를 스캔하세요)[/color]",
+                    # 💡 [수정] 흰색 글씨, 빨간색 로케이션, 줄바꿈 및 폰트 크기 대폭 확대
+                    text=f"[color=FFFFFF]지정된 적치위치:[/color]\n[size=32dp][b][color=FF5252]{self.target_location}[/color][/b][/size]\n[color=B0BEC5](수량 입력 후 해당 위치를 스캔하세요)[/color]",
                     font_name=FONT_NAME, markup=True, halign="center", valign="middle"
                 )
                 lbl.bind(size=lbl.setter("text_size"))
@@ -5951,7 +5964,7 @@ class ReturnInspectionPopup(Popup):
             if not client_name: 
                 def _draw_err1(dt):
                     self.recommend_container.clear_widgets()
-                    self.recommend_container.add_widget(Label(text="[color=212121]💡 고객사 정보가 없어 위치를 추천할 수 없습니다.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
+                    self.recommend_container.add_widget(Label(text="[color=FFFFFF]💡 고객사 정보가 없어 위치를 추천할 수 없습니다.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
                 Clock.schedule_once(_draw_err1)
                 return
             
@@ -5977,14 +5990,14 @@ class ReturnInspectionPopup(Popup):
                     self.recommend_container.clear_widgets()
                     
                     if not zone_counts:
-                        self.recommend_container.add_widget(Label(text=f"[color=212121]💡 [{client_name}]의 [보관] 로케이션이 없습니다.\n임의의 빈 보관 로케이션에 적치해 주세요.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
+                        self.recommend_container.add_widget(Label(text=f"[color=FFFFFF]💡 [{client_name}]의 [보관] 로케이션이 없습니다.\n임의의 빈 보관 로케이션에 적치해 주세요.[/color]", font_name=FONT_NAME, markup=True, halign="center"))
                         return
 
                     sorted_zones = sorted(zone_counts.items(), key=lambda x: x[1], reverse=True)
                     top_zone = sorted_zones[0][0]
                     
-                    # 💡 하얀 바탕 카드 생성
-                    card = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(155), padding=dp(10), spacing=dp(5))
+                    # 💡 1. 하얀 바탕 카드 생성 (표 데이터만 담음)
+                    card = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(115), padding=dp(8), spacing=dp(5))
                     with card.canvas.before:
                         Color(1, 1, 1, 1)
                         bg_rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(8)])
@@ -5993,43 +6006,34 @@ class ReturnInspectionPopup(Popup):
                         size=lambda i, s, b=bg_rect: setattr(b, "size", s)
                     )
                     
-                    # 고객사명 타이틀
                     lbl_title = Label(
-                        text=f"[b]{client_name}[/b]", font_name=FONT_NAME, font_size=dp(15), color=TEXT_DARK, 
-                        markup=True, halign="left", valign="middle", size_hint_y=None, height=dp(25)
+                        text=f"[b]{client_name}[/b]", font_name=FONT_NAME, font_size=dp(14), color=TEXT_DARK, 
+                        markup=True, halign="left", valign="middle", size_hint_y=None, height=dp(20)
                     )
                     lbl_title.bind(size=lambda i, s: setattr(i, "text_size", s))
                     card.add_widget(lbl_title)
                     
-                    # 그리드 표 생성
                     table_grid = GridLayout(cols=3, size_hint_y=None, spacing=dp(1))
-                    table_grid.height = dp(25) + (len(sorted_zones[:3]) * dp(22))
+                    table_grid.height = dp(25) + (len(sorted_zones[:3]) * dp(20))
                     
-                    # 헤더 생성 (유형 / 존 / 수량)
                     for h in ["유형", "존", "수량"]:
                         th = Label(text=f"[b]{h}[/b]", font_name=FONT_NAME, font_size=dp(11), color=get_color_from_hex("#37474F"), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(25))
-                        with th.canvas.before:
-                            Color(0.9, 0.93, 0.95, 1)
-                            r = Rectangle(pos=th.pos, size=th.size)
+                        with th.canvas.before: Color(0.9, 0.93, 0.95, 1); r = Rectangle(pos=th.pos, size=th.size)
                         th.bind(pos=lambda i, p, r_ref=r: setattr(r_ref, "pos", p), size=lambda i, s, r_ref=r: setattr(r_ref, "size", s))
                         table_grid.add_widget(th)
                     
-                    # 데이터 행 생성
                     for idx, (zone, cnt) in enumerate(sorted_zones[:3]):
                         bg_c = (0.97, 0.97, 0.97, 1) if idx % 2 == 1 else (1, 1, 1, 1)
                         
-                        # 보관 (회색)
-                        td_type = Label(text="보관", font_name=FONT_NAME, font_size=dp(11), color=TEXT_MUTED, halign="center", valign="middle", size_hint_y=None, height=dp(22))
+                        td_type = Label(text="보관", font_name=FONT_NAME, font_size=dp(11), color=TEXT_MUTED, halign="center", valign="middle", size_hint_y=None, height=dp(20))
                         with td_type.canvas.before: Color(*bg_c); r1 = Rectangle(pos=td_type.pos, size=td_type.size)
                         td_type.bind(pos=lambda i, p, r=r1: setattr(r, "pos", p), size=lambda i, s, r=r1: setattr(r, "size", s))
                         
-                        # 존 (빨간색)
-                        td_zone = Label(text=f"[b][color=D32F2F]{zone}[/color][/b]", font_name=FONT_NAME, font_size=dp(12), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(22))
+                        td_zone = Label(text=f"[b][color=D32F2F]{zone}[/color][/b]", font_name=FONT_NAME, font_size=dp(12), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(20))
                         with td_zone.canvas.before: Color(*bg_c); r2 = Rectangle(pos=td_zone.pos, size=td_zone.size)
                         td_zone.bind(pos=lambda i, p, r=r2: setattr(r, "pos", p), size=lambda i, s, r=r2: setattr(r, "size", s))
                         
-                        # 수량 (파란색)
-                        td_qty = Label(text=f"[b][color=1E88E5]{cnt} PLT[/color][/b]", font_name=FONT_NAME, font_size=dp(12), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(22))
+                        td_qty = Label(text=f"[b][color=1E88E5]{cnt} PLT[/color][/b]", font_name=FONT_NAME, font_size=dp(12), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(20))
                         with td_qty.canvas.before: Color(*bg_c); r3 = Rectangle(pos=td_qty.pos, size=td_qty.size)
                         td_qty.bind(pos=lambda i, p, r=r3: setattr(r, "pos", p), size=lambda i, s, r=r3: setattr(r, "size", s))
                         
@@ -6038,15 +6042,14 @@ class ReturnInspectionPopup(Popup):
                         table_grid.add_widget(td_qty)
                         
                     card.add_widget(table_grid)
-                    
-                    # 💡 하단 추천 문구
-                    lbl_rec = Label(
-                        text=f"{client_name}의 원복건은 [color=1E88E5][b]{top_zone}[/b][/color] 빈 곳에 적치를 추천드립니다.",
-                        font_name=FONT_NAME, font_size=dp(13), color=TEXT_DARK, markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(25)
-                    )
-                    card.add_widget(lbl_rec)
-                    
                     self.recommend_container.add_widget(card)
+
+                    # 💡 2. 표 밖으로 추천 문구 분리 (흰색 텍스트)
+                    lbl_rec = Label(
+                        text=f"{client_name}은 [size=16dp][color=64B5F6][b]{top_zone}[/b][/color][/size] 빈 에 적치를 추천드립니다.",
+                        font_name=FONT_NAME, font_size=dp(14), color=(1,1,1,1), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(30)
+                    )
+                    self.recommend_container.add_widget(lbl_rec)
 
                 Clock.schedule_once(_draw_table)
                 
