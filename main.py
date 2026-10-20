@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.8"
+CURRENT_VERSION = "1.9.6.9"
 
 
 def check_and_apply_update():
@@ -167,6 +167,7 @@ TASK_SHEET_NAME = "보충작업_지시서"
 LOG_SHEET_NAME = "작업완료_로그"
 FCM_TOKEN_SHEET_NAME = "FCM_토큰"
 LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
+LOCATION_CAPA_MASTER_SHEET_NAME = "로케이션 케파"
 
 # 💡 [추가] 원복 작업 전용 상수 및 웹앱 URL
 RETURN_TASK_SHEET_NAME = "원복작업_지시서"
@@ -181,6 +182,7 @@ SHEET_RANGES = {
     LOCATION_CAPA_SHEET_NAME: "A:J",
     RETURN_TASK_SHEET_NAME: "A:AZ",  # 💡 필수 추가
     RETURN_LOG_SHEET_NAME: "A:AZ",   # 💡 필수 추가
+    LOCATION_CAPA_MASTER_SHEET_NAME: "A:G"
 }
 
 try:
@@ -2100,92 +2102,48 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(perf_card)
 
-        # 💡 [수정 구역] 메인 버튼들 6개 ( 한 줄에 2개씩 2열 GridLayout 적용 )
+        # 💡 메인 버튼 8개 (2열 4행 구조)
         menu_grid = GridLayout(
             cols=2,
             spacing=dp(6),
             size_hint_y=None,
-            height=dp(140)  # 3행 2열 높이에 맞춰 최적화
+            height=dp(185)  # 4행 높이에 맞춰 조정
         )
 
-        btn_replenish = StyledButton(
-            text="[보충] 보충 작업",
-            bg_color=PRIMARY_BLUE,
-            font_size=dp(12),
-        )
-        btn_replenish.bind(
-            on_press=lambda x: setattr(
-                self.manager, "current", "unified_replenish"
-            )
-        )
+        btn_replenish = StyledButton(text="[보충] 보충 작업", bg_color=PRIMARY_BLUE, font_size=dp(12))
+        btn_replenish.bind(on_press=lambda x: setattr(self.manager, "current", "unified_replenish"))
 
-        # 💡 [신규 추가] 원복 작업 버튼 생성
-        btn_return = StyledButton(
-            text="[원복] 원복 작업",
-            bg_color=get_color_from_hex("#2E7D32"),  # 주황색 계열로 확연한 구분
-            font_size=dp(12),
-        )
-        btn_return.bind(
-            on_press=lambda x: setattr(
-                self.manager, "current", "return_task_list"
-            )
-        )
+        btn_return = StyledButton(text="[원복] 원복 작업", bg_color=get_color_from_hex("#2E7D32"), font_size=dp(12))
+        btn_return.bind(on_press=lambda x: setattr(self.manager, "current", "return_task_list"))
 
-        btn_inspect = StyledButton(
-            text="[검수] 검수 목록 보기",
-            bg_color=get_color_from_hex("#00897B"),
-            font_size=dp(12),
-        )
+        btn_inspect = StyledButton(text="[검수] 검수 목록 보기", bg_color=get_color_from_hex("#00897B"), font_size=dp(12))
         btn_inspect.bind(on_press=self.go_to_inspect)
 
-        btn_dashboard = StyledButton(
-            text="[현황] 전체 작업 현황판",
-            bg_color=get_color_from_hex("#3F51B5"),
-            font_size=dp(12),
-        )
-        btn_dashboard.bind(
-            on_press=lambda x: setattr(
-                self.manager, "current", "admin_dashboard"
-            )
-        )
+        # 💡 [신규] 오피킹 원복 버튼
+        btn_opeaking_return = StyledButton(text="[원복] 오피킹 원복", bg_color=get_color_from_hex("#D84315"), font_size=dp(12))
+        btn_opeaking_return.bind(on_press=lambda x: setattr(self.manager, "current", "opeaking_return"))
 
-        btn_emergency = StyledButton(
-            text="보충 요청",
-            bg_color=get_color_from_hex("#D32F2F"),
-            font_size=dp(12),
-        )
-        btn_emergency.bind(
-            on_press=lambda x: setattr(
-                self.manager, "current", "emergency_replenish"
-            )
-        )
+        btn_dashboard = StyledButton(text="[현황] 전체 작업 현황판", bg_color=get_color_from_hex("#3F51B5"), font_size=dp(12))
+        btn_dashboard.bind(on_press=lambda x: setattr(self.manager, "current", "admin_dashboard"))
 
-        btn_sku_loc = StyledButton(
-            text="SKU별 로케이션 검색",
-            bg_color=get_color_from_hex("#E65100"),
-            font_size=dp(11),
-        )
-        btn_sku_loc.bind(
-            on_press=lambda x: setattr(
-                self.manager, "current", "sku_location_search"
-            )
-        )
+        btn_emergency = StyledButton(text="보충 요청", bg_color=get_color_from_hex("#D32F2F"), font_size=dp(12))
+        btn_emergency.bind(on_press=lambda x: setattr(self.manager, "current", "emergency_replenish"))
 
-        btn_recent = StyledButton(
-            text="금일 완료 이력 (최근)",
-            bg_color=get_color_from_hex("#43A047"),
-            font_size=dp(11),
-        )
+        btn_sku_loc = StyledButton(text="SKU별 로케이션 검색", bg_color=get_color_from_hex("#E65100"), font_size=dp(11))
+        btn_sku_loc.bind(on_press=lambda x: setattr(self.manager, "current", "sku_location_search"))
+
+        btn_recent = StyledButton(text="금일 완료 이력 (최근)", bg_color=get_color_from_hex("#43A047"), font_size=dp(11))
         btn_recent.bind(on_press=lambda x: RecentCompletedPopup.open_safely())
 
-        # 버튼 6개 순서대로 추가
-        menu_grid.add_widget(btn_replenish)
-        menu_grid.add_widget(btn_return)
-        menu_grid.add_widget(btn_inspect)
-        menu_grid.add_widget(btn_dashboard)
-        menu_grid.add_widget(btn_emergency)
-        menu_grid.add_widget(btn_sku_loc)
-        menu_grid.add_widget(btn_recent)
+        # 요청하신 순서대로 8개 추가
+        menu_grid.add_widget(btn_replenish)       # 보충작업
+        menu_grid.add_widget(btn_return)          # 원복작업
+        menu_grid.add_widget(btn_inspect)         # 검수
+        menu_grid.add_widget(btn_opeaking_return) # 오피킹원복 (신규)
+        menu_grid.add_widget(btn_dashboard)       # 작업현황판
+        menu_grid.add_widget(btn_emergency)       # 보충요청
+        menu_grid.add_widget(btn_sku_loc)         # sku별 로케이션 검색
+        menu_grid.add_widget(btn_recent)          # 금일 완료 이력
 
         self.layout.add_widget(menu_grid)
 
@@ -3750,6 +3708,157 @@ class UnifiedReplenishScreen(Screen):
         elif action_name == "complete":
             App.get_running_app().current_list_type = "보충인원"
             task_list_screen.process_task(dummy_card)
+
+# =========================================================================
+# 💡 [신규] 오피킹 원복 전용 화면 (연속 스캔 & 오원복 방지 2-Step)
+# =========================================================================
+class OpeakingReturnScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.step = "WAIT_PRODUCT"  # "WAIT_PRODUCT" 또는 "WAIT_LOCATION"
+        self.target_barcode = ""
+        self.target_location = ""
+        self.completed_count = 0
+
+        self.layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(10))
+
+        # 상단 바
+        top_bar = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(8))
+        btn_back = StyledButton(text="< 메인", size_hint_x=0.2, bg_color=get_color_from_hex("#78909C"))
+        btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "main_menu"))
+
+        lbl_title = Label(text="📦 오피킹 원복 (출고 로케이션)", font_name=FONT_NAME, font_size=dp(16), bold=True, color=TEXT_DARK)
+        self.lbl_count = Label(text="금일 완료: 0건", font_name=FONT_NAME, font_size=dp(12), color=PRIMARY_BLUE, size_hint_x=0.3)
+
+        top_bar.add_widget(btn_back)
+        top_bar.add_widget(lbl_title)
+        top_bar.add_widget(self.lbl_count)
+        self.layout.add_widget(top_bar)
+
+        # 메인 카드 영역 (현재 스캔 및 상태 안내)
+        self.main_card = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10), size_hint_y=None, height=dp(250))
+        with self.main_card.canvas.before:
+            Color(1, 1, 1, 1)
+            self.card_bg = RoundedRectangle(pos=self.main_card.pos, size=self.main_card.size, radius=[dp(12)])
+        self.main_card.bind(
+            pos=lambda i, p: setattr(self.card_bg, "pos", p),
+            size=lambda i, s: setattr(self.card_bg, "size", s)
+        )
+
+        self.lbl_status = Label(
+            text="[size=18dp][b][color=1976D2]1. 상품 바코드를 스캔하세요[/color][/b][/size]",
+            font_name=FONT_NAME, markup=True, halign="center", valign="middle"
+        )
+        self.lbl_status.bind(size=self.lbl_status.setter("text_size"))
+
+        self.lbl_info = Label(
+            text="[color=757575]대기 중...[/color]",
+            font_name=FONT_NAME, markup=True, halign="center", valign="middle"
+        )
+        self.lbl_info.bind(size=self.lbl_info.setter("text_size"))
+
+        self.main_card.add_widget(self.lbl_status)
+        self.main_card.add_widget(self.lbl_info)
+        self.layout.add_widget(self.main_card)
+
+        # 여백
+        self.layout.add_widget(Widget())
+        self.add_widget(self.layout)
+
+    def on_enter(self):
+        self.reset_to_step1()
+
+    def reset_to_step1(self):
+        self.step = "WAIT_PRODUCT"
+        self.target_barcode = ""
+        self.target_location = ""
+        self.lbl_status.text = "[size=18dp][b][color=1976D2]1. 상품 바코드를 스캔하세요[/color][/b][/size]"
+        self.lbl_info.text = "[color=757575]카트/바구니의 오피킹 상품 스캔 대기 중...[/color]"
+
+    def handle_barcode_scan(self, barcode):
+        scanned_code = str(barcode).strip().upper()
+
+        if self.step == "WAIT_PRODUCT":
+            self.process_product_scan(scanned_code)
+        elif self.step == "WAIT_LOCATION":
+            self.process_location_scan(scanned_code)
+
+    # 1-Step: 상품 스캔 ➔ 로케이션 케파 시트(F열:바코드, G열:로케이션) 조회
+    def process_product_scan(self, barcode):
+        app = App.get_running_app()
+        app.show_loading_popup()
+
+        def _async_search():
+            try:
+                master_data = get_sheet_data(LOCATION_CAPA_MASTER_SHEET_NAME, force_refresh=True)
+                matched_locs = []
+
+                for row in master_data:
+                    # F열: 바코드, G열: 로케이션
+                    row_bc = str(t(row, "바코드", "")).strip().upper()
+                    row_loc = str(t(row, "로케이션", "")).strip().upper()
+
+                    if row_bc == barcode and row_loc:
+                        matched_locs.append(row_loc)
+
+                matched_locs = list(set(matched_locs))  # 중복 제거
+
+                # 💡 예외 처리 1: 2개 이상 할당된 경우 ➔ 관리자 문의
+                if len(matched_locs) >= 2:
+                    Clock.schedule_once(lambda dt: app.show_info_popup(
+                        "🚨 관리자 문의 필요",
+                        f"스캔 바코드: [{barcode}]\n\n[color=D32F2F][b]해당 SKU에 출고 로케이션이 2개 이상 존재합니다![/b][/color]\n전산 확인 후 진행하세요.\n\n• 중복 발견: {', '.join(matched_locs)}"
+                    ))
+                    Clock.schedule_once(lambda dt: self.reset_to_step1())
+
+                # 💡 예외 처리 2: 0개인 경우 ➔ 미등록 팝업
+                elif len(matched_locs) == 0:
+                    Clock.schedule_once(lambda dt: app.show_info_popup(
+                        "⚠️ 미등록 상품",
+                        f"스캔 바코드: [{barcode}]\n\n[로케이션 케파] 시트에 등록된 출고 로케이션이 없습니다."
+                    ))
+                    Clock.schedule_once(lambda dt: self.reset_to_step1())
+
+                # 💡 정상 1개 매칭
+                else:
+                    target_loc = matched_locs[0]
+                    Clock.schedule_once(lambda dt: self.set_step2_location(barcode, target_loc))
+
+            except Exception as e:
+                Clock.schedule_once(lambda dt: app.show_info_popup("조회 오류", str(e)))
+                Clock.schedule_once(lambda dt: self.reset_to_step1())
+            finally:
+                Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
+
+        threading.Thread(target=_async_search, daemon=True).start()
+
+    def set_step2_location(self, barcode, target_loc):
+        self.step = "WAIT_LOCATION"
+        self.target_barcode = barcode
+        self.target_location = target_loc
+
+        self.lbl_status.text = f"[color=212121]바코드:[/color] [color=1E88E5]{barcode}[/color]\n\n[size=32dp][b][color=D32F2F]{target_loc}[/color][/b][/size]"
+        self.lbl_info.text = f"[size=16dp][color=2E7D32][b]2. {target_loc} 로케이션 QR을 스캔하세요[/b][/color][/size]"
+        App.get_running_app().show_toast(f"목표 로케이션: {target_loc}")
+
+    # 2-Step: 로케이션 QR 검증
+    def process_location_scan(self, scanned_loc):
+        app = App.get_running_app()
+
+        if scanned_loc == self.target_location:
+            # ⭕ 위치 일치 ➔ 성공
+            self.completed_count += 1
+            self.lbl_count.text = f"금일 완료: {self.completed_count}건"
+            app.show_toast(f"✅ 원복 완료! ({self.target_location})")
+            self.reset_to_step1()
+        else:
+            # ❌ 불일치 ➔ Hard-Lock
+            app.show_info_popup(
+                "🚨 위치 불일치 (오원복 경고)",
+                f"목표 위치: [size=22dp][color=1E88E5][b]{self.target_location}[/b][/color][/size]\n"
+                f"스캔 위치: [size=22dp][color=D32F2F][b]{scanned_loc}[/b][/color][/size]\n\n"
+                f"올바른 로케이션 위치로 이동 후 다시 스캔하세요!"
+            )
 
 
 # --- 검수 및 액션 처리 전용 화면 ---
@@ -7039,6 +7148,7 @@ class MainApp(App):
         
         sm.add_widget(CompletedHistoryScreen(name="completed_history"))
         sm.add_widget(SettingsScreen(name="settings"))
+        sm.add_widget(OpeakingReturnScreen(name="opeaking_return"))
 
         sm.current = "name_entry"
 
