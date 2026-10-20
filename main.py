@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.6.9"
+CURRENT_VERSION = "1.9.7.0"
 
 
 def check_and_apply_update():
@@ -3710,7 +3710,7 @@ class UnifiedReplenishScreen(Screen):
             task_list_screen.process_task(dummy_card)
 
 # =========================================================================
-# 💡 [신규/보완] 오피킹 원복 전용 화면 (수기입력 & QR없음 대응 완결판)
+# 💡 [최종 수정] 오피킹 원복 전용 화면 (초고속 캐싱 + 입력창 UI + 최근 10건 이력)
 # =========================================================================
 class OpeakingReturnScreen(Screen):
     def __init__(self, **kwargs):
@@ -3718,53 +3718,62 @@ class OpeakingReturnScreen(Screen):
         self.step = "WAIT_PRODUCT"  # "WAIT_PRODUCT" 또는 "WAIT_LOCATION"
         self.target_barcode = ""
         self.target_location = ""
-        self.completed_count = 0
+        self.recent_history = []  # 최근 원복 10건 메모리 배열
 
-        self.layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(10))
+        self.layout = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
 
-        # 1. 상단 바 (뒤로가기, 타이틀, 완료건수)
-        top_bar = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(8))
-        btn_back = StyledButton(text="< 메인", size_hint_x=0.2, bg_color=get_color_from_hex("#78909C"))
+        # 1. 상단 바 (뒤로가기, 타이틀, 갱신 버튼)
+        top_bar = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(6))
+        btn_back = StyledButton(text="< 메인", size_hint_x=0.18, bg_color=get_color_from_hex("#78909C"))
         btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "main_menu"))
 
-        lbl_title = Label(text="📦 오피킹 원복 (출고 로케이션)", font_name=FONT_NAME, font_size=dp(16), bold=True, color=TEXT_DARK)
-        self.lbl_count = Label(text="금일 완료: 0건", font_name=FONT_NAME, font_size=dp(12), color=PRIMARY_BLUE, size_hint_x=0.3)
+        lbl_title = Label(text="📦 오피킹 원복 (출고 로케이션)", font_name=FONT_NAME, font_size=dp(15), bold=True, color=TEXT_DARK)
+        
+        btn_refresh_cache = StyledButton(text="갱신", size_hint_x=0.18, font_size=dp(12), bg_color=PRIMARY_BLUE)
+        btn_refresh_cache.bind(on_press=lambda x: self.preload_master_data(force=True))
 
         top_bar.add_widget(btn_back)
         top_bar.add_widget(lbl_title)
-        top_bar.add_widget(self.lbl_count)
+        top_bar.add_widget(btn_refresh_cache)
         self.layout.add_widget(top_bar)
 
-        # 💡 [추가] 2. 바코드 수기 입력 버튼 바
-        manual_bar = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
-        btn_manual_bc = StyledButton(
-            text="✏️ 바코드 수기입력 (스캔불가시)",
-            size_hint_x=1,
-            font_size=dp(13),
-            bg_color=get_color_from_hex("#455A64")
+        # 💡 2. 이미지 UI 스타일: 입력창(TextInput) + 검색 버튼 바
+        search_bar = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(5))
+        self.search_input = TextInput(
+            hint_text="터치하여 바코드/SKU 검색",
+            multiline=False,
+            font_name=FONT_NAME,
+            font_size=dp(14),
+            size_hint_x=0.78,
+            readonly=True
         )
-        btn_manual_bc.bind(on_press=self.open_manual_barcode_input)
-        manual_bar.add_widget(btn_manual_bc)
-        self.layout.add_widget(manual_bar)
+        self.search_input.bind(on_touch_down=self._on_search_touch)
 
-        # 3. 메인 카드 영역 (현재 스캔 및 상태 안내)
-        self.main_card = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10), size_hint_y=None, height=dp(230))
+        btn_search = StyledButton(text="검색", size_hint_x=0.22, font_size=dp(13), bg_color=PRIMARY_BLUE)
+        btn_search.bind(on_press=lambda x: self.process_product_scan(self.search_input.text))
+
+        search_bar.add_widget(self.search_input)
+        search_bar.add_widget(btn_search)
+        self.layout.add_widget(search_bar)
+
+        # 3. 메인 작업 안내 카드 (높이 컴팩트 축소: 160dp)
+        self.main_card = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(4), size_hint_y=None, height=dp(160))
         with self.main_card.canvas.before:
             Color(1, 1, 1, 1)
-            self.card_bg = RoundedRectangle(pos=self.main_card.pos, size=self.main_card.size, radius=[dp(12)])
+            self.card_bg = RoundedRectangle(pos=self.main_card.pos, size=self.main_card.size, radius=[dp(10)])
         self.main_card.bind(
             pos=lambda i, p: setattr(self.card_bg, "pos", p),
             size=lambda i, s: setattr(self.card_bg, "size", s)
         )
 
         self.lbl_status = Label(
-            text="[size=18dp][b][color=1976D2]1. 상품 바코드를 스캔하세요[/color][/b][/size]",
+            text="[size=16dp][b][color=1976D2]1. 상품 바코드를 스캔하세요[/color][/b][/size]",
             font_name=FONT_NAME, markup=True, halign="center", valign="middle"
         )
         self.lbl_status.bind(size=self.lbl_status.setter("text_size"))
 
         self.lbl_info = Label(
-            text="[color=757575]대기 중...[/color]",
+            text="[color=757575]오피킹/남은 상품 스캔 대기 중...[/color]",
             font_name=FONT_NAME, markup=True, halign="center", valign="middle"
         )
         self.lbl_info.bind(size=self.lbl_info.setter("text_size"))
@@ -3773,157 +3782,211 @@ class OpeakingReturnScreen(Screen):
         self.main_card.add_widget(self.lbl_info)
         self.layout.add_widget(self.main_card)
 
-        # 💡 [추가] 4. QR없음 전용 하단 버튼 구역 (스프라이트 동적 제어)
-        self.action_box = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
-        
+        # 4. QR없음 버튼 바 (동적 노출)
+        self.action_box = BoxLayout(size_hint_y=None, height=dp(0), opacity=0, spacing=dp(10))
         self.btn_no_qr = StyledButton(
-            text="⚠️ QR없음 (강제완료)",
+            text="⚠️ QR없음 (위치 강제완료)",
             size_hint_x=1,
-            font_size=dp(14),
+            font_size=dp(13),
             bg_color=get_color_from_hex("#E65100"),
-            bold=True
+            bold=True,
+            disabled=True
         )
         self.btn_no_qr.bind(on_press=self.process_no_qr_action)
         self.action_box.add_widget(self.btn_no_qr)
-        
         self.layout.add_widget(self.action_box)
 
-        # 여백
-        self.layout.add_widget(Widget())
+        # 💡 5. 최근 원복 완료 내역 (최근 10건 리스트 영역)
+        lbl_hist_title = Label(
+            text="📋 최근 원복 이력 (최근 10건)",
+            font_name=FONT_NAME, font_size=dp(12), bold=True, color=TEXT_DARK,
+            size_hint_y=None, height=dp(20), halign="left"
+        )
+        lbl_hist_title.bind(size=lambda i, s: setattr(i, "text_size", s))
+        self.layout.add_widget(lbl_hist_title)
+
+        self.history_scroll = ScrollView(size_hint=(1, 1))
+        self.history_grid = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.history_grid.bind(minimum_height=self.history_grid.setter("height"))
+        self.history_scroll.add_widget(self.history_grid)
+        self.layout.add_widget(self.history_scroll)
+
         self.add_widget(self.layout)
 
     def on_enter(self):
         self.reset_to_step1()
+        self.preload_master_data(force=False)  # 진입 시 초고속 메모리 로드
+
+    # 💡 0.01초 속도의 비결: 백그라운드 사전 캐싱
+    def preload_master_data(self, force=False):
+        def _async_load():
+            try:
+                get_sheet_data(LOCATION_CAPA_MASTER_SHEET_NAME, force_refresh=force)
+            except Exception as e:
+                print(f"로케이션 케파 데이터 로드 오류: {e}")
+        threading.Thread(target=_async_load, daemon=True).start()
 
     def reset_to_step1(self):
         self.step = "WAIT_PRODUCT"
         self.target_barcode = ""
         self.target_location = ""
-        self.lbl_status.text = "[size=18dp][b][color=1976D2]1. 상품 바코드를 스캔하세요[/color][/b][/size]"
-        self.lbl_info.text = "[color=757575]카트/바구니의 오피킹 상품 스캔 대기 중...[/color]"
+        self.search_input.text = ""
+        self.lbl_status.text = "[size=16dp][b][color=1976D2]1. 상품 바코드를 스캔하세요[/color][/b][/size]"
+        self.lbl_info.text = "[color=757575]오피킹/남은 상품 스캔 대기 중...[/color]"
         
-        # Step 1일 때는 QR없음 버튼 숨기기/비활성화
-        self.action_box.height = 0
+        self.action_box.height = dp(0)
         self.action_box.opacity = 0
         self.btn_no_qr.disabled = True
 
-    # 💡 [기능 추가 1] 상품 바코드 수기 입력 팝업
-    def open_manual_barcode_input(self, instance):
-        def _on_confirm(bc_text):
-            clean_bc = str(bc_text).strip().upper()
-            if clean_bc:
-                self.process_product_scan(clean_bc)
+    def _on_search_touch(self, instance, touch):
+        if instance.collide_point(*touch.pos):
+            def set_query(val):
+                self.search_input.text = str(val).strip().upper()
+                if self.search_input.text:
+                    self.process_product_scan(self.search_input.text)
 
-        open_native_korean_input(
-            "바코드 수기 입력",
-            "상품 바코드 숫자를 입력하세요",
-            self.target_barcode,
-            _on_confirm
-        )
-
-    # 💡 [기능 추가 2] 로케이션 QR이 훼손되거나 없을 때 강제 완료 액션
-    def process_no_qr_action(self, instance):
-        if self.step != "WAIT_LOCATION" or not self.target_location:
-            return
-
-        app = App.get_running_app()
-        
-        def _do_force_complete():
-            self.completed_count += 1
-            self.lbl_count.text = f"금일 완료: {self.completed_count}건"
-            app.show_toast(f"✅ [QR없음 적치] 완료! ({self.target_location})")
-            self.reset_to_step1()
-
-        app.show_confirmation_popup(
-            title="[QR없음 적치 확인]",
-            message=f"목표 로케이션: [color=FF8A80][b]{self.target_location}[/b][/color]\n\nQR 바코드 없이 해당 위치에 적치를 완료하시겠습니까?",
-            on_yes=_do_force_complete
-        )
+            open_native_korean_input("바코드/SKU 검색", "바코드 숫자 입력", instance.text, set_query)
+            return True
+        return False
 
     def handle_barcode_scan(self, barcode):
         scanned_code = str(barcode).strip().upper()
-
         if self.step == "WAIT_PRODUCT":
+            self.search_input.text = scanned_code
             self.process_product_scan(scanned_code)
         elif self.step == "WAIT_LOCATION":
             self.process_location_scan(scanned_code)
 
-    # 1-Step: 상품 스캔 ➔ 로케이션 케파 시트(F열:바코드, G열:로케이션) 조회
+    # 💡 초고속 즉시 조회 (0.01초)
     def process_product_scan(self, barcode):
-        app = App.get_running_app()
-        app.show_loading_popup()
+        clean_bc = str(barcode).strip().upper()
+        if not clean_bc:
+            return
 
-        def _async_search():
-            try:
-                master_data = get_sheet_data(LOCATION_CAPA_MASTER_SHEET_NAME, force_refresh=True)
-                matched_locs = []
+        try:
+            # force_refresh=False로 메모리 데이터 0.01초 만에 조회!
+            master_data = get_sheet_data(LOCATION_CAPA_MASTER_SHEET_NAME, force_refresh=False)
+            matched_locs = []
 
-                for row in master_data:
-                    row_bc = str(t(row, "바코드", "")).strip().upper()
-                    row_loc = str(t(row, "로케이션", "")).strip().upper()
+            for row in master_data:
+                row_bc = str(t(row, "바코드", "")).strip().upper()
+                row_loc = str(t(row, "로케이션", "")).strip().upper()
 
-                    if row_bc == barcode and row_loc:
-                        matched_locs.append(row_loc)
+                if row_bc == clean_bc and row_loc:
+                    matched_locs.append(row_loc)
 
-                matched_locs = list(set(matched_locs))  # 중복 제거
+            matched_locs = list(set(matched_locs))
 
-                if len(matched_locs) >= 2:
-                    Clock.schedule_once(lambda dt: app.show_info_popup(
-                        "🚨 관리자 문의 필요",
-                        f"스캔 바코드: [{barcode}]\n\n[color=D32F2F][b]해당 SKU에 출고 로케이션이 2개 이상 존재합니다![/b][/color]\n전산 확인 후 진행하세요.\n\n• 중복 발견: {', '.join(matched_locs)}"
-                    ))
-                    Clock.schedule_once(lambda dt: self.reset_to_step1())
+            if len(matched_locs) >= 2:
+                App.get_running_app().show_info_popup(
+                    "🚨 관리자 문의 필요",
+                    f"스캔 바코드: [{clean_bc}]\n\n[color=D32F2F][b]해당 SKU에 출고 로케이션이 2개 이상 존재합니다![/b][/color]\n전산 확인 후 진행하세요.\n\n• 중복 발견: {', '.join(matched_locs)}"
+                )
+                self.reset_to_step1()
 
-                elif len(matched_locs) == 0:
-                    Clock.schedule_once(lambda dt: app.show_info_popup(
-                        "⚠️ 미등록 상품",
-                        f"스캔 바코드: [{barcode}]\n\n[로케이션 케파] 시트에 등록된 출고 로케이션이 없습니다."
-                    ))
-                    Clock.schedule_once(lambda dt: self.reset_to_step1())
+            elif len(matched_locs) == 0:
+                App.get_running_app().show_info_popup(
+                    "⚠️ 미등록 상품",
+                    f"스캔 바코드: [{clean_bc}]\n\n[로케이션 케파] 시트에 등록된 출고 로케이션이 없습니다."
+                )
+                self.reset_to_step1()
 
-                else:
-                    target_loc = matched_locs[0]
-                    Clock.schedule_once(lambda dt: self.set_step2_location(barcode, target_loc))
+            else:
+                target_loc = matched_locs[0]
+                self.set_step2_location(clean_bc, target_loc)
 
-            except Exception as e:
-                Clock.schedule_once(lambda dt: app.show_info_popup("조회 오류", str(e)))
-                Clock.schedule_once(lambda dt: self.reset_to_step1())
-            finally:
-                Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
-
-        threading.Thread(target=_async_search, daemon=True).start()
+        except Exception as e:
+            App.get_running_app().show_info_popup("조회 오류", str(e))
+            self.reset_to_step1()
 
     def set_step2_location(self, barcode, target_loc):
         self.step = "WAIT_LOCATION"
         self.target_barcode = barcode
         self.target_location = target_loc
 
-        self.lbl_status.text = f"[color=212121]바코드:[/color] [color=1E88E5]{barcode}[/color]\n\n[size=32dp][b][color=D32F2F]{target_loc}[/color][/b][/size]"
-        self.lbl_info.text = f"[size=16dp][color=2E7D32][b]2. {target_loc} 로케이션 QR을 스캔하세요[/b][/color][/size]"
+        self.lbl_status.text = f"[color=212121]바코드:[/color] [color=1E88E5]{barcode}[/color]\n\n[size=28dp][b][color=D32F2F]{target_loc}[/color][/b][/size]"
+        self.lbl_info.text = f"[size=14dp][color=2E7D32][b]2. {target_loc} 로케이션 QR을 스캔하세요[/b][/color][/size]"
         
-        # 💡 로케이션 스캔 단계 진입 시 [QR없음] 버튼 노출
-        self.action_box.height = dp(50)
+        self.action_box.height = dp(40)
         self.action_box.opacity = 1
         self.btn_no_qr.disabled = False
         
         App.get_running_app().show_toast(f"목표 로케이션: {target_loc}")
 
-    # 2-Step: 로케이션 QR 검증
     def process_location_scan(self, scanned_loc):
-        app = App.get_running_app()
-
         if scanned_loc == self.target_location:
-            self.completed_count += 1
-            self.lbl_count.text = f"금일 완료: {self.completed_count}건"
-            app.show_toast(f"✅ 원복 완료! ({self.target_location})")
+            self._add_to_history(self.target_barcode, self.target_location, "정상 완료")
+            App.get_running_app().show_toast(f"✅ 원복 완료! ({self.target_location})")
             self.reset_to_step1()
         else:
-            app.show_info_popup(
+            App.get_running_app().show_info_popup(
                 "🚨 위치 불일치 (오원복 경고)",
-                f"목표 위치: [size=22dp][color=1E88E5][b]{self.target_location}[/b][/color][/size]\n"
-                f"스캔 위치: [size=22dp][color=D32F2F][b]{scanned_loc}[/b][/color][/size]\n\n"
+                f"목표 위치: [size=20dp][color=1E88E5][b]{self.target_location}[/b][/color][/size]\n"
+                f"스캔 위치: [size=20dp][color=D32F2F][b]{scanned_loc}[/b][/color][/size]\n\n"
                 f"올바른 로케이션 위치로 이동 후 다시 스캔하세요!"
             )
+
+    def process_no_qr_action(self, instance):
+        if self.step != "WAIT_LOCATION" or not self.target_location:
+            return
+
+        def _do_force_complete():
+            self._add_to_history(self.target_barcode, self.target_location, "QR없음 완료")
+            App.get_running_app().show_toast(f"✅ [QR없음 적치] 완료! ({self.target_location})")
+            self.reset_to_step1()
+
+        App.get_running_app().show_confirmation_popup(
+            title="[QR없음 적치 확인]",
+            message=f"목표 로케이션: [color=FF8A80][b]{self.target_location}[/b][/color]\n\nQR 바코드 없이 해당 위치에 적치를 완료하시겠습니까?",
+            on_yes=_do_force_complete
+        )
+
+    # 💡 최근 10건 원복 이력 카드 등록
+    def _add_to_history(self, barcode, location, status_tag):
+        now_time = datetime.now().strftime("%H:%M:%S")
+        record = {
+            "barcode": barcode,
+            "location": location,
+            "time": now_time,
+            "tag": status_tag
+        }
+        self.recent_history.insert(0, record)
+        if len(self.recent_history) > 10:
+            self.recent_history.pop()
+
+        self._render_history_list()
+
+    def _render_history_list(self):
+        self.history_grid.clear_widgets()
+
+        for item in self.recent_history:
+            row = BoxLayout(
+                orientation="horizontal",
+                size_hint_y=None,
+                height=dp(32),
+                padding=(dp(8), 0),
+                spacing=dp(5)
+            )
+            with row.canvas.before:
+                Color(1, 1, 1, 1)
+                bg_r = RoundedRectangle(pos=row.pos, size=row.size, radius=[dp(4)])
+            row.bind(
+                pos=lambda inst, val, b=bg_r: setattr(b, "pos", val),
+                size=lambda inst, val, b=bg_r: setattr(b, "size", val)
+            )
+
+            lbl_item = Label(
+                text=f"[{item['time']}]  {item['barcode']}  ➔  [color=1E88E5][b]{item['location']}[/b][/color]  [color=2E7D32]({item['tag']})[/color]",
+                font_name=FONT_NAME,
+                font_size=dp(11),
+                color=TEXT_DARK,
+                markup=True,
+                halign="left",
+                valign="middle"
+            )
+            lbl_item.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+            row.add_widget(lbl_item)
+            self.history_grid.add_widget(row)
 
 # --- 검수 및 액션 처리 전용 화면 ---
 class TaskListScreen(Screen):
