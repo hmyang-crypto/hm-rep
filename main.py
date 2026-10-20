@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.5.9"
+CURRENT_VERSION = "1.9.6.0"
 
 
 def check_and_apply_update():
@@ -6747,8 +6747,8 @@ class ReturnTaskListScreen(Screen):
         App.get_running_app().show_loading_popup()
         threading.Thread(target=self._upload_photo_and_complete_native, daemon=True).start()
 
-    # 확보한 사진 파일을 구글 드라이브로 쏘는 함수 (순수 백그라운드)
-    def _upload_photo_and_complete_native(self):
+    # 💡 시스템 코드 없이 순수하게 '구글 통신'만 담당하는 백그라운드 스레드
+    def _upload_photo_and_complete_native(self, real_path):
         try:
             from jnius import autoclass
             import base64
@@ -6756,8 +6756,9 @@ class ReturnTaskListScreen(Screen):
             import urllib.request
             import os
             import time
+            import ssl  # 💡 [추가] SSL 모듈 불러오기
 
-            # 💡 [안전 보정] 안드로이드 시스템이 사진 파일을 디스크에 완전히 쓸 수 있도록 0.5초 여유 확보
+            # 안드로이드 시스템이 사진 파일을 디스크에 완전히 쓸 수 있도록 0.5초 여유 확보
             time.sleep(0.5)
 
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -6784,8 +6785,13 @@ class ReturnTaskListScreen(Screen):
                 "base64Data": encoded_string
             }
 
+            # 💡 [핵심 해결] 안드로이드 Kivy 환경의 SSL 인증서 검사 안전 우회
+            ssl_context = ssl._create_unverified_context()
+
             req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=30) as response:
+            
+            # 💡 [핵심 해결] urlopen에 context=ssl_context 파라미터 추가
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
 
             if res_data.get("status") == "success":
