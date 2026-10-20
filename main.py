@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.7.0"
+CURRENT_VERSION = "1.9.7.1"
 
 
 def check_and_apply_update():
@@ -3727,7 +3727,7 @@ class OpeakingReturnScreen(Screen):
         btn_back = StyledButton(text="< 메인", size_hint_x=0.18, bg_color=get_color_from_hex("#78909C"))
         btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "main_menu"))
 
-        lbl_title = Label(text="📦 오피킹 원복 (출고 로케이션)", font_name=FONT_NAME, font_size=dp(15), bold=True, color=TEXT_DARK)
+        lbl_title = Label(text=" 오피킹 원복 (출고 로케이션)", font_name=FONT_NAME, font_size=dp(15), bold=True, color=TEXT_DARK)
         
         btn_refresh_cache = StyledButton(text="갱신", size_hint_x=0.18, font_size=dp(12), bg_color=PRIMARY_BLUE)
         btn_refresh_cache.bind(on_press=lambda x: self.preload_master_data(force=True))
@@ -3785,7 +3785,7 @@ class OpeakingReturnScreen(Screen):
         # 4. QR없음 버튼 바 (동적 노출)
         self.action_box = BoxLayout(size_hint_y=None, height=dp(0), opacity=0, spacing=dp(10))
         self.btn_no_qr = StyledButton(
-            text="⚠️ QR없음 (위치 강제완료)",
+            text=" QR없음 (위치 강제완료)",
             size_hint_x=1,
             font_size=dp(13),
             bg_color=get_color_from_hex("#E65100"),
@@ -3879,14 +3879,14 @@ class OpeakingReturnScreen(Screen):
 
             if len(matched_locs) >= 2:
                 App.get_running_app().show_info_popup(
-                    "🚨 관리자 문의 필요",
+                    "관리자 문의 필요",
                     f"스캔 바코드: [{clean_bc}]\n\n[color=D32F2F][b]해당 SKU에 출고 로케이션이 2개 이상 존재합니다![/b][/color]\n전산 확인 후 진행하세요.\n\n• 중복 발견: {', '.join(matched_locs)}"
                 )
                 self.reset_to_step1()
 
             elif len(matched_locs) == 0:
                 App.get_running_app().show_info_popup(
-                    "⚠️ 미등록 상품",
+                    "미등록 상품",
                     f"스캔 바코드: [{clean_bc}]\n\n[로케이션 케파] 시트에 등록된 출고 로케이션이 없습니다."
                 )
                 self.reset_to_step1()
@@ -3916,11 +3916,11 @@ class OpeakingReturnScreen(Screen):
     def process_location_scan(self, scanned_loc):
         if scanned_loc == self.target_location:
             self._add_to_history(self.target_barcode, self.target_location, "정상 완료")
-            App.get_running_app().show_toast(f"✅ 원복 완료! ({self.target_location})")
+            App.get_running_app().show_toast(f"원복 완료! ({self.target_location})")
             self.reset_to_step1()
         else:
             App.get_running_app().show_info_popup(
-                "🚨 위치 불일치 (오원복 경고)",
+                "위치 불일치 (오원복 경고)",
                 f"목표 위치: [size=20dp][color=1E88E5][b]{self.target_location}[/b][/color][/size]\n"
                 f"스캔 위치: [size=20dp][color=D32F2F][b]{scanned_loc}[/b][/color][/size]\n\n"
                 f"올바른 로케이션 위치로 이동 후 다시 스캔하세요!"
@@ -3932,7 +3932,7 @@ class OpeakingReturnScreen(Screen):
 
         def _do_force_complete():
             self._add_to_history(self.target_barcode, self.target_location, "QR없음 완료")
-            App.get_running_app().show_toast(f"✅ [QR없음 적치] 완료! ({self.target_location})")
+            App.get_running_app().show_toast(f"[QR없음 적치] 완료! ({self.target_location})")
             self.reset_to_step1()
 
         App.get_running_app().show_confirmation_popup(
