@@ -6058,7 +6058,7 @@ class ReturnInspectionPopup(Popup):
 
                     # 💡 2. 표 밖으로 추천 문구 분리 (흰색 텍스트)
                     lbl_rec = Label(
-                        text=f"{client_name}의 원복건은 [size=16dp][color=64B5F6][b]{top_zone}[/b][/color][/size] 빈 곳에 적치를 추천드립니다.",
+                        text=f"{client_name}은 [size=16dp][color=64B5F6][b]{top_zone}[/b][/color][/size] 빈 렉에 적치를 추천드립니다.",
                         font_name=FONT_NAME, font_size=dp(14), color=(1,1,1,1), markup=True, halign="center", valign="middle", size_hint_y=None, height=dp(30)
                     )
                     self.recommend_container.add_widget(lbl_rec)
