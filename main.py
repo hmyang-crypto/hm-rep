@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.7.2"
+CURRENT_VERSION = "1.9.7.3"
 
 
 def check_and_apply_update():
@@ -3428,10 +3428,10 @@ class UnifiedReplenishScreen(Screen):
 
         urg_font_sz = int(dp(12))
         self.btn_tab_pending.markup = True
-        self.btn_tab_pending.text = f"대기 작업 {pending_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
+        self.btn_tab_pending.text = f"대기 작업 [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
 
         self.btn_tab_my.markup = True
-        self.btn_tab_my.text = f"내 작업 {my_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
+        self.btn_tab_my.text = f"내 작업 [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
 
         self.btn_tab_pending.set_active_visual(
             self.active_main_tab == "PENDING"
@@ -6070,7 +6070,8 @@ class MultiLocationSelectPopup(Popup):
         self.title = "로케이션 상세 층수 선택"
         self.title_font = FONT_NAME
         self.size_hint = (0.85, None)
-        self.height = dp(80) + (len(locations) * dp(50))
+        # 💡 [수정] 타이틀 바, 라벨, 취소 버튼, 패딩 여백을 넉넉히 반영하여 팝업창이 잘리지 않도록 높이 조정
+        self.height = dp(180) + (len(locations) * dp(55))
         self.auto_dismiss = False
         
         layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10))
@@ -6083,14 +6084,19 @@ class MultiLocationSelectPopup(Popup):
         grid.bind(minimum_height=grid.setter("height"))
         
         for loc in locations:
-            btn = StyledButton(text=f"📍 {loc}", size_hint_y=None, height=dp(45), bg_color=PRIMARY_BLUE)
+            # 💡 [수정] 흐린 파란색으로 버튼 색상 변경 (#4FC3F7)
+            btn = StyledButton(text=f"📍 {loc}", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#4FC3F7"))
             btn.bind(on_release=lambda inst, l=loc: (on_select(l), self.dismiss()))
             grid.add_widget(btn)
             
-        btn_cancel = StyledButton(text="취소", size_hint_y=None, height=dp(40), bg_color=get_color_from_hex("#78909C"))
+        btn_cancel = StyledButton(text="취소", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#78909C"))
         btn_cancel.bind(on_press=self.dismiss)
         
-        layout.add_widget(grid)
+        # 스크롤뷰로 감싸서 기기 화면을 넘어가도 스크롤 되도록 안정성 추가
+        scroll = ScrollView(size_hint=(1, 1))
+        scroll.add_widget(grid)
+        
+        layout.add_widget(scroll)
         layout.add_widget(btn_cancel)
         self.content = layout
 
@@ -6365,7 +6371,15 @@ class ReturnInspectionPopup(Popup):
                 return
             self._verify_qty_and_proceed(qty, selected_loc, no_qr=False)
         else:
-            self._verify_qty_and_proceed(qty, selected_loc, no_qr=False)
+            # 💡 [추가] 미지정 건일 때 사용자가 정확한 로케이션을 스캔/선택했는지 확인하는 팝업
+            def _confirm_unassigned_loc():
+                self._verify_qty_and_proceed(qty, selected_loc, no_qr=False)
+
+            app.show_confirmation_popup(
+                title="적치 로케이션 최종 확인",
+                message=f"스캔(선택)한 로케이션:\n[size=24dp][color=64B5F6][b]{selected_loc}[/b][/color][/size]\n\n이 위치에 적치를 진행하시겠습니까?",
+                on_yes=_confirm_unassigned_loc
+            )
 
     def _verify_qty_and_proceed(self, final_qty, final_loc, no_qr=False):
         app = App.get_running_app()
@@ -6757,12 +6771,10 @@ class ReturnTaskListScreen(Screen):
 
         urg_font_sz = int(dp(12))
         self.btn_tab_pending.markup = True
-        self.btn_tab_pending.text = f"대기 작업 {pending_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
+        self.btn_tab_pending.text = f"대기 작업 [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
 
         self.btn_tab_my.markup = True
-
-        self.btn_tab_my.markup = True
-        self.btn_tab_my.text = f"내 작업 {my_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
+        self.btn_tab_my.text = f"내 작업 [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
 
         self.btn_eq_all.markup = True
         self.btn_eq_all.text = f"전체 ({eq_all_tot} / [color=D32F2F]{eq_all_urg}[/color])"
