@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.7.1"
+CURRENT_VERSION = "1.9.7.2"
 
 
 def check_and_apply_update():
@@ -171,7 +171,7 @@ LOCATION_CAPA_MASTER_SHEET_NAME = "로케이션 케파"
 
 # 💡 [추가] 원복 작업 전용 상수 및 웹앱 URL
 RETURN_TASK_SHEET_NAME = "원복작업_지시서"
-RETURN_LOG_SHEET_NAME = "원복작업_로그"
+RETURN_LOG_SHEET_NAME = "원복작업_RAW"
 GAS_PHOTO_UPLOAD_URL = "https://script.google.com/macros/s/AKfycbx1T2mf5sb6vigWo_8YdAR2djY7QlfE-VsJGfOFAkbM42CJEstnkSuAHE0RQ0PPp1Cx/exec"
 
 SHEET_RANGES = {
@@ -3389,8 +3389,8 @@ class UnifiedReplenishScreen(Screen):
         eq_op_tot, eq_op_urg = 0, 0
         eq_reach_tot, eq_reach_urg = 0, 0
 
-        pending_urg_count = 0
-        my_urg_count = 0
+        pending_tot_count, pending_urg_count = 0, 0
+        my_tot_count, my_urg_count = 0, 0
 
         for task in self.raw_all_tasks:
             status = str(t(task, "상태")).strip()
@@ -3428,10 +3428,10 @@ class UnifiedReplenishScreen(Screen):
 
         urg_font_sz = int(dp(12))
         self.btn_tab_pending.markup = True
-        self.btn_tab_pending.text = f"대기 작업 [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
+        self.btn_tab_pending.text = f"대기 작업 {pending_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
 
         self.btn_tab_my.markup = True
-        self.btn_tab_my.text = f"내 작업 [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
+        self.btn_tab_my.text = f"내 작업 {my_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
 
         self.btn_tab_pending.set_active_visual(
             self.active_main_tab == "PENDING"
@@ -6669,8 +6669,11 @@ class ReturnTaskListScreen(Screen):
             self.btn_main_action.set_bg_color(get_color_from_hex("#FF7043"))
         else:
             self.btn_main_action.text = "+ 선택 항목 할당받기 (0)"
-            # 💡 [수정됨] PRIMARY_BLUE ➔ RETURN_GREEN 으로 교체
             self.btn_main_action.set_bg_color(RETURN_GREEN)
+
+        # 💡 [수정] 탭 버튼 UI 색상 동기화 추가
+        self.btn_tab_pending.set_active_visual(tab_mode == "PENDING")
+        self.btn_tab_my.set_active_visual(tab_mode == "MY")
 
         self._update_filter_button_text("닫기 ▲" if self.is_filter_expanded else "열기 ▼")
         self.apply_filters_and_render()
@@ -6721,7 +6724,8 @@ class ReturnTaskListScreen(Screen):
         eq_all_tot, eq_all_urg = 0, 0
         eq_op_tot, eq_op_urg = 0, 0
         eq_reach_tot, eq_reach_urg = 0, 0
-        pending_urg_count, my_urg_count = 0, 0
+        pending_tot_count, pending_urg_count = 0, 0
+        my_tot_count, my_urg_count = 0, 0
 
         for task in self.raw_all_tasks:
             status = str(t(task, "상태")).strip()
@@ -6753,10 +6757,12 @@ class ReturnTaskListScreen(Screen):
 
         urg_font_sz = int(dp(12))
         self.btn_tab_pending.markup = True
-        self.btn_tab_pending.text = f"대기 작업 [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
+        self.btn_tab_pending.text = f"대기 작업 {pending_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {pending_urg_count})[/size][/color]"
 
         self.btn_tab_my.markup = True
-        self.btn_tab_my.text = f"내 작업 [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
+
+        self.btn_tab_my.markup = True
+        self.btn_tab_my.text = f"내 작업 {my_tot_count} [color=FF9800][size={urg_font_sz}](긴급: {my_urg_count})[/size][/color]"
 
         self.btn_eq_all.markup = True
         self.btn_eq_all.text = f"전체 ({eq_all_tot} / [color=D32F2F]{eq_all_urg}[/color])"
@@ -6940,11 +6946,9 @@ class ReturnTaskListScreen(Screen):
         finally:
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
-    # ==========================
-    # 원복 스캔 및 카드 액션 제어 (수량/비고/실패 등 보충화면 버튼 호환)
-    # ==========================
     def handle_barcode_scan(self, barcode):
-        clean_bc = re.sub(r'[^A-Za-z0-9\-]', '', str(barcode)).strip().upper()
+        # 💡 [수정] 로케이션 다중 스캔을 위해 콤마(,) 삭제 방지 추가
+        clean_bc = re.sub(r'[^A-Za-z0-9\-_,]', '', str(barcode)).strip().upper()
         app = App.get_running_app()
         user_name = str(app.user_real_name).strip().lower()
 
@@ -6956,9 +6960,9 @@ class ReturnTaskListScreen(Screen):
         my_matches = [
             t_item for t_item in self.raw_all_tasks
             if str(t(t_item, "상태")).strip() == "작업중"
-            # 💡 [헤더 반영] 작업자
             and str(t(t_item, "작업자", "")).strip().lower() == user_name
-            and re.sub(r'[^A-Za-z0-9\-]', '', str(get_barcode_from_task(t_item))).strip().upper() == clean_bc
+            # 💡 [수정] 콤마(,) 삭제 방지 추가
+            and re.sub(r'[^A-Za-z0-9\-_,]', '', str(get_barcode_from_task(t_item))).strip().upper() == clean_bc
         ]
 
         if my_matches:
@@ -6966,14 +6970,16 @@ class ReturnTaskListScreen(Screen):
                 self.switch_main_tab("MY")
 
             if len(my_matches) == 1:
-                ReturnInspectionPopup(card_data=my_matches[0]["task_data"], task_list_screen=self).open()
+                # 💡 [수정] KeyError 튕김 방지 (my_matches[0] 자체가 딕셔너리)
+                ReturnInspectionPopup(card_data=my_matches[0], task_list_screen=self).open()
             else:
                 MultipleSkuSelectPopup(matches=[{"task_data": t} for t in my_matches], on_select=lambda d: ReturnInspectionPopup(card_data=d["task_data"], task_list_screen=self).open()).open()
         else:
             pending_matches = [
                 t_item for t_item in self.raw_all_tasks
                 if str(t(t_item, "상태")).strip() == "대기"
-                and re.sub(r'[^A-Za-z0-9\-]', '', str(get_barcode_from_task(t_item))).strip().upper() == clean_bc
+                # 💡 [수정] 콤마(,) 삭제 방지 추가
+                and re.sub(r'[^A-Za-z0-9\-_,]', '', str(get_barcode_from_task(t_item))).strip().upper() == clean_bc
             ]
             if pending_matches:
                 task_id = t(pending_matches[0], "작업ID")
@@ -7310,8 +7316,8 @@ class MainApp(App):
     def process_global_scan(self, barcode):
         raw_str = str(barcode).replace('\ufeff', '').strip()
 
-        # 💡 [보정] 언더바(_) 및 하이픈(-) 모두 허용
-        clean_barcode = re.sub(r'[^A-Za-z0-9\-_]', '', raw_str).strip()
+        # 💡 [보정] 언더바(_), 하이픈(-), 그리고 콤마(,) 모두 허용하도록 정규식 수정
+        clean_barcode = re.sub(r'[^A-Za-z0-9\-_,]', '', raw_str).strip()
 
         if self.root and clean_barcode:
             curr_screen = self.root.current_screen
