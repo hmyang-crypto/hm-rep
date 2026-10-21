@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.7.3"
+CURRENT_VERSION = "1.9.7.4"
 
 
 def check_and_apply_update():
@@ -1587,23 +1587,25 @@ class InspectionPopup(Popup):
         self._execute_no_qr_finalize(calculated_total_qty)
 
     # 💡 [핵심] 누락되었던 누락 QR 수기 완결 메서드 구현 (튕김 및 먹통 원인 차단)
+    # 💡 [수정됨] 존재하지 않는 함수 호출로 인한 튕김 방지 및 정상 루트 연결
     def _execute_no_qr_finalize(self, calculated_total_qty):
-        # QR이 없어 목표 위치로 자동 기록 및 비고에 [QR없음 적치] 사유 자동 기재
         final_loc = self.target_location
-        no_qr_remark = "[자석로케이션 필요]"
-        
         curr_rem = str(self.current_remarks).strip()
-        updated_rem = f"{curr_rem}\n{no_qr_remark}" if curr_rem else no_qr_remark
-
-        self.task_list_screen._finalize_task_processing(
-            card=self.card,
-            final_qty=calculated_total_qty,
-            split_qty=0,
-            final_location=final_loc,
-            updated_remarks=updated_rem,
-        )
+        updated_rem = f"{curr_rem}\n[자석로케이션 필요]" if curr_rem else "[자석로케이션 필요]"
+        
+        self.task_data["확인수량"] = str(calculated_total_qty)
+        self.task_data["비고"] = updated_rem
+        
+        self.task_list_screen._finalize_return(self.task_data, final_loc, "QR없음(사진생략)")
         self.dismiss()
 
+    def _execute_scan_finalize(self, calculated_total_qty, scanned_loc):
+        self.task_data["확인수량"] = str(calculated_total_qty)
+        self.task_data["비고"] = self.current_remarks
+        
+        self.task_list_screen._finalize_return(self.task_data, scanned_loc, "수기완결(사진생략)")
+        self.dismiss()
+        
     def process_location_scan(self, scanned_location):
         app = App.get_running_app()
 
@@ -4380,47 +4382,94 @@ class TaskListScreen(Screen):
             else:
                 updated_remarks = change_log
 
-        req_qty = safe_int(t(card.task_data, "지시수량", 0))
-        if final_qty != req_qty:
-            diff = final_qty - req_qty
-            diff_str = f"+{diff}" if diff > 0 else f"{diff}"
-            mismatch_log = f"[수량 불일치] 지시: {req_qty}개 ➔ 원복: {final_qty}개 (차이: {diff_str}개)"
-            curr_rem = str(updated_remarks or "").strip()
-            if curr_rem:
-                updated_remarks = f"{curr_rem}\n{mismatch_log}"
-            else:
-                updated_remarks = mismatch_log
+        # 💡 [핵심 추가] 검수 작업일 때, 보충 수량과 검수 수량이 다르면 비고란에 자동 기록
+        if app.current_list_type == "검수인원":
+            # 보충 작업 시 입력했던 기존 수량 (확인수량 필드 참조)
+            replenished_qty = safe_int(t(card.task_data, "확인수량", t(card.task_data, "지시수량", 0)))
+            
+            # 수량이 서로 불일치할 경우
+            if final_qty != replenished_qty:
+                diff = final_qty - replenished_qty
+                diff_str = f"+{diff}" if diff > 0 else f"{diff}"
+                
+                # 형식 1 텍스트 포맷 생성
+                mismatch_log = f"[수량 불일치] 보충: {replenished_qty}개 ➔ 검수: {final_qty}개 (차이: {diff_str}개)"
+                
+                curr_rem = str(updated_remarks or "").strip()
+                # 기존 비고가 있으면 줄바꿈(\n) 후 추가
+                if curr_rem:
+                    updated_remarks = f"{curr_rem}\n{mismatch_log}"
+                else:
+                    updated_remarks = mismatch_log
 
-        # 💡 [핵심 수정] 원복 작업용 상태 및 헤더(보충담당자, 작업자 동시 기록)
+            updates = {
+                "상태": "최종완료",
+                "검수담당자": app.user_real_name,
+                "최종완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "확인수량": str(final_qty),
+                "비고": updated_remarks,
+                "최종적치위치": final_location,
+            }
+            app.show_loading_popup()
+            threading.Thread(
+                target=self._perform_update_and_log,
+                args=(card, updates, "검수 작업이 '최종완료' 처리 되었습니다."),
+                daemon=True,
+            ).start()
+            return
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         updates = {
-            "상태": "원복완료",
+            "상태": "적치대기",
             "보충담당자": app.user_real_name,
-            "작업자": app.user_real_name,
-            "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "완료일시": now_str,
             "확인수량": str(final_qty),
             "비고": updated_remarks,
-            "최종적치위치": final_location,
         }
-        
-        app.show_loading_popup()
-        threading.Thread(
-            target=self._perform_update_and_log,
-            args=(card, updates, " 원복 작업이 안전하게 완료되었습니다!"),
-            daemon=True,
-        ).start()
 
-    # 💡 [핵심 수정] 원복 지시서(RETURN_TASK_SHEET_NAME)와 원복 로그(RETURN_LOG_SHEET_NAME)에 저장되도록 완벽 분리!
+        completed_record = dict(card.task_data)
+        completed_record.update(updates)
+        g_recent_completed_tasks.append(completed_record)
+        if len(g_recent_completed_tasks) > 15:
+            g_recent_completed_tasks.pop(0)
+
+        save_recent_history()
+
+        def run_sheet_update():
+            app.show_loading_popup()
+            threading.Thread(
+                target=self._perform_update_and_log,
+                args=(card, updates, "보충작업이 완료되어 '적치대기' 상태로 전환되었습니다."),
+                daemon=True,
+            ).start()
+
+        def on_yes_print():
+            try:
+                self._start_print_job(card.task_data)
+            except Exception:
+                pass
+            run_sheet_update()
+
+        app.show_confirmation_popup(
+            title="인쇄 및 완료",
+            message="[color=ffffff]보충 완료 및 적치대기 처리합니다.\n라벨 1장을 인쇄하시겠습니까?[/color]",
+            on_yes=on_yes_print,
+            on_no=run_sheet_update,
+        )
+
     def _perform_update_and_log(self, card, updates, msg):
         try:
-            sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
+            sheet = get_worksheet(TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
             
             card_task_data = getattr(card, "task_data", {})
             is_merged = card_task_data.get("is_merged", False) or getattr(card, "is_merged", False)
             merged_sources = card_task_data.get("merged_sources", []) or getattr(card, "merged_sources", [])
 
-            log_entries = []  
+            log_entries = []  # 💡 기록용 로그 데이터 수집 배열
 
+            # 💡 다중 선택 통합 검수 완료 시
             if is_merged and merged_sources:
                 task_id_col_idx = headers.index("작업ID") + 1
                 all_task_ids = sheet.col_values(task_id_col_idx)
@@ -4437,6 +4486,7 @@ class TaskListScreen(Screen):
                                 col_idx = headers.index(key) + 1
                                 cells.append(gspread.Cell(row_idx, col_idx, str(val)))
                     
+                    # 로그 기록을 위한 데이터 세팅
                     merged_updated_task = dict(src_task)
                     merged_updated_task.update(updates)
                     log_entries.append(merged_updated_task)
@@ -4444,6 +4494,7 @@ class TaskListScreen(Screen):
                 if cells:
                     sheet.update_cells(cells)
                     
+            # 💡 단일 선택 검수 완료 시
             else:
                 task_id = str(t(card.task_data, "작업ID"))
                 task_id_col_idx = headers.index("작업ID") + 1
@@ -4463,14 +4514,18 @@ class TaskListScreen(Screen):
                 if cells:
                     sheet.update_cells(cells)
                 
+                # 로그 기록을 위한 데이터 세팅
                 single_updated_task = dict(card.task_data)
                 single_updated_task.update(updates)
                 log_entries.append(single_updated_task)
 
-            # 💡 [핵심] "원복완료" 상태일 때 RETURN_LOG_SHEET_NAME 에 기록!
-            if log_entries and updates.get("상태") == "원복완료":
+            # ==========================================
+            # 💡 [조건 추가 구역] 작업완료 로그 시트 기록
+            # ==========================================
+            # 🚨 "상태"가 "최종완료"일 때만 로그 시트에 기록되도록 조건문(if) 추가
+            if log_entries and updates.get("상태") == "최종완료":
                 try:
-                    log_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
+                    log_sheet = get_worksheet(LOG_SHEET_NAME)
                     log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
                     
                     rows_to_append = []
@@ -4478,16 +4533,17 @@ class TaskListScreen(Screen):
                         row = [str(entry.get(h, "")) for h in log_headers]
                         rows_to_append.append(row)
                     
+                    # 1건이면 append_row, 다중건이면 append_rows 사용
                     if len(rows_to_append) == 1:
                         log_sheet.append_row(rows_to_append[0])
                     else:
                         log_sheet.append_rows(rows_to_append)
                         
-                    invalidate_cache(RETURN_LOG_SHEET_NAME)
+                    invalidate_cache(LOG_SHEET_NAME)
                 except Exception as log_err:
                     print(f"⚠️ 로그 시트 기록 중 경고: {log_err}")
 
-            invalidate_cache(RETURN_TASK_SHEET_NAME)
+            invalidate_cache(TASK_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
 
         except Exception as e:
@@ -4500,6 +4556,7 @@ class TaskListScreen(Screen):
             Clock.schedule_once(
                 lambda dt: App.get_running_app().dismiss_loading_popup()
             )
+            
     def on_action_success(self, msg):
         App.get_running_app().dismiss_loading_popup()
         App.get_running_app().show_toast(msg)
@@ -6949,17 +7006,13 @@ class ReturnTaskListScreen(Screen):
     def handle_my_task_action(self, action_name, task_data):
         app = App.get_running_app()
         
-        # 1. 수량 입력 및 완료 버튼 -> 원복 검수 팝업 호출
         if action_name in ["qty", "complete"]:
-            # 💡 [수정됨] task_list_screen=self 인자 추가 (이것이 튕김의 원인이었습니다!)
             ReturnInspectionPopup(card_data=task_data, task_list_screen=self).open()
             
-        # 2. 반납 버튼 -> 할당 해제 (🚨 이 두 줄이 실수로 지워져서 에러가 났습니다!)
         elif action_name == "return":
             self.checked_task_ids.add(t(task_data, "작업ID"))
             self.batch_return_checked_tasks(None)
             
-        # 3. 비고 입력 버튼
         elif action_name == "remarks":
             def on_confirm_rem(text):
                 if not text.strip(): return
@@ -6972,7 +7025,6 @@ class ReturnTaskListScreen(Screen):
                 app.show_toast("비고가 임시 저장되었습니다. 완료 시 시트에 기재됩니다.")
             open_native_korean_input("비고 추가", "비고 내용 입력", "", on_confirm_rem)
             
-        # 4. 실패(원복불가) 버튼
         elif action_name == "fail":
             def on_confirm_fail(reason):
                 if not reason.strip(): return
@@ -6980,143 +7032,17 @@ class ReturnTaskListScreen(Screen):
                     "상태": "원복실패",
                     "비고": f"[실패사유] {reason.strip()}",
                     "보충담당자": app.user_real_name,
-                    "작업자": app.user_real_name,  # 💡 여기에도 X열 기재 추가!
+                    "작업자": app.user_real_name, 
                     "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 app.show_loading_popup()
                 threading.Thread(target=self._update_task_sheet_only, args=(task_data, updates, "원복 실패 처리되었습니다."), daemon=True).start()
             open_native_korean_input("실패 사유 입력", "원복 실패 사유 입력", "", on_confirm_fail)
-    # ==========================
-    # 사진 촬영 및 최종 완료 처리 로직 (안드로이드 순정 방식 업그레이드)
-    # ==========================
-    def open_camera(self, final_loc, task_data):
-        if platform != "android":
-            App.get_running_app().show_info_popup("PC 모드", "PC에서는 카메라를 사용할 수 없어 임시 링크로 완료 처리합니다.")
-            self._finalize_return(task_data, final_loc, "https://pc-test-dummy-url.com")
-            return
 
-        try:
-            from jnius import autoclass, cast
-            from android import activity
-            import time
-
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Intent = autoclass('android.content.Intent')
-            MediaStore = autoclass('android.provider.MediaStore')
-            ContentValues = autoclass('android.content.ContentValues')
-            Images_Media = autoclass('android.provider.MediaStore$Images$Media')
-
-            context = PythonActivity.mActivity.getApplicationContext()
-            resolver = context.getContentResolver()
-
-            # 💡 1. 갤러리 공용 공간에 빈 이미지 파일을 먼저 만들고 안전한 'content://' 경로 확보
-            values = ContentValues()
-            values.put("_display_name", f"return_photo_{int(time.time())}.jpg")
-            values.put("mime_type", "image/jpeg")
-
-            self.image_uri = resolver.insert(Images_Media.EXTERNAL_CONTENT_URI, values)
-
-            # 💡 2. 확보한 경로를 들고 기본 카메라 앱 호출
-            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            intent.putExtra(MediaStore.EXTRA_OUTPUT, cast('android.os.Parcelable', self.image_uri))
-
-            self._current_task_data = task_data
-            self._current_final_loc = final_loc
-
-            # 💡 3. 사진을 찍고 체크(✓)를 눌렀을 때 실행될 콜백 지정
-            def on_activity_result(request_code, result_code, intent_data):
-                if request_code == 1001:
-                    activity.unbind(on_activity_result=on_activity_result)
-                    if result_code == -1:  # -1 은 안드로이드에서 RESULT_OK (체크 버튼 누름)를 의미함
-                        # 🚨 [핵심 해결] 카메라 종료 후 어플 화면이 완전히 켜질 때까지 0.5초 대기 (멈춤/튕김 방지)
-                        Clock.schedule_once(lambda dt: self.on_camera_complete_native(), 0.5)
-                    else:
-                        # 촬영 취소 시 만들어둔 빈 파일 깔끔하게 삭제
-                        try:
-                            resolver.delete(self.image_uri, None, None)
-                        except: pass
-                        Clock.schedule_once(lambda dt: App.get_running_app().show_info_popup("알림", "사진 촬영이 취소되었습니다."), 0.5)
-
-            # Kivy 어플에 결과를 기다리라고 지시한 뒤 카메라 실행
-            activity.bind(on_activity_result=on_activity_result)
-            PythonActivity.mActivity.startActivityForResult(intent, 1001)
-
-        except Exception as e:
-            App.get_running_app().show_info_popup("카메라 연동 오류", f"기본 카메라를 열 수 없습니다: {e}")
-
-    # 💡 0.5초 뒤 안전한 상태(메인 UI 스레드)에서 경로를 먼저 추출 (여기서만 jnius 사용!)
-    def on_camera_complete_native(self):
-        app = App.get_running_app()
-        app.show_loading_popup()
-        
-        try:
-            from jnius import autoclass
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            context = PythonActivity.mActivity.getApplicationContext()
-            
-            # 메인 스레드에서 안전하게 경로 역추적
-            cursor = context.getContentResolver().query(self.image_uri, ["_data"], None, None, None)
-            real_path = None
-            if cursor:
-                if cursor.moveToFirst():
-                    real_path = cursor.getString(0)
-                cursor.close()
-
-            if not real_path or not os.path.exists(real_path):
-                raise Exception("사진 파일을 찾을 수 없거나 시스템 권한이 없습니다.")
-                
-            # 찾아낸 텍스트 경로(real_path)만 백그라운드 배달원(Thread)에게 넘김
-            threading.Thread(target=self._upload_photo_and_complete_native, args=(real_path,), daemon=True).start()
-
-        except Exception as e:
-            app.dismiss_loading_popup()
-            app.show_info_popup("사진 로드 오류", str(e))
-
-    # 💡 시스템(jnius) 코드 없이 순수하게 '구글 통신'만 담당하는 백그라운드 스레드
-    def _upload_photo_and_complete_native(self, real_path):
-        try:
-            # 🚨 jnius 관련 코드가 이곳에서 완전히 삭제되었습니다!
-            import base64
-            import json
-            import urllib.request
-            import ssl
-            import time
-
-            # 파일 작성이 끝날 때까지 0.5초 대기
-            time.sleep(0.5)
-
-            # 파일 읽어서 Base64 텍스트로 변환
-            with open(real_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-
-            payload = {
-                "fileName": f"원복_{t(self._current_task_data, '작업ID')}.jpg",
-                "mimeType": "image/jpeg",
-                "base64Data": encoded_string
-            }
-
-            # SSL 인증서 무시 (에러 해결)
-            ssl_context = ssl._create_unverified_context()
-
-            req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
-
-            if res_data.get("status") == "success":
-                photo_url = res_data.get("url")
-                # 팝업 닫기 및 마무리를 위해 다시 메인 스레드로 넘김
-                Clock.schedule_once(lambda dt: self._finalize_return(self._current_task_data, self._current_final_loc, photo_url))
-            else:
-                raise Exception(res_data.get("message", "구글 드라이브 업로드 실패"))
-                
-        except Exception as e:
-            Clock.schedule_once(lambda dt, err=str(e): App.get_running_app().show_info_popup("사진 업로드 오류", err))
-            Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
-
+    # 💡 [핵심] 트래픽을 방어하여 원복작업_로그 시트에 데이터가 100% 꽂히도록 수정
     def _finalize_return(self, task_data, final_loc, photo_url):
         app = App.get_running_app()
         
-        # 💡 [수량/입수량 변경 비고란 자동 기재 로직]
         final_qty = safe_int(t(task_data, "확인수량", 0))
         req_qty = safe_int(t(task_data, "지시수량", 0))
         updated_remarks = str(t(task_data, "비고", ""))
@@ -7140,31 +7066,24 @@ class ReturnTaskListScreen(Screen):
             "최종적치": final_loc,
             "확인수량": str(final_qty),
             "비고": updated_remarks,
-            "보충담당자": app.user_real_name, # N열
-            "작업자": app.user_real_name,    # 💡 X열 추가!
+            "보충담당자": app.user_real_name,
+            "작업자": app.user_real_name,
             "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "사진": photo_url
         }
 
-        # ... (이후 _do_update() 내부 코드는 기존과 동일하게 유지) ...
-        # (아래 코드는 건드리지 마세요)
-
-        # ... (이후 _do_update() 로직은 동일하게 유지) ...
-
         def _do_update():
             try:
-                # 1. 지시서 시트 업데이트
                 t_sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
                 headers = [str(h).strip() for h in t_sheet.row_values(1)]
-                task_id = str(t(task_data, "작업ID"))
-                all_ids = t_sheet.col_values(headers.index("작업ID") + 1)
+                task_id = str(t(task_data, "작업ID")).strip()
+                all_ids = [str(x).strip() for x in t_sheet.col_values(headers.index("작업ID") + 1)]
                 
                 if task_id in all_ids:
                     row_idx = all_ids.index(task_id) + 1
-                    cells = [gspread.Cell(row_idx, headers.index(k) + 1, v) for k, v in updates.items() if k in headers]
-                    t_sheet.update_cells(cells)
+                    cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
+                    execute_with_retry(t_sheet.update_cells, cells)
 
-                # 2. 💡 로그 시트에도 똑같이 저장
                 try:
                     l_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
                     l_headers = [str(h).strip() for h in l_sheet.row_values(1)]
@@ -7172,7 +7091,9 @@ class ReturnTaskListScreen(Screen):
                     log_data = dict(task_data)
                     log_data.update(updates)
                     
-                    l_sheet.append_row([str(log_data.get(h, "")) for h in l_headers])
+                    log_row = [str(log_data.get(h, "")) for h in l_headers]
+                    execute_with_retry(l_sheet.append_row, log_row)
+                    
                     invalidate_cache(RETURN_LOG_SHEET_NAME)
                 except Exception as log_e:
                     print(f"로그 시트 저장 에러 (무시됨): {log_e}")
@@ -7188,7 +7109,6 @@ class ReturnTaskListScreen(Screen):
 
         app.show_loading_popup()
         threading.Thread(target=_do_update, daemon=True).start()
-
     def _update_task_sheet_only(self, task_data, updates, msg):
         try:
             t_sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
