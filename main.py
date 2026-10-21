@@ -21,7 +21,7 @@ CURRENT_VERSION = "1.9.7.4"
 
 def check_and_apply_update():
     try:
-        print("🔍 서버에서 최신 업데이트 확인 중...")
+        print(" 서버에서 최신 업데이트 확인 중...")
         ssl_context = ssl._create_unverified_context()
         req = urllib.request.Request(
             UPDATE_CHECK_URL, headers={"User-Agent": "Mozilla/5.0"}
@@ -35,7 +35,7 @@ def check_and_apply_update():
 
                 if server_version > CURRENT_VERSION:
                     print(
-                        f"🚀 새 버전 발견 ({server_version})! 코드를 다운로드합니다."
+                        f" 새 버전 발견 ({server_version})! 코드를 다운로드합니다."
                     )
                     code_req = urllib.request.Request(
                         UPDATE_CODE_URL, headers={"User-Agent": "Mozilla/5.0"}
@@ -7133,6 +7133,13 @@ class ReturnTaskListScreen(Screen):
 
 class MainApp(App):
     FONT_NAME = FONT_NAME
+
+    # 💡 [핵심 패치] 카메라 실행 시 앱이 죽거나 로그인 화면으로 초기화되는 현상 완벽 방어!
+    def on_pause(self):
+        return True
+
+    def on_resume(self):
+        pass
 
     def build(self):
         self.user_real_name = self.load_saved_user_name() or ""
