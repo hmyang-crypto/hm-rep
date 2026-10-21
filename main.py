@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.7.6"
+CURRENT_VERSION = "1.9.7.7"
 
 
 def check_and_apply_update():
@@ -7109,17 +7109,20 @@ class ReturnTaskListScreen(Screen):
 
         app.show_loading_popup()
         threading.Thread(target=_do_update, daemon=True).start()
+        
     def _update_task_sheet_only(self, task_data, updates, msg):
         try:
             t_sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
             headers = [str(h).strip() for h in t_sheet.row_values(1)]
-            task_id = str(t(task_data, "작업ID"))
-            all_ids = t_sheet.col_values(headers.index("작업ID") + 1)
+            
+            # 💡 [핵심] 작업ID 양쪽 공백 제거 (.strip() 추가됨!)
+            task_id = str(t(task_data, "작업ID")).strip()
+            all_ids = [str(x).strip() for x in t_sheet.col_values(headers.index("작업ID") + 1)]
             
             if task_id in all_ids:
                 row_idx = all_ids.index(task_id) + 1
-                cells = [gspread.Cell(row_idx, headers.index(k) + 1, v) for k, v in updates.items() if k in headers]
-                t_sheet.update_cells(cells)
+                cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
+                execute_with_retry(t_sheet.update_cells, cells)
             
             invalidate_cache(RETURN_TASK_SHEET_NAME)
             Clock.schedule_once(lambda dt: App.get_running_app().show_toast(msg))
@@ -7129,9 +7132,9 @@ class ReturnTaskListScreen(Screen):
         finally:
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
-# =========================================================================
-
-# 💡 [핵심 복구] 삭제되었던 안드로이드 카메라 실행, 결과 처리, 구글 드라이브 업로드 함수 복구
+    # =========================================================================
+    # 💡 [정상 위치 복구] 카메라 실행, 결과 처리, 구글 드라이브 업로드 함수
+    # =========================================================================
     def open_camera(self, final_loc, task_data):
         self.current_return_loc = final_loc
         self.current_return_task_data = task_data
@@ -7155,7 +7158,7 @@ class ReturnTaskListScreen(Screen):
             
             context = PythonActivity.mActivity.getApplicationContext()
             pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-            task_id = str(t(task_data, "작업ID", "temp"))
+            task_id = str(t(task_data, "작업ID", "temp")).strip()
             self.photo_path = os.path.join(pic_dir.getAbsolutePath(), f"return_{task_id}_{int(time.time())}.jpg")
             photo_file = File(self.photo_path)
 
@@ -7165,8 +7168,13 @@ class ReturnTaskListScreen(Screen):
             parcelable_uri = cast('android.os.Parcelable', uri)
             intent.putExtra(MediaStore.EXTRA_OUTPUT, parcelable_uri)
 
-            activity.bind(on_activity_result=self.on_camera_result)
-            PythonActivity.mActivity.startActivityForResult(intent, 8888)
+            # 💡 [핵심 보정] 팝업이 완전히 닫힐 시간을 0.3초 주어 화면 겹침(프리징) 완벽 방지
+            def _launch_camera(dt):
+                activity.bind(on_activity_result=self.on_camera_result)
+                PythonActivity.mActivity.startActivityForResult(intent, 8888)
+            
+            Clock.schedule_once(_launch_camera, 0.3)
+
         except Exception as e:
             App.get_running_app().show_info_popup("카메라 오류", f"카메라 실행 중 오류가 발생했습니다.\n{e}")
             self._finalize_return(task_data, final_loc, "카메라오류(사진생략)")
@@ -7198,7 +7206,7 @@ class ReturnTaskListScreen(Screen):
             with open(self.photo_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
 
-            task_id = str(t(self.current_return_task_data, "작업ID", "unknown"))
+            task_id = str(t(self.current_return_task_data, "작업ID", "unknown")).strip()
             file_name = f"return_{task_id}_{int(time.time())}.jpg"
 
             payload = {
@@ -7216,7 +7224,6 @@ class ReturnTaskListScreen(Screen):
                 
                 if res_json.get("status") == "success":
                     photo_url = res_json.get("url", "")
-                    # 💡 업로드 성공 시 원복 로그 저장 함수 호출
                     Clock.schedule_once(lambda dt: self._finalize_return(self.current_return_task_data, self.current_return_loc, photo_url))
                 else:
                     raise Exception(res_json.get("message", "알 수 없는 오류"))
@@ -7225,6 +7232,10 @@ class ReturnTaskListScreen(Screen):
             Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
             Clock.schedule_once(lambda dt: app.show_info_popup("업로드 실패", f"사진 업로드 중 오류 발생:\n{e}\n(사진 없이 완료 처리됩니다.)"))
             Clock.schedule_once(lambda dt: self._finalize_return(self.current_return_task_data, self.current_return_loc, "사진업로드실패"))
+
+# =========================================================================
+
+
 
 class MainApp(App):
     FONT_NAME = FONT_NAME
