@@ -171,7 +171,7 @@ LOCATION_CAPA_MASTER_SHEET_NAME = "로케이션 케파"
 
 # 💡 [추가] 원복 작업 전용 상수 및 웹앱 URL
 RETURN_TASK_SHEET_NAME = "원복작업_지시서"
-RETURN_LOG_SHEET_NAME = "원복작업_RAW"
+RETURN_LOG_SHEET_NAME = "원복작업_로그"
 GAS_PHOTO_UPLOAD_URL = "https://script.google.com/macros/s/AKfycbx1T2mf5sb6vigWo_8YdAR2djY7QlfE-VsJGfOFAkbM42CJEstnkSuAHE0RQ0PPp1Cx/exec"
 
 SHEET_RANGES = {
@@ -4156,7 +4156,7 @@ class TaskListScreen(Screen):
                 log_row = [str(updated_task_data.get(h, "")) for h in log_headers]
                 log_sheet.append_row(log_row)
             except Exception as log_err:
-                print(f"⚠️ 로그 시트 기록 중 경고: {log_err}")
+                print(f"로그 시트 기록 중 경고: {log_err}")
 
             invalidate_cache(TASK_SHEET_NAME)
             invalidate_cache(LOG_SHEET_NAME)
@@ -4285,7 +4285,7 @@ class TaskListScreen(Screen):
         req_q = safe_int(t(card.task_data, "지시수량", 0))
         if conf_q != req_q:
             app.show_confirmation_popup(
-                title="수량 불일치 경고 🚨",
+                title="수량 불일치 경고 ",
                 message=f"[color=ffffff]지시수량([color=FF8A80][b]{req_q}개[/b][/color])과 확인수량([color=81C784][b]{conf_q}개[/b][/color])이 다릅니다.\n이대로 보충 완료 처리를 진행하시겠습니까?[/color]",
                 on_yes=lambda: self._finalize_task_processing(
                     card,
@@ -4337,7 +4337,7 @@ class TaskListScreen(Screen):
                 daemon=True,
             ).start()
         except Exception as e:
-            print(f"🔴 프린터 작업 에러 무시됨: {e}")
+            print(f" 프린터 작업 에러 무시됨: {e}")
 
     def _print_thread(self, address, label_info, quantity):
         try:
@@ -4350,7 +4350,7 @@ class TaskListScreen(Screen):
                 finally:
                     printer.disconnect()
         except Exception as e:
-            print(f"🔴 블루투스 인쇄 실패: {e}")
+            print(f" 블루투스 인쇄 실패: {e}")
 
     def _finalize_task_processing(
         self, card, final_qty, split_qty, final_location, updated_remarks
@@ -4380,94 +4380,47 @@ class TaskListScreen(Screen):
             else:
                 updated_remarks = change_log
 
-        # 💡 [핵심 추가] 검수 작업일 때, 보충 수량과 검수 수량이 다르면 비고란에 자동 기록
-        if app.current_list_type == "검수인원":
-            # 보충 작업 시 입력했던 기존 수량 (확인수량 필드 참조)
-            replenished_qty = safe_int(t(card.task_data, "확인수량", t(card.task_data, "지시수량", 0)))
-            
-            # 수량이 서로 불일치할 경우
-            if final_qty != replenished_qty:
-                diff = final_qty - replenished_qty
-                diff_str = f"+{diff}" if diff > 0 else f"{diff}"
-                
-                # 형식 1 텍스트 포맷 생성
-                mismatch_log = f"[수량 불일치] 보충: {replenished_qty}개 ➔ 검수: {final_qty}개 (차이: {diff_str}개)"
-                
-                curr_rem = str(updated_remarks or "").strip()
-                # 기존 비고가 있으면 줄바꿈(\n) 후 추가
-                if curr_rem:
-                    updated_remarks = f"{curr_rem}\n{mismatch_log}"
-                else:
-                    updated_remarks = mismatch_log
+        req_qty = safe_int(t(card.task_data, "지시수량", 0))
+        if final_qty != req_qty:
+            diff = final_qty - req_qty
+            diff_str = f"+{diff}" if diff > 0 else f"{diff}"
+            mismatch_log = f"[수량 불일치] 지시: {req_qty}개 ➔ 원복: {final_qty}개 (차이: {diff_str}개)"
+            curr_rem = str(updated_remarks or "").strip()
+            if curr_rem:
+                updated_remarks = f"{curr_rem}\n{mismatch_log}"
+            else:
+                updated_remarks = mismatch_log
 
-            updates = {
-                "상태": "최종완료",
-                "검수담당자": app.user_real_name,
-                "최종완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "확인수량": str(final_qty),
-                "비고": updated_remarks,
-                "최종적치위치": final_location,
-            }
-            app.show_loading_popup()
-            threading.Thread(
-                target=self._perform_update_and_log,
-                args=(card, updates, "검수 작업이 '최종완료' 처리 되었습니다."),
-                daemon=True,
-            ).start()
-            return
-
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+        # 💡 [핵심 수정] 원복 작업용 상태 및 헤더(보충담당자, 작업자 동시 기록)
         updates = {
-            "상태": "적치대기",
+            "상태": "원복완료",
             "보충담당자": app.user_real_name,
-            "완료일시": now_str,
+            "작업자": app.user_real_name,
+            "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "확인수량": str(final_qty),
             "비고": updated_remarks,
+            "최종적치위치": final_location,
         }
+        
+        app.show_loading_popup()
+        threading.Thread(
+            target=self._perform_update_and_log,
+            args=(card, updates, " 원복 작업이 안전하게 완료되었습니다!"),
+            daemon=True,
+        ).start()
 
-        completed_record = dict(card.task_data)
-        completed_record.update(updates)
-        g_recent_completed_tasks.append(completed_record)
-        if len(g_recent_completed_tasks) > 15:
-            g_recent_completed_tasks.pop(0)
-
-        save_recent_history()
-
-        def run_sheet_update():
-            app.show_loading_popup()
-            threading.Thread(
-                target=self._perform_update_and_log,
-                args=(card, updates, "보충작업이 완료되어 '적치대기' 상태로 전환되었습니다."),
-                daemon=True,
-            ).start()
-
-        def on_yes_print():
-            try:
-                self._start_print_job(card.task_data)
-            except Exception:
-                pass
-            run_sheet_update()
-
-        app.show_confirmation_popup(
-            title="인쇄 및 완료",
-            message="[color=ffffff]보충 완료 및 적치대기 처리합니다.\n라벨 1장을 인쇄하시겠습니까?[/color]",
-            on_yes=on_yes_print,
-            on_no=run_sheet_update,
-        )
-
+    # 💡 [핵심 수정] 원복 지시서(RETURN_TASK_SHEET_NAME)와 원복 로그(RETURN_LOG_SHEET_NAME)에 저장되도록 완벽 분리!
     def _perform_update_and_log(self, card, updates, msg):
         try:
-            sheet = get_worksheet(TASK_SHEET_NAME)
+            sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
             
             card_task_data = getattr(card, "task_data", {})
             is_merged = card_task_data.get("is_merged", False) or getattr(card, "is_merged", False)
             merged_sources = card_task_data.get("merged_sources", []) or getattr(card, "merged_sources", [])
 
-            log_entries = []  # 💡 기록용 로그 데이터 수집 배열
+            log_entries = []  
 
-            # 💡 다중 선택 통합 검수 완료 시
             if is_merged and merged_sources:
                 task_id_col_idx = headers.index("작업ID") + 1
                 all_task_ids = sheet.col_values(task_id_col_idx)
@@ -4484,7 +4437,6 @@ class TaskListScreen(Screen):
                                 col_idx = headers.index(key) + 1
                                 cells.append(gspread.Cell(row_idx, col_idx, str(val)))
                     
-                    # 로그 기록을 위한 데이터 세팅
                     merged_updated_task = dict(src_task)
                     merged_updated_task.update(updates)
                     log_entries.append(merged_updated_task)
@@ -4492,7 +4444,6 @@ class TaskListScreen(Screen):
                 if cells:
                     sheet.update_cells(cells)
                     
-            # 💡 단일 선택 검수 완료 시
             else:
                 task_id = str(t(card.task_data, "작업ID"))
                 task_id_col_idx = headers.index("작업ID") + 1
@@ -4512,18 +4463,14 @@ class TaskListScreen(Screen):
                 if cells:
                     sheet.update_cells(cells)
                 
-                # 로그 기록을 위한 데이터 세팅
                 single_updated_task = dict(card.task_data)
                 single_updated_task.update(updates)
                 log_entries.append(single_updated_task)
 
-            # ==========================================
-            # 💡 [조건 추가 구역] 작업완료 로그 시트 기록
-            # ==========================================
-            # 🚨 "상태"가 "최종완료"일 때만 로그 시트에 기록되도록 조건문(if) 추가
-            if log_entries and updates.get("상태") == "최종완료":
+            # 💡 [핵심] "원복완료" 상태일 때 RETURN_LOG_SHEET_NAME 에 기록!
+            if log_entries and updates.get("상태") == "원복완료":
                 try:
-                    log_sheet = get_worksheet(LOG_SHEET_NAME)
+                    log_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
                     log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
                     
                     rows_to_append = []
@@ -4531,17 +4478,16 @@ class TaskListScreen(Screen):
                         row = [str(entry.get(h, "")) for h in log_headers]
                         rows_to_append.append(row)
                     
-                    # 1건이면 append_row, 다중건이면 append_rows 사용
                     if len(rows_to_append) == 1:
                         log_sheet.append_row(rows_to_append[0])
                     else:
                         log_sheet.append_rows(rows_to_append)
                         
-                    invalidate_cache(LOG_SHEET_NAME)
+                    invalidate_cache(RETURN_LOG_SHEET_NAME)
                 except Exception as log_err:
                     print(f"⚠️ 로그 시트 기록 중 경고: {log_err}")
 
-            invalidate_cache(TASK_SHEET_NAME)
+            invalidate_cache(RETURN_TASK_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
 
         except Exception as e:
@@ -4554,7 +4500,6 @@ class TaskListScreen(Screen):
             Clock.schedule_once(
                 lambda dt: App.get_running_app().dismiss_loading_popup()
             )
-
     def on_action_success(self, msg):
         App.get_running_app().dismiss_loading_popup()
         App.get_running_app().show_toast(msg)
@@ -4570,7 +4515,7 @@ class TaskListScreen(Screen):
                     elif hasattr(curr_screen, "refresh_list"):
                         curr_screen.refresh_list(force_refresh=True)
             except Exception as e:
-                print(f"🔴 UI 리프레시 예외 무시: {e}")
+                print(f" UI 리프레시 예외 무시: {e}")
 
         Clock.schedule_once(_safe_refresh_ui, 0.5)
 
@@ -7034,8 +6979,8 @@ class ReturnTaskListScreen(Screen):
                 updates = {
                     "상태": "원복실패",
                     "비고": f"[실패사유] {reason.strip()}",
-                    # 💡 [헤더 반영] 작업자
                     "보충담당자": app.user_real_name,
+                    "작업자": app.user_real_name,  # 💡 여기에도 X열 기재 추가!
                     "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 app.show_loading_popup()
@@ -7195,10 +7140,14 @@ class ReturnTaskListScreen(Screen):
             "최종적치": final_loc,
             "확인수량": str(final_qty),
             "비고": updated_remarks,
-            "보충담당자": app.user_real_name,
+            "보충담당자": app.user_real_name, # N열
+            "작업자": app.user_real_name,    # 💡 X열 추가!
             "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "사진": photo_url
         }
+
+        # ... (이후 _do_update() 내부 코드는 기존과 동일하게 유지) ...
+        # (아래 코드는 건드리지 마세요)
 
         # ... (이후 _do_update() 로직은 동일하게 유지) ...
 
