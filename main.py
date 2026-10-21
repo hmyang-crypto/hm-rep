@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.7.5"
+CURRENT_VERSION = "1.9.7.6"
 
 
 def check_and_apply_update():
@@ -7130,6 +7130,101 @@ class ReturnTaskListScreen(Screen):
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
 # =========================================================================
+
+# 💡 [핵심 복구] 삭제되었던 안드로이드 카메라 실행, 결과 처리, 구글 드라이브 업로드 함수 복구
+    def open_camera(self, final_loc, task_data):
+        self.current_return_loc = final_loc
+        self.current_return_task_data = task_data
+
+        if platform != 'android':
+            print("카메라는 안드로이드 기기에서만 동작합니다. (사진생략 테스트 모드로 진행)")
+            self._finalize_return(task_data, final_loc, "사진생략(PC테스트)")
+            return
+
+        try:
+            from jnius import autoclass, cast
+            from android import activity
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            MediaStore = autoclass('android.provider.MediaStore')
+            File = autoclass('java.io.File')
+            Environment = autoclass('android.os.Environment')
+            FileProvider = autoclass('androidx.core.content.FileProvider')
+
+            intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            
+            context = PythonActivity.mActivity.getApplicationContext()
+            pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+            task_id = str(t(task_data, "작업ID", "temp"))
+            self.photo_path = os.path.join(pic_dir.getAbsolutePath(), f"return_{task_id}_{int(time.time())}.jpg")
+            photo_file = File(self.photo_path)
+
+            authority = context.getPackageName() + ".fileprovider"
+            uri = FileProvider.getUriForFile(context, authority, photo_file)
+            
+            parcelable_uri = cast('android.os.Parcelable', uri)
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, parcelable_uri)
+
+            activity.bind(on_activity_result=self.on_camera_result)
+            PythonActivity.mActivity.startActivityForResult(intent, 8888)
+        except Exception as e:
+            App.get_running_app().show_info_popup("카메라 오류", f"카메라 실행 중 오류가 발생했습니다.\n{e}")
+            self._finalize_return(task_data, final_loc, "카메라오류(사진생략)")
+
+    def on_camera_result(self, requestCode, resultCode, intent):
+        if requestCode != 8888:
+            return
+
+        from android import activity
+        activity.unbind(on_activity_result=self.on_camera_result)
+
+        app = App.get_running_app()
+        
+        # 안드로이드 Activity.RESULT_OK == -1
+        if resultCode == -1:
+            app.show_toast("사진 촬영 완료! 서버에 업로드 중입니다...")
+            app.show_loading_popup()
+            threading.Thread(target=self._upload_photo_and_finalize, daemon=True).start()
+        else:
+            app.show_info_popup("촬영 취소", "사진 촬영이 취소되어 원복이 완료되지 않았습니다.")
+
+    def _upload_photo_and_finalize(self):
+        app = App.get_running_app()
+        try:
+            if not hasattr(self, 'photo_path') or not os.path.exists(self.photo_path):
+                raise Exception("저장된 사진 파일을 찾을 수 없습니다.")
+
+            # 이미지 base64 인코딩
+            with open(self.photo_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+
+            task_id = str(t(self.current_return_task_data, "작업ID", "unknown"))
+            file_name = f"return_{task_id}_{int(time.time())}.jpg"
+
+            payload = {
+                "filename": file_name,
+                "mimeType": "image/jpeg",
+                "bytes": encoded_string
+            }
+
+            req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={'Content-Type': 'application/json'})
+            ssl_context = ssl._create_unverified_context()
+
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
+                res_data = response.read().decode("utf-8")
+                res_json = json.loads(res_data)
+                
+                if res_json.get("status") == "success":
+                    photo_url = res_json.get("url", "")
+                    # 💡 업로드 성공 시 원복 로그 저장 함수 호출
+                    Clock.schedule_once(lambda dt: self._finalize_return(self.current_return_task_data, self.current_return_loc, photo_url))
+                else:
+                    raise Exception(res_json.get("message", "알 수 없는 오류"))
+
+        except Exception as e:
+            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
+            Clock.schedule_once(lambda dt: app.show_info_popup("업로드 실패", f"사진 업로드 중 오류 발생:\n{e}\n(사진 없이 완료 처리됩니다.)"))
+            Clock.schedule_once(lambda dt: self._finalize_return(self.current_return_task_data, self.current_return_loc, "사진업로드실패"))
 
 class MainApp(App):
     FONT_NAME = FONT_NAME
