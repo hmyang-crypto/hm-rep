@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.1"
+CURRENT_VERSION = "1.9.8.2"
 
 
 def check_and_apply_update():
@@ -7141,120 +7141,133 @@ class ReturnTaskListScreen(Screen):
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
    # =========================================================================
-    # 💡 [최종 원복] 카메라 실행 (IOException 에러 및 체크버튼 먹통 완벽 해결)
+    # 💡 [최종 원복 완료] 관리자님의 원본 코드 적용 (MediaStore 방식)
     # =========================================================================
     def open_camera(self, final_loc, task_data):
-        self.current_return_loc = final_loc
-        self.current_return_task_data = task_data
-
-        if platform != 'android':
-            print("카메라는 안드로이드 기기에서만 동작합니다. (사진생략 테스트 모드로 진행)")
-            self._finalize_return(task_data, final_loc, "사진생략(PC테스트)")
+        if platform != "android":
+            App.get_running_app().show_info_popup("PC 모드", "PC에서는 카메라를 사용할 수 없어 임시 링크로 완료 처리합니다.")
+            self._finalize_return(task_data, final_loc, "https://pc-test-dummy-url.com")
             return
 
         try:
             from jnius import autoclass, cast
             from android import activity
             import time
+
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             Intent = autoclass('android.content.Intent')
             MediaStore = autoclass('android.provider.MediaStore')
-            File = autoclass('java.io.File')
-            Uri = autoclass('android.net.Uri')
-            Environment = autoclass('android.os.Environment')
+            ContentValues = autoclass('android.content.ContentValues')
+            Images_Media = autoclass('android.provider.MediaStore$Images$Media')
 
+            context = PythonActivity.mActivity.getApplicationContext()
+            resolver = context.getContentResolver()
+
+            # 💡 1. 갤러리 공용 공간에 빈 이미지 파일을 먼저 만들고 안전한 'content://' 경로 확보
+            values = ContentValues()
+            values.put("_display_name", f"return_photo_{int(time.time())}.jpg")
+            values.put("mime_type", "image/jpeg")
+
+            self.image_uri = resolver.insert(Images_Media.EXTERNAL_CONTENT_URI, values)
+
+            # 💡 2. 확보한 경로를 들고 기본 카메라 앱 호출
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            
-            # 💡 [해결 1] 권한 에러(Operation not permitted) 방지: 어플 전용 안전 폴더로 경로 원복
-            pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-            if not pic_dir.exists():
-                pic_dir.mkdirs()
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, cast('android.os.Parcelable', self.image_uri))
 
-            task_id = str(t(task_data, "작업ID", "temp")).strip()
-            self.photo_path = os.path.join(pic_dir.getAbsolutePath(), f"return_{task_id}_{int(time.time())}.jpg")
-            photo_file = File(self.photo_path)
+            self._current_task_data = task_data
+            self._current_final_loc = final_loc
 
-            # 💡 [해결 2] 체크버튼(V) 먹통(프리징) 방지: 빈 파일을 안전한 폴더 내에 미리 생성
-            if not photo_file.exists():
-                photo_file.createNewFile()
+            # 💡 3. 사진을 찍고 체크(✓)를 눌렀을 때 실행될 콜백 지정
+            def on_activity_result(request_code, result_code, intent_data):
+                if request_code == 1001:
+                    activity.unbind(on_activity_result=on_activity_result)
+                    if result_code == -1:  # -1 은 안드로이드에서 RESULT_OK (체크 버튼 누름)를 의미함
+                        # 🚨 [핵심 해결] 카메라 종료 후 어플 화면이 완전히 켜질 때까지 0.5초 대기 (멈춤/튕김 방지)
+                        Clock.schedule_once(lambda dt: self.on_camera_complete_native(), 0.5)
+                    else:
+                        # 촬영 취소 시 만들어둔 빈 파일 깔끔하게 삭제
+                        try:
+                            resolver.delete(self.image_uri, None, None)
+                        except: pass
+                        Clock.schedule_once(lambda dt: App.get_running_app().show_info_popup("알림", "사진 촬영이 취소되었습니다."), 0.5)
 
-            uri = Uri.fromFile(photo_file)
-            
-            parcelable_uri = cast('android.os.Parcelable', uri)
-            intent.putExtra(MediaStore.EXTRA_OUTPUT, parcelable_uri)
-            
-            # 카메라가 파일에 접근할 수 있도록 권한 부여
-            intent.addFlags(2) # FLAG_GRANT_WRITE_URI_PERMISSION
-            intent.addFlags(1) # FLAG_GRANT_READ_URI_PERMISSION
-
-            # 화면 겹침/프리징 방지용 0.3초 딜레이 실행
-            def _launch_camera(dt):
-                activity.bind(on_activity_result=self.on_camera_result)
-                PythonActivity.mActivity.startActivityForResult(intent, 8888)
-            
-            Clock.schedule_once(_launch_camera, 0.3)
+            # Kivy 어플에 결과를 기다리라고 지시한 뒤 카메라 실행
+            activity.bind(on_activity_result=on_activity_result)
+            PythonActivity.mActivity.startActivityForResult(intent, 1001)
 
         except Exception as e:
-            App.get_running_app().show_info_popup("카메라 오류", f"카메라 실행 중 오류가 발생했습니다.\n{e}")
-            self._finalize_return(task_data, final_loc, "카메라오류(사진생략)")
+            App.get_running_app().show_info_popup("카메라 연동 오류", f"기본 카메라를 열 수 없습니다: {e}")
 
-    def on_camera_result(self, requestCode, resultCode, intent):
-        if requestCode != 8888:
-            return
-
-        from android import activity
-        activity.unbind(on_activity_result=self.on_camera_result)
-
+    # 💡 0.5초 뒤 안전한 상태(메인 UI 스레드)에서 경로를 먼저 추출 (여기서만 jnius 사용!)
+    def on_camera_complete_native(self):
         app = App.get_running_app()
+        app.show_toast("사진 촬영 완료! 서버에 업로드 중입니다...")
+        app.show_loading_popup()
         
-        # 안드로이드 Activity.RESULT_OK == -1
-        if resultCode == -1:
-            app.show_toast("사진 촬영 완료! 서버에 업로드 중입니다...")
-            app.show_loading_popup()
-            threading.Thread(target=self._upload_photo_and_finalize, daemon=True).start()
-        else:
-            app.show_info_popup("촬영 취소", "사진 촬영이 취소되어 원복이 완료되지 않았습니다.")
-
-    def _upload_photo_and_finalize(self):
-        app = App.get_running_app()
         try:
-            if not hasattr(self, 'photo_path') or not os.path.exists(self.photo_path):
-                raise Exception("저장된 사진 파일을 찾을 수 없습니다.")
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            context = PythonActivity.mActivity.getApplicationContext()
+            
+            # 메인 스레드에서 안전하게 경로 역추적
+            cursor = context.getContentResolver().query(self.image_uri, ["_data"], None, None, None)
+            real_path = None
+            if cursor:
+                if cursor.moveToFirst():
+                    real_path = cursor.getString(0)
+                cursor.close()
 
-            # 이미지 base64 인코딩
-            with open(self.photo_path, "rb") as image_file:
+            if not real_path or not os.path.exists(real_path):
+                raise Exception("사진 파일을 찾을 수 없거나 시스템 권한이 없습니다.")
+                
+            # 찾아낸 텍스트 경로(real_path)만 백그라운드 배달원(Thread)에게 넘김
+            threading.Thread(target=self._upload_photo_and_complete_native, args=(real_path,), daemon=True).start()
+
+        except Exception as e:
+            app.dismiss_loading_popup()
+            app.show_info_popup("사진 로드 오류", str(e))
+
+    # 💡 시스템(jnius) 코드 없이 순수하게 '구글 통신'만 담당하는 백그라운드 스레드
+    def _upload_photo_and_complete_native(self, real_path):
+        try:
+            import base64
+            import json
+            import urllib.request
+            import ssl
+            import time
+
+            # 파일 작성이 끝날 때까지 0.5초 대기
+            time.sleep(0.5)
+
+            # 파일 읽어서 Base64 텍스트로 변환
+            with open(real_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
 
-            task_id = str(t(self.current_return_task_data, "작업ID", "unknown")).strip()
-            file_name = f"return_{task_id}_{int(time.time())}.jpg"
-
+            task_id = str(t(self._current_task_data, "작업ID", "temp")).strip()
             payload = {
-                "filename": file_name,
+                "fileName": f"return_{task_id}_{int(time.time())}.jpg",
                 "mimeType": "image/jpeg",
-                "bytes": encoded_string
+                "base64Data": encoded_string
             }
 
-            req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={'Content-Type': 'application/json'})
+            # SSL 인증서 무시 (에러 해결)
             ssl_context = ssl._create_unverified_context()
 
+            req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
-                res_data = response.read().decode("utf-8")
-                res_json = json.loads(res_data)
+                res_data = json.loads(response.read().decode("utf-8"))
+
+            if res_data.get("status") == "success":
+                photo_url = res_data.get("url")
+                # 팝업 닫기 및 마무리를 위해 다시 메인 스레드로 넘김
+                Clock.schedule_once(lambda dt: self._finalize_return(self._current_task_data, self._current_final_loc, photo_url))
+            else:
+                raise Exception(res_data.get("message", "구글 드라이브 업로드 실패"))
                 
-                if res_json.get("status") == "success":
-                    photo_url = res_json.get("url", "")
-                    Clock.schedule_once(lambda dt: self._finalize_return(self.current_return_task_data, self.current_return_loc, photo_url))
-                else:
-                    raise Exception(res_json.get("message", "알 수 없는 오류"))
-
         except Exception as e:
-            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
-            Clock.schedule_once(lambda dt: app.show_info_popup("업로드 실패", f"사진 업로드 중 오류 발생:\n{e}\n(사진 없이 완료 처리됩니다.)"))
-            Clock.schedule_once(lambda dt: self._finalize_return(self.current_return_task_data, self.current_return_loc, "사진업로드실패"))
-
+            Clock.schedule_once(lambda dt, err=str(e): App.get_running_app().show_info_popup("사진 업로드 오류", err))
+            Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 # =========================================================================
-
-
 
 class MainApp(App):
     FONT_NAME = FONT_NAME
