@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.5"
+CURRENT_VERSION = "1.9.8.6"
 
 
 def check_and_apply_update():
@@ -7048,7 +7048,7 @@ class ReturnTaskListScreen(Screen):
             open_native_korean_input("실패 사유 입력", "원복 실패 사유 입력", "", on_confirm_fail)
 
    # =========================================================================
-    # 💡 [최종 종결판] 중복 코드 제거 + 초고속 1초 컷 로딩 + 로그 시트 완벽 기록
+    # 💡 [최종 종결판] 초고속 1초 컷 로딩 + A열 기준 로그 시트 완벽 기록
     # =========================================================================
     def _finalize_return(self, task_data, final_loc, photo_url_or_path, is_local_path=False):
         app = App.get_running_app()
@@ -7134,29 +7134,40 @@ class ReturnTaskListScreen(Screen):
             try:
                 # ① 지시서 업데이트
                 t_sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
-                headers = [str(h).strip() for h in t_sheet.row_values(1)]
-                all_ids = [str(x).strip() for x in t_sheet.col_values(headers.index("작업ID") + 1)]
+                headers_raw = execute_with_retry(t_sheet.row_values, 1)
+                headers = [str(h).strip() for h in headers_raw]
+                
+                all_ids_raw = execute_with_retry(t_sheet.col_values, headers.index("작업ID") + 1)
+                all_ids = [str(x).strip() for x in all_ids_raw]
                 
                 if task_id in all_ids:
                     row_idx = all_ids.index(task_id) + 1
                     cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
                     if cells:
-                        t_sheet.update_cells(cells)
+                        execute_with_retry(t_sheet.update_cells, cells)
 
-                # ② 로그 시트 완벽 방어 업데이트
+                # ② 로그 시트 완벽 업데이트 (A열 빈칸 기준)
                 try:
                     l_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
-                    l_headers = [str(h).strip() for h in l_sheet.row_values(1)]
+                    l_headers_raw = execute_with_retry(l_sheet.row_values, 1)
+                    l_headers = [str(h).strip() for h in l_headers_raw]
+                    
                     if not l_headers:
                         l_headers = headers
-                        l_sheet.append_row(l_headers)
+                        h_cells = [gspread.Cell(1, i + 1, val) for i, val in enumerate(l_headers)]
+                        execute_with_retry(l_sheet.update_cells, h_cells)
                     
                     log_data = dict(task_data)
                     log_data.update(updates)
                     log_row = [str(log_data.get(h, "")) for h in l_headers]
                     
-                    # 직접 append_row 호출하여 누락 방지!
-                    l_sheet.append_row(log_row)
+                    # 💡 [해결 핵심] append_row를 버리고, A열 데이터 개수를 세어서 수식이 있는 C열과 무관하게 정확한 빈 줄 번호를 찾음!
+                    col_a_vals = execute_with_retry(l_sheet.col_values, 1)
+                    next_row = len(col_a_vals) + 1
+                    
+                    log_cells = [gspread.Cell(next_row, i + 1, val) for i, val in enumerate(log_row)]
+                    execute_with_retry(l_sheet.update_cells, log_cells)
+                    
                     invalidate_cache(RETURN_LOG_SHEET_NAME)
                 except Exception as log_e:
                     print(f"원복 로그 시트 저장 에러: {log_e}")
@@ -7183,14 +7194,41 @@ class ReturnTaskListScreen(Screen):
         def _do_update_silent():
             try:
                 t_sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
-                headers = [str(h).strip() for h in t_sheet.row_values(1)]
-                all_ids = [str(x).strip() for x in t_sheet.col_values(headers.index("작업ID") + 1)]
+                headers_raw = execute_with_retry(t_sheet.row_values, 1)
+                headers = [str(h).strip() for h in headers_raw]
+                
+                all_ids_raw = execute_with_retry(t_sheet.col_values, headers.index("작업ID") + 1)
+                all_ids = [str(x).strip() for x in all_ids_raw]
                 
                 if task_id in all_ids:
                     row_idx = all_ids.index(task_id) + 1
                     cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
                     if cells:
-                        t_sheet.update_cells(cells)
+                        execute_with_retry(t_sheet.update_cells, cells)
+
+                # 💡 "원복실패" 처리 시에도 로그에 남기도록 A열 기준 기록 로직 추가
+                if updates.get("상태") == "원복실패":
+                    try:
+                        l_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
+                        l_headers_raw = execute_with_retry(l_sheet.row_values, 1)
+                        l_headers = [str(h).strip() for h in l_headers_raw]
+                        if not l_headers:
+                            l_headers = headers
+                        
+                        log_data = dict(task_data)
+                        log_data.update(updates)
+                        log_row = [str(log_data.get(h, "")) for h in l_headers]
+                        
+                        # 💡 A열(작업ID) 기준으로 빈칸 찾아서 넣기
+                        col_a_vals = execute_with_retry(l_sheet.col_values, 1)
+                        next_row = len(col_a_vals) + 1
+                        
+                        log_cells = [gspread.Cell(next_row, i + 1, val) for i, val in enumerate(log_row)]
+                        execute_with_retry(l_sheet.update_cells, log_cells)
+                        
+                        invalidate_cache(RETURN_LOG_SHEET_NAME)
+                    except Exception as log_e:
+                        print(f"실패 로그 기록 에러: {log_e}")
                 
                 invalidate_cache(RETURN_TASK_SHEET_NAME)
             except Exception as e:
