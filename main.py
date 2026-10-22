@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.7.7"
+CURRENT_VERSION = "1.9.7.8"
 
 
 def check_and_apply_update():
@@ -1588,6 +1588,7 @@ class InspectionPopup(Popup):
 
     # 💡 [핵심] 누락되었던 누락 QR 수기 완결 메서드 구현 (튕김 및 먹통 원인 차단)
     # 💡 [수정됨] 존재하지 않는 함수 호출로 인한 튕김 방지 및 정상 루트 연결
+    # 💡 [수정] 튕김 원인 해결! (잘못된 함수명 호출 수정)
     def _execute_no_qr_finalize(self, calculated_total_qty):
         final_loc = self.target_location
         curr_rem = str(self.current_remarks).strip()
@@ -1596,7 +1597,14 @@ class InspectionPopup(Popup):
         self.task_data["확인수량"] = str(calculated_total_qty)
         self.task_data["비고"] = updated_rem
         
-        self.task_list_screen._finalize_return(self.task_data, final_loc, "QR없음(사진생략)")
+        # 💡 _finalize_return 이 아니라 _finalize_task_processing 으로 정상 호출
+        self.task_list_screen._finalize_task_processing(
+            card=self.card,
+            final_qty=calculated_total_qty,
+            split_qty=0,
+            final_location=final_loc,
+            updated_remarks=updated_rem,
+        )
         self.dismiss()
 
     def _execute_scan_finalize(self, calculated_total_qty, scanned_loc):
@@ -7132,9 +7140,7 @@ class ReturnTaskListScreen(Screen):
         finally:
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
-    # =========================================================================
-    # 💡 [정상 위치 복구] 카메라 실행, 결과 처리, 구글 드라이브 업로드 함수
-    # =========================================================================
+    # 💡 [수정] 카메라 실행 시 발생하는 FileProvider 에러 완벽 해결
     def open_camera(self, final_loc, task_data):
         self.current_return_loc = final_loc
         self.current_return_task_data = task_data
@@ -7151,24 +7157,22 @@ class ReturnTaskListScreen(Screen):
             Intent = autoclass('android.content.Intent')
             MediaStore = autoclass('android.provider.MediaStore')
             File = autoclass('java.io.File')
+            Uri = autoclass('android.net.Uri') # 💡 추가됨
             Environment = autoclass('android.os.Environment')
-            FileProvider = autoclass('androidx.core.content.FileProvider')
 
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             
-            context = PythonActivity.mActivity.getApplicationContext()
             pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
             task_id = str(t(task_data, "작업ID", "temp")).strip()
             self.photo_path = os.path.join(pic_dir.getAbsolutePath(), f"return_{task_id}_{int(time.time())}.jpg")
             photo_file = File(self.photo_path)
 
-            authority = context.getPackageName() + ".fileprovider"
-            uri = FileProvider.getUriForFile(context, authority, photo_file)
+            # 💡 [핵심] 복잡한 FileProvider 대신 심플한 Uri 직접 사용 (보안 우회 적용 완료)
+            uri = Uri.fromFile(photo_file)
             
             parcelable_uri = cast('android.os.Parcelable', uri)
             intent.putExtra(MediaStore.EXTRA_OUTPUT, parcelable_uri)
 
-            # 💡 [핵심 보정] 팝업이 완전히 닫힐 시간을 0.3초 주어 화면 겹침(프리징) 완벽 방지
             def _launch_camera(dt):
                 activity.bind(on_activity_result=self.on_camera_result)
                 PythonActivity.mActivity.startActivityForResult(intent, 8888)
