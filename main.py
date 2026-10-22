@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.6"
+CURRENT_VERSION = "1.9.8.7"
 
 
 def check_and_apply_update():
@@ -7048,7 +7048,7 @@ class ReturnTaskListScreen(Screen):
             open_native_korean_input("실패 사유 입력", "원복 실패 사유 입력", "", on_confirm_fail)
 
    # =========================================================================
-    # 💡 [최종 종결판] 초고속 1초 컷 로딩 + A열 기준 로그 시트 완벽 기록
+    # 💡 [최종 종결판] 초고속 1초 컷 로딩 + A열 기준 로그 시트 완벽 기록 + 체크박스 유지
     # =========================================================================
     def _finalize_return(self, task_data, final_loc, photo_url_or_path, is_local_path=False):
         app = App.get_running_app()
@@ -7096,7 +7096,7 @@ class ReturnTaskListScreen(Screen):
         # 🚀 2. 화면을 1초 만에 최신화하고 답답했던 로딩 팝업을 칼같이 닫습니다.
         self.apply_filters_and_render()
         app.dismiss_loading_popup()
-        app.show_toast("원복 완료! (서버 동기화 중...)")
+        app.show_toast("✅ 원복 완료! (서버 동기화 중...)")
 
         # 🚀 3. 사진 업로드와 구글 시트 저장은 뒷단(백그라운드)에서 조용하고 안전하게 실행!
         def _background_worker():
@@ -7144,7 +7144,8 @@ class ReturnTaskListScreen(Screen):
                     row_idx = all_ids.index(task_id) + 1
                     cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
                     if cells:
-                        execute_with_retry(t_sheet.update_cells, cells)
+                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
+                        execute_with_retry(t_sheet.update_cells, cells, value_input_option='USER_ENTERED')
 
                 # ② 로그 시트 완벽 업데이트 (A열 빈칸 기준)
                 try:
@@ -7155,26 +7156,27 @@ class ReturnTaskListScreen(Screen):
                     if not l_headers:
                         l_headers = headers
                         h_cells = [gspread.Cell(1, i + 1, val) for i, val in enumerate(l_headers)]
-                        execute_with_retry(l_sheet.update_cells, h_cells)
+                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
+                        execute_with_retry(l_sheet.update_cells, h_cells, value_input_option='USER_ENTERED')
                     
                     log_data = dict(task_data)
                     log_data.update(updates)
                     log_row = [str(log_data.get(h, "")) for h in l_headers]
                     
-                    # 💡 [해결 핵심] append_row를 버리고, A열 데이터 개수를 세어서 수식이 있는 C열과 무관하게 정확한 빈 줄 번호를 찾음!
                     col_a_vals = execute_with_retry(l_sheet.col_values, 1)
                     next_row = len(col_a_vals) + 1
                     
                     log_cells = [gspread.Cell(next_row, i + 1, val) for i, val in enumerate(log_row)]
-                    execute_with_retry(l_sheet.update_cells, log_cells)
+                    # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
+                    execute_with_retry(l_sheet.update_cells, log_cells, value_input_option='USER_ENTERED')
                     
                     invalidate_cache(RETURN_LOG_SHEET_NAME)
                 except Exception as log_e:
-                    print(f"원복 로그 시트 저장 에러: {log_e}")
+                    print(f"⚠️ 원복 로그 시트 저장 에러: {log_e}")
                 
                 invalidate_cache(RETURN_TASK_SHEET_NAME)
             except Exception as e:
-                print(f"백그라운드 업데이트 오류: {e}")
+                print(f"⚠️ 백그라운드 업데이트 오류: {e}")
 
         threading.Thread(target=_background_worker, daemon=True).start()
 
@@ -7204,9 +7206,10 @@ class ReturnTaskListScreen(Screen):
                     row_idx = all_ids.index(task_id) + 1
                     cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
                     if cells:
-                        execute_with_retry(t_sheet.update_cells, cells)
+                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
+                        execute_with_retry(t_sheet.update_cells, cells, value_input_option='USER_ENTERED')
 
-                # 💡 "원복실패" 처리 시에도 로그에 남기도록 A열 기준 기록 로직 추가
+                # "원복실패" 처리 시에도 로그에 남기도록 A열 기준 기록 로직 추가
                 if updates.get("상태") == "원복실패":
                     try:
                         l_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
@@ -7219,20 +7222,20 @@ class ReturnTaskListScreen(Screen):
                         log_data.update(updates)
                         log_row = [str(log_data.get(h, "")) for h in l_headers]
                         
-                        # 💡 A열(작업ID) 기준으로 빈칸 찾아서 넣기
                         col_a_vals = execute_with_retry(l_sheet.col_values, 1)
                         next_row = len(col_a_vals) + 1
                         
                         log_cells = [gspread.Cell(next_row, i + 1, val) for i, val in enumerate(log_row)]
-                        execute_with_retry(l_sheet.update_cells, log_cells)
+                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
+                        execute_with_retry(l_sheet.update_cells, log_cells, value_input_option='USER_ENTERED')
                         
                         invalidate_cache(RETURN_LOG_SHEET_NAME)
                     except Exception as log_e:
-                        print(f"실패 로그 기록 에러: {log_e}")
+                        print(f"⚠️ 실패 로그 기록 에러: {log_e}")
                 
                 invalidate_cache(RETURN_TASK_SHEET_NAME)
             except Exception as e:
-                print(f"백그라운드 단일 시트 업데이트 에러: {e}")
+                print(f"⚠️ 백그라운드 단일 시트 업데이트 에러: {e}")
 
         threading.Thread(target=_do_update_silent, daemon=True).start()
 
