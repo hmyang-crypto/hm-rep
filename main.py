@@ -7140,7 +7140,9 @@ class ReturnTaskListScreen(Screen):
         finally:
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
-    # 💡 [수정] 카메라 실행 시 발생하는 FileProvider 에러 완벽 해결
+    # =========================================================================
+    # 💡 [원복 완료] 카메라 실행 (예전처럼 완벽하게 작동하던 원본 코드로 100% 복구)
+    # =========================================================================
     def open_camera(self, final_loc, task_data):
         self.current_return_loc = final_loc
         self.current_return_task_data = task_data
@@ -7157,17 +7159,22 @@ class ReturnTaskListScreen(Screen):
             Intent = autoclass('android.content.Intent')
             MediaStore = autoclass('android.provider.MediaStore')
             File = autoclass('java.io.File')
-            Uri = autoclass('android.net.Uri') # 💡 추가됨
+            Uri = autoclass('android.net.Uri')
             Environment = autoclass('android.os.Environment')
 
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             
+            # 💡 [원복 완료] 예전에 잘 사용하시던 '앱 전용 내부 폴더' 경로로 다시 복구
             pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+            
+            # 🚨 [핵심 원복] 제가 실수로 빼먹어서 카메라 체크 버튼을 먹통으로 만들었던 바로 그 코드 복구!
+            if not pic_dir.exists():
+                pic_dir.mkdirs()
+
             task_id = str(t(task_data, "작업ID", "temp")).strip()
             self.photo_path = os.path.join(pic_dir.getAbsolutePath(), f"return_{task_id}_{int(time.time())}.jpg")
             photo_file = File(self.photo_path)
 
-            # 💡 [핵심] 복잡한 FileProvider 대신 심플한 Uri 직접 사용 (보안 우회 적용 완료)
             uri = Uri.fromFile(photo_file)
             
             parcelable_uri = cast('android.os.Parcelable', uri)
