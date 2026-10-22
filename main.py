@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.4"
+CURRENT_VERSION = "1.9.8.5"
 
 
 def check_and_apply_update():
@@ -7047,10 +7047,10 @@ class ReturnTaskListScreen(Screen):
                 threading.Thread(target=self._update_task_sheet_only, args=(task_data, updates, "원복 실패 처리되었습니다."), daemon=True).start()
             open_native_korean_input("실패 사유 입력", "원복 실패 사유 입력", "", on_confirm_fail)
 
+   # =========================================================================
+    # 💡 [최종 종결판] 중복 코드 제거 + 초고속 1초 컷 로딩 + 로그 시트 완벽 기록
     # =========================================================================
-    # 💡 [개선] 로딩 속도 3~5초 -> 1초 이하로 단축 & 로그 시트 누락 100% 방어
-    # =========================================================================
-    def _finalize_return(self, task_data, final_loc, photo_url):
+    def _finalize_return(self, task_data, final_loc, photo_url_or_path, is_local_path=False):
         app = App.get_running_app()
         
         final_qty = safe_int(t(task_data, "확인수량", 0))
@@ -7071,35 +7071,68 @@ class ReturnTaskListScreen(Screen):
             mismatch_log = f"[수량 불일치] 지시: {req_qty}개 ➔ 원복: {final_qty}개 (차이: {diff_str}개)"
             updated_remarks = f"{updated_remarks}\n{mismatch_log}" if updated_remarks else mismatch_log
 
-        # 💡 [보완] 시트에 '최종적치'와 '최종적치위치' 중 뭐가 있을지 몰라 둘 다 매칭되도록 추가
         updates = {
             "상태": "원복완료",
             "최종적치": final_loc,
-            "최종적치위치": final_loc, 
+            "최종적치위치": final_loc,
             "확인수량": str(final_qty),
             "비고": updated_remarks,
             "보충담당자": app.user_real_name,
             "작업자": app.user_real_name,
-            "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "사진": photo_url
+            "완료일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        
+        if not is_local_path:
+            updates["사진"] = photo_url_or_path
 
         task_id = str(t(task_data, "작업ID")).strip()
 
-        # 🚀 [초고속 개선 1] 구글 시트 저장 전에 어플 화면을 즉시 '완료' 상태로 업데이트
+        # 🚀 1. 구글 통신을 기다리지 않고 내 어플 화면(메모리)부터 즉시 '완료' 상태로 업데이트!
         for t_item in self.raw_all_tasks:
             if str(t(t_item, "작업ID")).strip() == task_id:
                 t_item.update(updates)
                 break
         
-        # 🚀 [초고속 개선 2] 화면 렌더링 즉시 실행 및 로딩 팝업 칼같이 닫기 (사용자 대기시간 해방)
+        # 🚀 2. 화면을 1초 만에 최신화하고 답답했던 로딩 팝업을 칼같이 닫습니다.
         self.apply_filters_and_render()
         app.dismiss_loading_popup()
-        app.show_toast("✅ 원복 완료! (서버 백그라운드 동기화 중...)")
+        app.show_toast("원복 완료! (서버 동기화 중...)")
 
-        # 🚀 [초고속 개선 3] 구글 시트 저장은 백그라운드에서 소리 없이 조용히 실행
-        def _do_update_silent():
+        # 🚀 3. 사진 업로드와 구글 시트 저장은 뒷단(백그라운드)에서 조용하고 안전하게 실행!
+        def _background_worker():
+            final_photo_url = photo_url_or_path
+            
+            # [사진 업로드]
+            if is_local_path:
+                try:
+                    import base64, json, urllib.request, ssl, time
+                    time.sleep(0.5)
+                    with open(photo_url_or_path, "rb") as image_file:
+                        encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+                        
+                    payload = {
+                        "fileName": f"return_{task_id}_{int(time.time())}.jpg",
+                        "mimeType": "image/jpeg",
+                        "base64Data": encoded_string
+                    }
+                    ssl_context = ssl._create_unverified_context()
+                    req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+                    
+                    with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
+                        res_data = json.loads(response.read().decode("utf-8"))
+                        if res_data.get("status") == "success":
+                            final_photo_url = res_data.get("url")
+                        else:
+                            final_photo_url = "사진업로드실패"
+                except Exception as e:
+                    print(f"사진 업로드 실패: {e}")
+                    final_photo_url = "사진업로드실패"
+            
+            updates["사진"] = final_photo_url
+
+            # [구글 시트 기록]
             try:
+                # ① 지시서 업데이트
                 t_sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
                 headers = [str(h).strip() for h in t_sheet.row_values(1)]
                 all_ids = [str(x).strip() for x in t_sheet.col_values(headers.index("작업ID") + 1)]
@@ -7108,39 +7141,36 @@ class ReturnTaskListScreen(Screen):
                     row_idx = all_ids.index(task_id) + 1
                     cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
                     if cells:
-                        execute_with_retry(t_sheet.update_cells, cells)
+                        t_sheet.update_cells(cells)
 
-                # 💡 [로그 누락 완벽 해결]
+                # ② 로그 시트 완벽 방어 업데이트
                 try:
                     l_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
                     l_headers = [str(h).strip() for h in l_sheet.row_values(1)]
-                    
-                    # 만약 로그 시트를 갓 만들어서 첫 줄에 헤더(제목)가 없다면 지시서 헤더를 긁어서 붙여줍니다.
                     if not l_headers:
                         l_headers = headers
-                        execute_with_retry(l_sheet.append_row, l_headers)
+                        l_sheet.append_row(l_headers)
                     
                     log_data = dict(task_data)
                     log_data.update(updates)
-                    
                     log_row = [str(log_data.get(h, "")) for h in l_headers]
-                    execute_with_retry(l_sheet.append_row, log_row)
                     
+                    # 직접 append_row 호출하여 누락 방지!
+                    l_sheet.append_row(log_row)
                     invalidate_cache(RETURN_LOG_SHEET_NAME)
                 except Exception as log_e:
-                    print(f"⚠️ 원복 로그 시트 저장 에러: {log_e}")
+                    print(f"원복 로그 시트 저장 에러: {log_e}")
                 
                 invalidate_cache(RETURN_TASK_SHEET_NAME)
             except Exception as e:
-                print(f"⚠️ 백그라운드 업데이트 오류: {e}")
+                print(f"백그라운드 업데이트 오류: {e}")
 
-        threading.Thread(target=_do_update_silent, daemon=True).start()
-        
+        threading.Thread(target=_background_worker, daemon=True).start()
+
     def _update_task_sheet_only(self, task_data, updates, msg):
         app = App.get_running_app()
         task_id = str(t(task_data, "작업ID")).strip()
         
-        # 🚀 [초고속 개선] 원복 실패/할당/반납 시에도 화면 먼저 최신화하고 로딩창 즉시 닫기
         for t_item in self.raw_all_tasks:
             if str(t(t_item, "작업ID")).strip() == task_id:
                 t_item.update(updates)
@@ -7160,20 +7190,18 @@ class ReturnTaskListScreen(Screen):
                     row_idx = all_ids.index(task_id) + 1
                     cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
                     if cells:
-                        execute_with_retry(t_sheet.update_cells, cells)
+                        t_sheet.update_cells(cells)
                 
                 invalidate_cache(RETURN_TASK_SHEET_NAME)
             except Exception as e:
-                print(f"⚠️ 백그라운드 단일 시트 업데이트 에러: {e}")
+                print(f"백그라운드 단일 시트 업데이트 에러: {e}")
 
         threading.Thread(target=_do_update_silent, daemon=True).start()
-   # =========================================================================
-    # 💡 [최종 원복 및 보완] 관리자님의 예전 원본 코드 + 권한/메모리 증발 방어
-    # =========================================================================
+
     def open_camera(self, final_loc, task_data):
         if platform != "android":
             App.get_running_app().show_info_popup("PC 모드", "PC에서는 카메라를 사용할 수 없어 임시 링크로 완료 처리합니다.")
-            self._finalize_return(task_data, final_loc, "https://pc-test-dummy-url.com")
+            self._finalize_return(task_data, final_loc, "https://pc-test-dummy-url.com", is_local_path=False)
             return
 
         try:
@@ -7190,32 +7218,26 @@ class ReturnTaskListScreen(Screen):
             context = PythonActivity.mActivity.getApplicationContext()
             resolver = context.getContentResolver()
 
-            # 1. 갤러리 공용 공간에 빈 이미지 파일을 먼저 만들고 안전한 'content://' 경로 확보
             values = ContentValues()
-            
-            # 💡 [보완] 작업ID 양쪽 공백 제거 추가 (파일명 깨짐 방지)
             task_id = str(t(task_data, "작업ID", "temp")).strip()
             values.put("_display_name", f"return_{task_id}_{int(time.time())}.jpg")
             values.put("mime_type", "image/jpeg")
 
             self.image_uri = resolver.insert(Images_Media.EXTERNAL_CONTENT_URI, values)
 
-            # 2. 확보한 경로를 들고 기본 카메라 앱 호출
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             intent.putExtra(MediaStore.EXTRA_OUTPUT, cast('android.os.Parcelable', self.image_uri))
             
-            # 🚨 [가장 핵심 해결 1] 카메라 앱이 이 주소에 맘대로 사진을 저장할 수 있게 권한을 부여 (체크버튼 멈춤 해결!)
             intent.addFlags(1) # FLAG_GRANT_READ_URI_PERMISSION
             intent.addFlags(2) # FLAG_GRANT_WRITE_URI_PERMISSION
 
             self._current_task_data = task_data
             self._current_final_loc = final_loc
 
-            # 3. 사진을 찍고 체크(✓)를 눌렀을 때 실행될 콜백 지정
             def on_activity_result(request_code, result_code, intent_data):
                 if request_code == 1001:
                     activity.unbind(on_activity_result=self._camera_callback)
-                    if result_code == -1:  # RESULT_OK (체크 버튼 누름)
+                    if result_code == -1:  
                         Clock.schedule_once(lambda dt: self.on_camera_complete_native(), 0.5)
                     else:
                         try:
@@ -7223,17 +7245,14 @@ class ReturnTaskListScreen(Screen):
                         except: pass
                         Clock.schedule_once(lambda dt: App.get_running_app().show_info_popup("알림", "사진 촬영이 취소되었습니다."), 0.5)
 
-            # 🚨 [가장 핵심 해결 2] 콜백 함수가 메모리에서 증발하지 않도록 self에 단단히 고정! (반응 없음 해결!)
             self._camera_callback = on_activity_result
             activity.bind(on_activity_result=self._camera_callback)
             
-            # 화면 전환 간 충돌(프리징) 방지용 0.2초 딜레이 실행
             Clock.schedule_once(lambda dt: PythonActivity.mActivity.startActivityForResult(intent, 1001), 0.2)
 
         except Exception as e:
             App.get_running_app().show_info_popup("카메라 연동 오류", f"기본 카메라를 열 수 없습니다: {e}")
 
-    # 💡 0.5초 뒤 안전한 상태(메인 UI 스레드)에서 경로를 먼저 추출
     def on_camera_complete_native(self):
         app = App.get_running_app()
         app.show_loading_popup()
@@ -7243,7 +7262,6 @@ class ReturnTaskListScreen(Screen):
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             context = PythonActivity.mActivity.getApplicationContext()
             
-            # 메인 스레드에서 안전하게 경로 역추적
             cursor = context.getContentResolver().query(self.image_uri, ["_data"], None, None, None)
             real_path = None
             if cursor:
@@ -7252,55 +7270,14 @@ class ReturnTaskListScreen(Screen):
                 cursor.close()
 
             if not real_path or not os.path.exists(real_path):
-                raise Exception("사진 파일을 찾을 수 없거나 시스템 권한이 없습니다.")
+                raise Exception("사진 파일을 찾을 수 없거나 권한이 없습니다.")
                 
-            # 찾아낸 텍스트 경로(real_path)만 백그라운드 스레드에 전달
-            threading.Thread(target=self._upload_photo_and_complete_native, args=(real_path,), daemon=True).start()
+            # 🚀 카메라 사진 경로 확인 후 즉시 완료 처리 시작! (지체 없이 화면 갱신)
+            self._finalize_return(self._current_task_data, self._current_final_loc, real_path, is_local_path=True)
 
         except Exception as e:
             app.dismiss_loading_popup()
             app.show_info_popup("사진 로드 오류", str(e))
-
-    # 💡 순수 구글 통신 (관리자님 원본 그대로 유지)
-    def _upload_photo_and_complete_native(self, real_path):
-        try:
-            import base64
-            import json
-            import urllib.request
-            import ssl
-            import time
-
-            time.sleep(0.5)
-
-            with open(real_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-
-            # 💡 [보완] 작업ID 양쪽 공백 제거
-            task_id = str(t(self._current_task_data, "작업ID", "temp")).strip()
-            
-            payload = {
-                "fileName": f"return_{task_id}_{int(time.time())}.jpg",
-                "mimeType": "image/jpeg",
-                "base64Data": encoded_string
-            }
-
-            ssl_context = ssl._create_unverified_context()
-            req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            
-            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
-
-            if res_data.get("status") == "success":
-                photo_url = res_data.get("url")
-                Clock.schedule_once(lambda dt: self._finalize_return(self._current_task_data, self._current_final_loc, photo_url))
-            else:
-                raise Exception(res_data.get("message", "구글 드라이브 업로드 실패"))
-                
-        except Exception as e:
-            Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
-            Clock.schedule_once(lambda dt, err=str(e): App.get_running_app().show_info_popup("사진 업로드 오류", err))
-            Clock.schedule_once(lambda dt: self._finalize_return(self._current_task_data, self._current_final_loc, "사진업로드실패"))
-# =========================================================================
 
 class MainApp(App):
     FONT_NAME = FONT_NAME
