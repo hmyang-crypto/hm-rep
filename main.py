@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.0"
+CURRENT_VERSION = "1.9.8.1"
 
 
 def check_and_apply_update():
@@ -7140,8 +7140,8 @@ class ReturnTaskListScreen(Screen):
         finally:
             Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
-    # =========================================================================
-    # 💡 [완벽 원복] 카메라 실행 (체크 버튼 먹통 현상 완벽 해결 코드)
+   # =========================================================================
+    # 💡 [최종 원복] 카메라 실행 (IOException 에러 및 체크버튼 먹통 완벽 해결)
     # =========================================================================
     def open_camera(self, final_loc, task_data):
         self.current_return_loc = final_loc
@@ -7155,6 +7155,7 @@ class ReturnTaskListScreen(Screen):
         try:
             from jnius import autoclass, cast
             from android import activity
+            import time
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             Intent = autoclass('android.content.Intent')
             MediaStore = autoclass('android.provider.MediaStore')
@@ -7164,8 +7165,8 @@ class ReturnTaskListScreen(Screen):
 
             intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             
-            # 💡 공용 Pictures 폴더 사용
-            pic_dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            # 💡 [해결 1] 권한 에러(Operation not permitted) 방지: 어플 전용 안전 폴더로 경로 원복
+            pic_dir = PythonActivity.mActivity.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
             if not pic_dir.exists():
                 pic_dir.mkdirs()
 
@@ -7173,8 +7174,7 @@ class ReturnTaskListScreen(Screen):
             self.photo_path = os.path.join(pic_dir.getAbsolutePath(), f"return_{task_id}_{int(time.time())}.jpg")
             photo_file = File(self.photo_path)
 
-            # 🚨 [가장 핵심 원복] 예전에 고치셨던 바로 그 비법! 
-            # 카메라 앱이 멈추지 않고 저장할 수 있도록 빈 도화지(파일)를 미리 생성해 둡니다.
+            # 💡 [해결 2] 체크버튼(V) 먹통(프리징) 방지: 빈 파일을 안전한 폴더 내에 미리 생성
             if not photo_file.exists():
                 photo_file.createNewFile()
 
@@ -7183,11 +7183,11 @@ class ReturnTaskListScreen(Screen):
             parcelable_uri = cast('android.os.Parcelable', uri)
             intent.putExtra(MediaStore.EXTRA_OUTPUT, parcelable_uri)
             
-            # 💡 카메라가 파일에 안전하게 쓰기/읽기를 할 수 있도록 권한 플래그 부여
+            # 카메라가 파일에 접근할 수 있도록 권한 부여
             intent.addFlags(2) # FLAG_GRANT_WRITE_URI_PERMISSION
             intent.addFlags(1) # FLAG_GRANT_READ_URI_PERMISSION
 
-            # 화면 겹침/프리징 방지용 0.3초 딜레이 실행 (유지)
+            # 화면 겹침/프리징 방지용 0.3초 딜레이 실행
             def _launch_camera(dt):
                 activity.bind(on_activity_result=self.on_camera_result)
                 PythonActivity.mActivity.startActivityForResult(intent, 8888)
