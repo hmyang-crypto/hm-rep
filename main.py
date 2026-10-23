@@ -7078,8 +7078,8 @@ class ReturnTaskListScreen(Screen):
                 threading.Thread(target=self._update_task_sheet_only, args=(task_data, updates, "원복 실패 처리되었습니다."), daemon=True).start()
             open_native_korean_input("실패 사유 입력", "원복 실패 사유 입력", "", on_confirm_fail)
 
-   # =========================================================================
-    # 💡 [최종 종결판] 초고속 1초 컷 로딩 + A열 기준 로그 시트 완벽 기록 + 체크박스 유지
+  # =========================================================================
+    # 💡 [최종 종결판] 사진 업로드 실패 시 시트에 에러 사유 100% 상세 기록
     # =========================================================================
     def _finalize_return(self, task_data, final_loc, photo_url_or_path, is_local_path=False):
         app = App.get_running_app()
@@ -7115,6 +7115,8 @@ class ReturnTaskListScreen(Screen):
         
         if not is_local_path:
             updates["사진"] = photo_url_or_path
+        else:
+            updates["사진"] = "업로드 대기중..."
 
         task_id = str(t(task_data, "작업ID")).strip()
 
@@ -7127,17 +7129,20 @@ class ReturnTaskListScreen(Screen):
         # 🚀 2. 화면을 1초 만에 최신화하고 답답했던 로딩 팝업을 칼같이 닫습니다.
         self.apply_filters_and_render()
         app.dismiss_loading_popup()
-        app.show_toast("✅ 원복 완료! (서버 동기화 중...)")
+        app.show_toast("원복 완료! (서버 동기화 중...)")
 
         # 🚀 3. 사진 업로드와 구글 시트 저장은 뒷단(백그라운드)에서 조용하고 안전하게 실행!
         def _background_worker():
             final_photo_url = photo_url_or_path
             
-            # [사진 업로드]
+            # [사진 업로드 - 실패 사유 추적 기능 추가]
             if is_local_path:
+                last_error_msg = ""
                 try:
                     import base64, json, urllib.request, ssl, time
-                    time.sleep(0.5)
+                    # 파일이 저장소에 완전히 기록되도록 1.5초 안정화 대기
+                    time.sleep(1.5)
+                    
                     with open(photo_url_or_path, "rb") as image_file:
                         encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
                         
@@ -7149,17 +7154,41 @@ class ReturnTaskListScreen(Screen):
                     ssl_context = ssl._create_unverified_context()
                     req = urllib.request.Request(GAS_PHOTO_UPLOAD_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
                     
-                    with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
-                        res_data = json.loads(response.read().decode("utf-8"))
-                        if res_data.get("status") == "success":
-                            final_photo_url = res_data.get("url")
-                        else:
-                            final_photo_url = "사진업로드실패"
+                    upload_success = False
+                    for attempt in range(3):
+                        try:
+                            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
+                                res_data = json.loads(response.read().decode("utf-8"))
+                                if res_data.get("status") == "success":
+                                    final_photo_url = res_data.get("url")
+                                    upload_success = True
+                                    break
+                                else:
+                                    last_error_msg = res_data.get("message", "구글 앱스 스크립트 에러")
+                        except Exception as upload_e:
+                            last_error_msg = str(upload_e)
+                            print(f"사진 업로드 재시도 {attempt+1}회 실패: {upload_e}")
+                            time.sleep(1)
+
+                    if not upload_success:
+                        # 💡 통신(네트워크) 문제로 3회 모두 실패했을 때 시트에 사유 기록
+                        final_photo_url = f"업로드실패 (네트워크/서버오류: {last_error_msg})"
+                        Clock.schedule_once(lambda dt: app.show_toast("사진 업로드 실패: 네트워크 불안정"))
+                        
                 except Exception as e:
-                    print(f"사진 업로드 실패: {e}")
-                    final_photo_url = "사진업로드실패"
+                    # 💡 파일 읽기(권한)나 기기 자체 문제로 실패했을 때 시트에 사유 기록
+                    print(f"사진 파일 읽기/처리 실패: {e}")
+                    final_photo_url = f"업로드실패 (파일처리/권한오류: {str(e)})"
+                    Clock.schedule_once(lambda dt, err=str(e): app.show_toast(f"사진 처리 에러: {err}"))
             
+            # 최종 도출된 URL이나 에러 메시지를 '사진' 열 데이터에 덮어씁니다.
             updates["사진"] = final_photo_url
+
+            # 메모리 내 사진 URL 최종 갱신
+            for t_item in self.raw_all_tasks:
+                if str(t(t_item, "작업ID")).strip() == task_id:
+                    t_item["사진"] = final_photo_url
+                    break
 
             # [구글 시트 기록]
             try:
@@ -7175,10 +7204,9 @@ class ReturnTaskListScreen(Screen):
                     row_idx = all_ids.index(task_id) + 1
                     cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
                     if cells:
-                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
                         execute_with_retry(t_sheet.update_cells, cells, value_input_option='USER_ENTERED')
 
-                # ② 로그 시트 완벽 업데이트 (A열 빈칸 기준)
+                # ② 로그 시트 완벽 방어 업데이트
                 try:
                     l_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
                     l_headers_raw = execute_with_retry(l_sheet.row_values, 1)
@@ -7187,7 +7215,6 @@ class ReturnTaskListScreen(Screen):
                     if not l_headers:
                         l_headers = headers
                         h_cells = [gspread.Cell(1, i + 1, val) for i, val in enumerate(l_headers)]
-                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
                         execute_with_retry(l_sheet.update_cells, h_cells, value_input_option='USER_ENTERED')
                     
                     log_data = dict(task_data)
@@ -7198,77 +7225,17 @@ class ReturnTaskListScreen(Screen):
                     next_row = len(col_a_vals) + 1
                     
                     log_cells = [gspread.Cell(next_row, i + 1, val) for i, val in enumerate(log_row)]
-                    # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
                     execute_with_retry(l_sheet.update_cells, log_cells, value_input_option='USER_ENTERED')
                     
                     invalidate_cache(RETURN_LOG_SHEET_NAME)
                 except Exception as log_e:
-                    print(f"⚠️ 원복 로그 시트 저장 에러: {log_e}")
+                    print(f"원복 로그 시트 저장 에러: {log_e}")
                 
                 invalidate_cache(RETURN_TASK_SHEET_NAME)
             except Exception as e:
-                print(f"⚠️ 백그라운드 업데이트 오류: {e}")
+                print(f"백그라운드 업데이트 오류: {e}")
 
         threading.Thread(target=_background_worker, daemon=True).start()
-
-    def _update_task_sheet_only(self, task_data, updates, msg):
-        app = App.get_running_app()
-        task_id = str(t(task_data, "작업ID")).strip()
-        
-        for t_item in self.raw_all_tasks:
-            if str(t(t_item, "작업ID")).strip() == task_id:
-                t_item.update(updates)
-                break
-                
-        self.apply_filters_and_render()
-        app.dismiss_loading_popup()
-        app.show_toast(msg)
-
-        def _do_update_silent():
-            try:
-                t_sheet = get_worksheet(RETURN_TASK_SHEET_NAME)
-                headers_raw = execute_with_retry(t_sheet.row_values, 1)
-                headers = [str(h).strip() for h in headers_raw]
-                
-                all_ids_raw = execute_with_retry(t_sheet.col_values, headers.index("작업ID") + 1)
-                all_ids = [str(x).strip() for x in all_ids_raw]
-                
-                if task_id in all_ids:
-                    row_idx = all_ids.index(task_id) + 1
-                    cells = [gspread.Cell(row_idx, headers.index(k) + 1, str(v)) for k, v in updates.items() if k in headers]
-                    if cells:
-                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
-                        execute_with_retry(t_sheet.update_cells, cells, value_input_option='USER_ENTERED')
-
-                # "원복실패" 처리 시에도 로그에 남기도록 A열 기준 기록 로직 추가
-                if updates.get("상태") == "원복실패":
-                    try:
-                        l_sheet = get_worksheet(RETURN_LOG_SHEET_NAME)
-                        l_headers_raw = execute_with_retry(l_sheet.row_values, 1)
-                        l_headers = [str(h).strip() for h in l_headers_raw]
-                        if not l_headers:
-                            l_headers = headers
-                        
-                        log_data = dict(task_data)
-                        log_data.update(updates)
-                        log_row = [str(log_data.get(h, "")) for h in l_headers]
-                        
-                        col_a_vals = execute_with_retry(l_sheet.col_values, 1)
-                        next_row = len(col_a_vals) + 1
-                        
-                        log_cells = [gspread.Cell(next_row, i + 1, val) for i, val in enumerate(log_row)]
-                        # 💡 [핵심 추가] USER_ENTERED 옵션으로 체크박스 포맷 유지
-                        execute_with_retry(l_sheet.update_cells, log_cells, value_input_option='USER_ENTERED')
-                        
-                        invalidate_cache(RETURN_LOG_SHEET_NAME)
-                    except Exception as log_e:
-                        print(f"⚠️ 실패 로그 기록 에러: {log_e}")
-                
-                invalidate_cache(RETURN_TASK_SHEET_NAME)
-            except Exception as e:
-                print(f"⚠️ 백그라운드 단일 시트 업데이트 에러: {e}")
-
-        threading.Thread(target=_do_update_silent, daemon=True).start()
 
     def open_camera(self, final_loc, task_data):
         if platform != "android":
