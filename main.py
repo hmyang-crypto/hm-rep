@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.7"
+CURRENT_VERSION = "1.9.8.8"
 
 
 def check_and_apply_update():
@@ -4606,7 +4606,7 @@ class EmergencyReplenishScreen(Screen):
         btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "main_menu"))
 
         lbl_title = Label(
-            text="🚨 라인 보충 긴급 요청 및 소통 센터",
+            text="라인 보충 긴급 요청 및 소통 센터",
             font_name=FONT_NAME,
             font_size=dp(16),
             bold=True,
@@ -4750,6 +4750,9 @@ class EmergencyReplenishScreen(Screen):
             return True
         return False
 
+    # =================================================================================
+    # 💡 [개선] B2C출고 외에 보관 재고도 검색 허용 + 중복 1개로 병합 + 출고위치 동적 생략
+    # =================================================================================
     def _search_master_stock(self, query):
         master_data = []
         try:
@@ -4757,21 +4760,22 @@ class EmergencyReplenishScreen(Screen):
         except Exception as e:
             print(f"로케이션별재고 raw 참조 실패: {e}")
 
-        seen_skus = set()
-        matched_items = []
         clean_query = query.strip().lower()
+        grouped_by_bc = {}
 
         if master_data:
             for row in master_data:
                 loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
-                if loc_type != "B2C출고":
+                
+                # 💡 1. B2C출고 뿐만 아니라 '보관'에 있는 재고도 통과시킵니다.
+                if loc_type not in ["B2C출고", "보관"]:
                     continue
 
                 bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip()
                 prod_name = str(t(row, "SKU", t(row, "상품명", ""))).strip()
                 partner = str(t(row, "파트너명", t(row, "고객사", "-"))).strip()
                 loc = str(t(row, "로케이션", "-")).strip()
-                loc_qty = str(t(row, "로케이션 수량", t(row, "로케이션수량", "0"))).strip()
+                loc_qty = safe_int(t(row, "로케이션 수량", t(row, "로케이션수량", "0")))
 
                 if not bc or bc.upper() in ["N/A", "NONE", ""]:
                     continue
@@ -4780,16 +4784,35 @@ class EmergencyReplenishScreen(Screen):
                 prod_lower = prod_name.lower()
 
                 if not clean_query or (clean_query in bc_lower) or (clean_query in prod_lower):
-                    combo_key = f"{bc}_{prod_name}_{loc}"
-                    if combo_key not in seen_skus:
-                        seen_skus.add(combo_key)
-                        matched_items.append({
+                    # 💡 2. 동일 바코드는 1개로 묶어줍니다. (딕셔너리 키로 활용)
+                    if bc not in grouped_by_bc:
+                        grouped_by_bc[bc] = {
                             "barcode": bc,
                             "product_name": prod_name if prod_name else "SKU 정보 없음",
                             "partner": partner,
-                            "location": loc,
-                            "loc_qty": loc_qty
-                        })
+                            "b2c_locations": set(),
+                            "total_b2c_qty": 0
+                        }
+                    
+                    # 💡 3. 'B2C출고'인 경우에만 로케이션 이름과 수량을 합산합니다.
+                    if loc_type == "B2C출고":
+                        if loc and loc != "-":
+                            grouped_by_bc[bc]["b2c_locations"].add(loc)
+                        grouped_by_bc[bc]["total_b2c_qty"] += loc_qty
+
+        # 딕셔너리를 기반으로 최종 리스트 생성
+        matched_items = []
+        for bc, data in grouped_by_bc.items():
+            locs_list = sorted(list(data["b2c_locations"]))
+            display_loc = ", ".join(locs_list) if locs_list else ""
+            
+            matched_items.append({
+                "barcode": data["barcode"],
+                "product_name": data["product_name"],
+                "partner": data["partner"],
+                "location": display_loc,
+                "loc_qty": data["total_b2c_qty"]
+            })
 
         Clock.schedule_once(lambda dt: self._render_search_results(matched_items, query))
 
@@ -4850,8 +4873,14 @@ class EmergencyReplenishScreen(Screen):
             lbl_partner.bind(size=lambda i, s: setattr(i, "text_size", s))
             card.add_widget(lbl_partner)
 
+            # 💡 4. 출고위치가 없는 경우 '출고위치' 글씨 자체를 생략하고 재고만 0개로 표시
+            if data['location']:
+                info_text = f"• 출고위치: [b]{data['location']}[/b]  |  B2C재고: [b][color=D32F2F]{data['loc_qty']}개[/color][/b]"
+            else:
+                info_text = f"• B2C재고: [b][color=D32F2F]0개[/color][/b]"
+
             lbl_info = Label(
-                text=f"• 출고위치: [b]{data['location']}[/b]  |  B2C재고: [b][color=D32F2F]{data['loc_qty']}개[/color][/b]",
+                text=info_text,
                 font_name=FONT_NAME,
                 font_size=dp(12),
                 markup=True,
@@ -4877,6 +4906,9 @@ class EmergencyReplenishScreen(Screen):
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 req_id = f"REQ-{datetime.now().strftime('%M%S')}"
                 
+                # 💡 구글 시트에 기록할 때, 출고 위치가 비어있으면 데스크 인원들이 알 수 있도록 '위치없음(B2C)'로 기록
+                record_loc = data["location"] if data["location"] else "위치없음(B2C)"
+                
                 row_data = [
                     req_id,
                     ts,
@@ -4884,16 +4916,15 @@ class EmergencyReplenishScreen(Screen):
                     data["partner"],
                     data["product_name"],
                     data["barcode"],
-                    data["location"],
+                    record_loc,
                     "라인 재고 부족 / 보충 필요",
                     "요청중",
                     "",
                     ""
                 ]
-                sheet.append_row(row_data)
+                execute_with_retry(sheet.append_row, row_data)
                 invalidate_cache("도급 보충 요청 시트")
                 
-                # 💡 [핵심 보완] 구글 시트 저장 반영 대기(0.5초) 후 강제 최신화 갱신
                 time.sleep(0.5)
                 self.fetch_status_data(force_refresh=True)
 
