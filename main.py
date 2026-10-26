@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.8.9"
+CURRENT_VERSION = "1.9.9.0"
 
 
 def check_and_apply_update():
@@ -7401,7 +7401,7 @@ class MainApp(App):
 
     def on_start(self):
         threading.Thread(target=initialize_gspread, daemon=True).start()
-        Clock.schedule_interval(self.check_for_new_tasks, 30)
+        Clock.schedule_interval(self.check_for_new_tasks, 60)
 
         if platform == "android":
             try:
