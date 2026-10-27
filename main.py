@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.1"
+CURRENT_VERSION = "1.9.9.2"
 
 
 def check_and_apply_update():
@@ -2857,22 +2857,31 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
         else:
             from_loc = str(t(self.task_data, "기존로케이션", "-"))
             to_loc = str(t(self.task_data, "보충로케이션", "-"))
-            self.ids.lbl_loc.text = f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
+            
+            # 💡 [요청 반영] 다중 카드일 경우 'from(보관)' 로케이션만 노출하여 심플하게 변경
+            if self.task_data.get("_is_multi"):
+                self.ids.lbl_loc.text = f"[color=212121]출발:[/color] [size=18dp][color=D32F2F][b]{from_loc}[/b][/color][/size]"
+            else:
+                self.ids.lbl_loc.text = f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
 
-        # 💡 2. 다중 상품 (혼적 파레트) 전용 UI 처리
+        # 💡 2. 다중 상품 (혼적 파레트) 전용 초간편 UI 처리
         if self.task_data.get("_is_multi"):
             tot = self.task_data.get("_tot_cnt", 1)
             rem = self.task_data.get("_rem_cnt", 1)
+            
+            # 💡 [요청 반영] 텍스트 간소화 및 부분 완료 시에도 '다중 묶음' 명시
             if tot != rem:
-                badge = f"[color=E65100][🔄부분완료: 남은 {rem} / 총 {tot}][/color] "
+                badge = f"[color=E65100][다중 작업: {rem}건 남음 / 총 {tot}건][/color]"
             else:
-                badge = f"[color=E65100][📦다중상품: 총 {tot}종][/color] "
+                badge = f"[color=E65100][다중 작업: 총 {tot}건][/color]"
                 
-            self.ids.lbl_product.text = f"[b]{tag_prefix}{badge}다중 SKU 묶음 작업[/b]"
-            self.ids.lbl_barcode.text = "여러 상품이 포함되어 있습니다. (팝업에서 개별 확인)"
+            self.ids.lbl_product.text = f"[b]{tag_prefix}{badge}[/b]"
+            
+            # 💡 [요청 반영] 마크업(color) 코드 노출 버그 제거 및 중복 텍스트 삭제
+            self.ids.lbl_barcode.text = "팝업을 열어 개별 상품을 스캔하세요."
             self.ids.lbl_stock_info.text = ""
-            self.ids.lbl_main_qty.text = f"총 {tot}종의 상품 중 [color=D32F2F]{rem}[/color]종 남음"
-            self.ids.lbl_box_info.text = "상세 수량 및 박스 정보는 [다중 SKU 팝업 열기]를 눌러 확인하세요."
+            self.ids.lbl_main_qty.text = ""
+            self.ids.lbl_box_info.text = ""
             can_show_qty_btn = False
             
         # 💡 3. 단일 상품 (1 PLT = 1 SKU) 전용 UI 처리
@@ -2930,7 +2939,7 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
             # 다중 상품이 2개 이상 남아있을 때는 팝업 버튼만 노출
             if self.task_data.get("_is_multi") and self.task_data.get("_rem_cnt", 1) > 1:
-                btn_popup = StyledButton(text="🚀 다중 SKU 팝업 열기", size_hint_x=0.8, font_size=dp(13), bold=True, bg_color=PRIMARY_BLUE)
+                btn_popup = StyledButton(text="다중 SKU 팝업 열기", size_hint_x=0.8, font_size=dp(13), bold=True, bg_color=PRIMARY_BLUE)
                 btn_popup.bind(on_press=lambda x: MultiSkuInspectionPopup(self.task_data.get("_sub_tasks", []), self.card_screen).open())
                 self.ids.btn_action_box.add_widget(btn_popup)
             else:
@@ -3816,24 +3825,16 @@ class UnifiedReplenishScreen(Screen):
                 if task_id in self.checked_task_ids:
                     curr_status = str(t(row_dict, "상태")).strip()
                     curr_assignee = str(
-                        t(
-                            row_dict,
-                            "작업 담당자",
-                            t(row_dict, "담당자", ""),
-                        )
+                        t(row_dict, "작업 담당자", t(row_dict, "담당자", ""))
                     ).strip()
 
                     if curr_status in ["대기", ""] and curr_assignee == "":
-                        cells_to_update.append(
-                            gspread.Cell(
-                                row_idx, assignee_col, app.user_real_name
-                            )
-                        )
-                        cells_to_update.append(
-                            gspread.Cell(row_idx, status_col, "작업중")
-                        )
+                        cells_to_update.append(gspread.Cell(row_idx, assignee_col, app.user_real_name))
+                        cells_to_update.append(gspread.Cell(row_idx, status_col, "작업중"))
                     else:
-                        already_taken_count += 1
+                        # 💡 [요청 반영] 이미 완료/실패된 건은 '남이 가로챈 건수'로 카운트하지 않음!
+                        if curr_status not in ["적치대기", "최종완료", "완료", "보충실패", "원복실패"]:
+                            already_taken_count += 1
 
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
@@ -3842,34 +3843,18 @@ class UnifiedReplenishScreen(Screen):
             self.checked_task_ids.clear()
 
             if already_taken_count > 0 and len(cells_to_update) == 0:
-                Clock.schedule_once(
-                    lambda dt: app.show_info_popup(
-                        "할당 실패",
-                        "선택하신 작업이 이미 다른 작업자에게 할당되었습니다.\n목록을 자동으로 갱신합니다.",
-                    )
-                )
+                Clock.schedule_once(lambda dt: app.show_info_popup("할당 실패", "선택하신 작업이 이미 다른 작업자에게 할당되었습니다.\n목록을 자동으로 갱신합니다."))
             elif already_taken_count > 0:
-                Clock.schedule_once(
-                    lambda dt: app.show_info_popup(
-                        "부분 할당 완료",
-                        f"이미 다른 사용자가 가져간 {already_taken_count}건을 제외하고 할당되었습니다.",
-                    )
-                )
+                Clock.schedule_once(lambda dt: app.show_info_popup("부분 할당 완료", f"이미 다른 사용자가 가져간 {already_taken_count}건을 제외하고 할당되었습니다."))
             else:
                 Clock.schedule_once(lambda dt: self.on_claim_success())
 
             Clock.schedule_once(lambda dt: self.fetch_data())
 
         except Exception as e:
-            Clock.schedule_once(
-                lambda dt, err=str(e): App.get_running_app().show_info_popup(
-                    "오류", str(err)
-                )
-            )
+            Clock.schedule_once(lambda dt, err=str(e): App.get_running_app().show_info_popup("오류", str(err)))
         finally:
-            Clock.schedule_once(
-                lambda dt: App.get_running_app().dismiss_loading_popup()
-            )
+            Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
     def on_claim_success(self):
         App.get_running_app().show_toast("선택한 작업이 '내 작업'으로 할당되었습니다.")
@@ -3905,12 +3890,20 @@ class UnifiedReplenishScreen(Screen):
             status_col = headers.index("상태") + 1
             task_id_col = headers.index("작업ID") + 1
 
-            all_ids = sheet.col_values(task_id_col)
+            # 💡 [보완] 상태 데이터도 한 번에 가져옴
+            all_ids = [str(row[task_id_col-1]).strip() if len(row) >= task_id_col else "" for row in all_rows]
+            all_statuses = [str(row[status_col-1]).strip() if len(row) >= status_col else "" for row in all_rows]
+            
             cells_to_update = []
 
-            # 💡 [핵심 해결] .index()로 1개만 찾지 않고, 전체 시트를 순회하며 일치하는 다중 SKU(동일 작업ID) 전체를 묶어서 찾음!
             for idx, val in enumerate(all_ids):
                 if val in self.checked_task_ids:
+                    curr_status = all_statuses[idx]
+                    
+                    # 💡 [핵심 방어] 이미 완료되거나 실패한 건은 반납(대기 전환)에서 패스!
+                    if curr_status in ["적치대기", "최종완료", "완료", "보충실패", "원복실패"]:
+                        continue
+                        
                     row_idx = idx + 1
                     cells_to_update.append(gspread.Cell(row_idx, assignee_col, ""))
                     cells_to_update.append(gspread.Cell(row_idx, status_col, "대기"))
@@ -3918,16 +3911,18 @@ class UnifiedReplenishScreen(Screen):
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
 
+            # 로컬 메모리 상태도 완료 건 제외하고 업데이트
             for task in self.raw_all_tasks:
                 if t(task, "작업ID") in self.checked_task_ids:
-                    task["상태"] = "대기"
-                    task["작업 담당자"] = ""
+                    if str(t(task, "상태")).strip() not in ["적치대기", "최종완료", "완료", "보충실패", "원복실패"]:
+                        task["상태"] = "대기"
+                        task["작업 담당자"] = ""
 
             invalidate_cache(TASK_SHEET_NAME)
             self.checked_task_ids.clear()
 
             Clock.schedule_once(
-                lambda dt: App.get_running_app().show_toast("선택한 다중/단일 작업이 일괄 반납되었습니다.")
+                lambda dt: App.get_running_app().show_toast("선택한 항목 중 '작업중'인 건들만 일괄 반납되었습니다.")
             )
             Clock.schedule_once(lambda dt: self.apply_filters_and_render())
         except Exception as e:
@@ -3970,27 +3965,38 @@ class UnifiedReplenishScreen(Screen):
             
         app.show_confirmation_popup(
             "리치 작업으로 전환",
-            "이 작업(동일 파레트 묶음 전체)을\n[b][color=1E88E5]리치 작업[/color][/b]으로 전환하시겠습니까?",
+            "[b][color=1E88E5]이 작업을 리치 장비 건으로 전환합니다.[/color][/b]\n\n전환 즉시 내 작업 목록에서 사라지며,\n리치 작업의 대기열로 이동합니다.\n\n진행하시겠습니까?",
             on_yes=do_switch
         )
         
     def _async_switch_reach(self, task_id):
         try:
             sheet = get_worksheet(TASK_SHEET_NAME)
-            headers = [str(h).strip() for h in sheet.row_values(1)]
+            # 💡 [수정] 통신 횟수를 줄이기 위해 시트 전체 데이터를 한 번에 가져옴
+            all_rows = execute_with_retry(sheet.get, "A:AA")
+            if not all_rows or len(all_rows) < 2:
+                raise Exception("시트 데이터를 불러올 수 없습니다.")
+
+            headers = [str(h).strip() for h in all_rows[0]]
             task_id_col = headers.index("작업ID") + 1
             equip_col = headers.index("장비") + 1
-            
-            # 💡 [추가] 상태와 담당자 열 인덱스 찾기
             status_col = headers.index("상태") + 1
             assignee_col = headers.index("작업 담당자") + 1 if "작업 담당자" in headers else headers.index("담당자") + 1
             
-            all_ids = sheet.col_values(task_id_col)
+            # 행별 데이터를 매핑
+            all_ids = [str(row[task_id_col-1]).strip() if len(row) >= task_id_col else "" for row in all_rows]
+            all_statuses = [str(row[status_col-1]).strip() if len(row) >= status_col else "" for row in all_rows]
+            
             cells_to_update = []
             
-            # 💡 [핵심] 동일 작업ID 전체를 '리치'로 변경하면서 동시에 '대기' 상태로 반납
+            # 💡 [핵심 방어] 동일 작업ID를 순회하며, '완료된 건'은 건너뛰고 '미처리 건'만 반납 처리
             for idx, val in enumerate(all_ids):
                 if val == task_id:
+                    curr_status = all_statuses[idx]
+                    # 이미 처리 완료된 상태라면 건너뜁니다!
+                    if curr_status in ["적치대기", "최종완료", "완료", "보충실패", "원복실패"]:
+                        continue
+                        
                     row_idx = idx + 1
                     cells_to_update.append(gspread.Cell(row_idx, equip_col, "리치"))
                     cells_to_update.append(gspread.Cell(row_idx, status_col, "대기"))
@@ -4000,7 +4006,7 @@ class UnifiedReplenishScreen(Screen):
                 sheet.update_cells(cells_to_update)
                 
             invalidate_cache(TASK_SHEET_NAME)
-            Clock.schedule_once(lambda dt: App.get_running_app().show_toast("✅ 리치 작업으로 전환되어 대기열로 반납되었습니다."))
+            Clock.schedule_once(lambda dt: App.get_running_app().show_toast("남은 미처리 작업이 리치로 전환되어 대기열로 반납되었습니다."))
             Clock.schedule_once(lambda dt: self.fetch_data())
             
         except Exception as e:
