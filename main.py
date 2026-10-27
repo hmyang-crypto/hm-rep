@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.0"
+CURRENT_VERSION = "1.9.9.1"
 
 
 def check_and_apply_update():
@@ -1349,6 +1349,196 @@ class MultipleSkuSelectPopup(Popup):
         self.content = layout
 
 
+# 💡 [신규 추가] 다중 SKU 전용 풀스크린 팝업
+# 💡 [신규 교체] 다중 SKU 전용 풀스크린 팝업 (스마트 상태 추적 및 풀옵션 UI 적용)
+class MultiSkuInspectionPopup(Popup):
+    def __init__(self, sub_tasks, card_screen, **kwargs):
+        super().__init__(**kwargs)
+        self.sub_tasks = sub_tasks
+        self.card_screen = card_screen
+        self.remaining_ids = {str(t(task, "보조작업번호", t(task, "작업ID"))) for task in sub_tasks}
+        
+        self.title = "📦 다중 SKU 그룹 검수 (통신 완료 시 자동 삭제)"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.98, 0.95)
+        self.auto_dismiss = False
+
+        self.main_layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(10))
+        self.scroll = ScrollView(size_hint=(1, 1))
+        self.grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None)
+        self.grid.bind(minimum_height=self.grid.setter("height"))
+        self.scroll.add_widget(self.grid)
+        self.main_layout.add_widget(self.scroll)
+
+        btn_close = StyledButton(text="닫기 (작업 종료)", size_hint_y=None, height=dp(50), bold=True, bg_color=get_color_from_hex("#546E7A"))
+        btn_close.bind(on_press=self.try_dismiss)
+        self.main_layout.add_widget(btn_close)
+
+        self.content = self.main_layout
+        self.render_cards()
+        
+        # 💡 [핵심] 상태 감지 루프 실행 (1초마다 상태를 체크하여 완료/실패된 건만 스스로 화면에서 지움)
+        self.check_event = Clock.schedule_interval(self._check_status, 1)
+
+    def _check_status(self, dt):
+        changed = False
+        for task in list(self.sub_tasks):
+            task_uid = str(t(task, "보조작업번호", t(task, "작업ID")))
+            if task_uid in self.remaining_ids:
+                st = str(t(task, "상태")).strip()
+                # 💡 "아니요"를 눌렀다면 상태가 여전히 "작업중"이므로 삭제되지 않음!
+                if st in ["적치대기", "최종완료", "원복완료", "보충실패", "원복실패"]:
+                    self.remaining_ids.discard(task_uid)
+                    changed = True
+        if changed:
+            self.render_cards()
+            
+    def dismiss(self, *args, **kwargs):
+        if hasattr(self, 'check_event') and self.check_event:
+            self.check_event.cancel()
+        super().dismiss(*args, **kwargs)
+
+    def render_cards(self):
+        self.grid.clear_widgets()
+        for task in self.sub_tasks:
+            task_uid = str(t(task, "보조작업번호", t(task, "작업ID")))
+            if task_uid not in self.remaining_ids:
+                continue 
+
+            card = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(165), padding=dp(10), spacing=dp(4))
+            with card.canvas.before:
+                Color(1, 1, 1, 1)
+                bg_rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(8)])
+            card.bind(pos=lambda i, p, b=bg_rect: setattr(b, "pos", p), size=lambda i, s, b=bg_rect: setattr(b, "size", s))
+
+            client_name = str(t(task, "고객사", t(task, "화주사", ""))).strip()
+            prod_name = str(t(task, "상품명", t(task, "SKU명", "N/A")))
+            barcode = get_barcode_from_task(task)
+            target_loc = str(t(task, "보충로케이션", t(task, "원복로케이션", "-"))).strip()
+
+            req_qty = safe_int(t(task, "지시수량", 0))
+            conf_qty_val = task.get("confirmed_quantity", t(task, "확인수량", ""))
+            active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
+
+            qty_per_box = safe_int(t(task, "박스입수량", t(task, "박스 입수량", 0)))
+            target_box_ea_calc = f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)" if qty_per_box > 0 else f"({req_qty}E)"
+            
+            is_invoice_only = (qty_per_box == 1) or ("(송장만부착)" in prod_name) or ("송장" in prod_name)
+            is_inbox = str(t(task, "인박스여부", "")).strip().upper() == "Y"
+
+            is_no_barcode_sku = prod_name.strip().startswith("★")
+            has_qty_entered = str(conf_qty_val).strip().isdigit() and int(str(conf_qty_val).strip()) > 0
+            is_manual_unlocked = task.get("manual_qty_unlocked", False)
+            can_show_qty_btn = is_no_barcode_sku or has_qty_entered or is_manual_unlocked
+
+            # 💡 [요청 반영] 고객사, 상품명, 바코드, 출고로케이션, 수량, BOX/EA 정보, 뱃지 모두 포함
+            lbl_title = Label(text=f"[color=555555][{client_name}][/color] [b]{prod_name}[/b]", font_name=FONT_NAME, font_size=dp(14), color=TEXT_DARK, markup=True, halign="left", valign="middle", text_size=(Window.width-dp(60), None), size_hint_y=None, height=dp(20))
+            
+            lbl_info1 = Label(text=f"바코드: [color=1E88E5]{barcode}[/color]  |  출고위치: [color=D32F2F][b]{target_loc}[/b][/color]", font_name=FONT_NAME, font_size=dp(13), color=TEXT_DARK, markup=True, halign="left", valign="middle", text_size=(Window.width-dp(60), None), size_hint_y=None, height=dp(18))
+            
+            lbl_qty = Label(text=f"지시수량: {req_qty} / 입력수량: [color=D32F2F][b]{active_count}[/b][/color] [color=1E88E5]{target_box_ea_calc}[/color]", font_name=FONT_NAME, font_size=dp(14), color=TEXT_DARK, markup=True, halign="left", valign="middle", text_size=(Window.width-dp(60), None), size_hint_y=None, height=dp(20))
+
+            box_notice_str = f"박스입수: {qty_per_box}"
+            if is_invoice_only: box_notice_str += "  [color=FF1744][b](단품/송장전용)[/b][/color]"
+            if is_inbox: box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
+            
+            lbl_warn = Label(text=box_notice_str, font_name=FONT_NAME, font_size=dp(12), color=TEXT_MUTED, markup=True, halign="left", valign="middle", text_size=(Window.width-dp(60), None), size_hint_y=None, height=dp(18))
+
+            # 💡 [요청 반영] 실패, 비고, 수량입력(스캔불가), 완료 버튼 4개 나열
+            btn_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(5))
+            
+            btn_fail = StyledButton(text="실패", size_hint_x=0.2, font_size=dp(12), bg_color=get_color_from_hex("#E53935"))
+            btn_fail.bind(on_press=lambda x, t_data=task: self._handle_action("fail", t_data))
+            
+            btn_rem = StyledButton(text="비고", size_hint_x=0.2, font_size=dp(12), bg_color=get_color_from_hex("#546E7A"))
+            btn_rem.bind(on_press=lambda x, t_data=task: self._handle_action("remarks", t_data))
+            
+            btn_qty = StyledButton(text="수량입력" if can_show_qty_btn else "스캔불가", size_hint_x=0.3, font_size=dp(12))
+            btn_qty.set_bg_color(PRIMARY_BLUE if can_show_qty_btn else get_color_from_hex("#78909C"))
+            btn_qty.bind(on_press=lambda x, t_data=task, can_qty=can_show_qty_btn: self._handle_qty_action(t_data, can_qty))
+            
+            btn_comp = StyledButton(text="완료", size_hint_x=0.3, font_size=dp(12), bg_color=get_color_from_hex("#43A047"))
+            btn_comp.bind(on_press=lambda x, t_data=task: self._handle_action("complete", t_data))
+
+            btn_box.add_widget(btn_fail)
+            btn_box.add_widget(btn_rem)
+            btn_box.add_widget(btn_qty)
+            btn_box.add_widget(btn_comp)
+
+            card.add_widget(lbl_title)
+            card.add_widget(lbl_info1)
+            card.add_widget(lbl_qty)
+            card.add_widget(lbl_warn)
+            card.add_widget(Widget(size_hint_y=None, height=dp(5)))
+            card.add_widget(btn_box)
+
+            self.grid.add_widget(card)
+            
+        if not self.remaining_ids:
+            self.dismiss()
+
+    def _handle_qty_action(self, task_data, can_show_qty_btn):
+        if can_show_qty_btn:
+            self.card_screen.handle_my_task_action("qty", task_data)
+        else:
+            self._prompt_scan_fallback(task_data)
+
+    def _handle_action(self, action, task_data):
+        # 액션만 전달하고 팝업 내 카드 강제 삭제는 하지 않습니다! (상태 감지기가 처리)
+        self.card_screen.handle_my_task_action(action, task_data)
+
+    # 💡 팝업 내부 전용 스캔불가 처리기
+    def _prompt_scan_fallback(self, task_data):
+        app = App.get_running_app()
+        def on_confirm_fallback(reason):
+            clean_reason = reason.strip()
+            if not clean_reason: return
+            ts = datetime.now().strftime("%H:%M")
+            formatted_entry = f"[{ts} 스캔불가사유: {clean_reason}]"
+            curr_rem = str(task_data.get("remarks_text", t(task_data, "비고", ""))).strip()
+            updated_remarks = f"{curr_rem}\n{formatted_entry}" if curr_rem else formatted_entry
+            
+            task_data["manual_qty_unlocked"] = True
+            task_data["remarks_text"] = updated_remarks
+            task_data["비고"] = updated_remarks
+
+            # 백그라운드 시트 업데이트
+            task_id = str(t(task_data, "작업ID"))
+            is_return = "원복로케이션" in task_data
+            s_name = RETURN_TASK_SHEET_NAME if is_return else TASK_SHEET_NAME
+            
+            def _async_update_sheet_remarks():
+                try:
+                    sht = get_worksheet(s_name)
+                    headers = [str(h).strip() for h in sht.row_values(1)]
+                    if "비고" in headers and "작업ID" in headers:
+                        t_idx = headers.index("작업ID") + 1
+                        r_idx = headers.index("비고") + 1
+                        all_ids = sht.col_values(t_idx)
+                        if task_id in all_ids:
+                            sht.update_cell(all_ids.index(task_id) + 1, r_idx, updated_remarks)
+                            invalidate_cache(s_name)
+                except Exception as e:
+                    print(f"스캔불가 비고 갱신 오류: {e}")
+            
+            threading.Thread(target=_async_update_sheet_remarks, daemon=True).start()
+            app.show_toast("스캔불가 사유가 기록되었습니다.")
+            self.render_cards()
+            self.card_screen.handle_my_task_action("qty", task_data)
+
+        ScanFailureReasonPopup(on_select_callback=on_confirm_fallback).open()
+
+    def try_dismiss(self, instance):
+        if len(self.remaining_ids) > 0:
+            App.get_running_app().show_confirmation_popup(
+                "⚠️ 미검수 상품 경고", 
+                f"아직 처리되지 않은 상품이 [color=FF5252][b]{len(self.remaining_ids)}건[/b][/color] 남아있습니다!\n파레트를 넣기 전에 모두 처리해주세요.\n\n강제로 닫으시겠습니까?", 
+                on_yes=self.dismiss
+            )
+        else:
+            self.dismiss()
+
+
 class InspectionPopup(Popup):
 
     def __init__(self, card, task_list_screen, **kwargs):
@@ -2632,6 +2822,12 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             self.card_bg_color = [1, 1, 1, 1]
 
         raw_equip = str(t(self.task_data, "장비", ""))
+        if raw_equip == "오더피커":
+            self.ids.btn_switch_reach.opacity = 1
+            self.ids.btn_switch_reach.disabled = False
+        else:
+            self.ids.btn_switch_reach.opacity = 0
+            self.ids.btn_switch_reach.disabled = True
         if raw_equip == "리치":
             display_tag = "[color=0000FF][리치][/color]"
         elif raw_equip == "오더피커":
@@ -2644,93 +2840,114 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
         self.ids.lbl_equip.text = f"[b]{display_tag}{client_tag}[/b]"
 
-        existing_qty = safe_int(t(self.task_data, "기존수량", 0))
-        req_qty = safe_int(t(self.task_data, "지시수량", 0))
-        remaining_qty = existing_qty - req_qty
-        self.ids.lbl_stock_info.text = f"기존: [b]{existing_qty}[/b]\n보충후: [b][color=1E88E5]{remaining_qty}[/color][/b]"
-
-        qty_per_box = safe_int(
-            t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0))
-        )
-        product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", "N/A")))
-        
-        is_invoice_only = (qty_per_box == 1) or ("(송장만부착)" in product_name) or ("송장" in product_name)
-        is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
-
         tag_prefix = ""
         if is_urgent:
             tag_prefix += "[color=D32F2F][긴급][/color] "
         if is_shelf_rack:
             tag_prefix += "[color=1565C0][선반렉][/color] "
 
-        self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
-        self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
-
-        # ========================================================
-        # 💡 [수정] 카드 내 적치 위치 문구 시인성 개선 (검은색 + 포인트 컬러 적용)
-        # ========================================================
+        # 💡 1. 로케이션 정보 세팅 (다중/단일 무관하게 항상 표시)
         is_return_mode = "원복로케이션" in self.task_data
-
         if is_return_mode:
             target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
             if not target_loc or target_loc in ["-", "N/A"]:
-                # 미지정일 경우: 주황색 강조
                 self.ids.lbl_loc.text = "[color=212121]적치 위치:[/color] [color=E65100][b]미지정 (빈 곳 적치)[/b][/color]"
             else:
-                # 지정일 경우: 진한 파란색 강조
                 self.ids.lbl_loc.text = f"[color=212121]적치 위치:[/color] [color=0D47A1][b]{target_loc}[/b][/color]"
         else:
             from_loc = str(t(self.task_data, "기존로케이션", "-"))
             to_loc = str(t(self.task_data, "보충로케이션", "-"))
             self.ids.lbl_loc.text = f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
-        # ========================================================
 
-        conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
-        active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
-
-        target_box_ea_calc = (
-            f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)"
-            if qty_per_box > 0
-            else f"({req_qty}E)"
-        )
-
-        if self.is_claimed:
-            self.ids.lbl_main_qty.text = f"지시: {req_qty} / [color=D32F2F]{active_count}[/color] [color=1E88E5]{target_box_ea_calc}[/color]"
+        # 💡 2. 다중 상품 (혼적 파레트) 전용 UI 처리
+        if self.task_data.get("_is_multi"):
+            tot = self.task_data.get("_tot_cnt", 1)
+            rem = self.task_data.get("_rem_cnt", 1)
+            if tot != rem:
+                badge = f"[color=E65100][🔄부분완료: 남은 {rem} / 총 {tot}][/color] "
+            else:
+                badge = f"[color=E65100][📦다중상품: 총 {tot}종][/color] "
+                
+            self.ids.lbl_product.text = f"[b]{tag_prefix}{badge}다중 SKU 묶음 작업[/b]"
+            self.ids.lbl_barcode.text = "여러 상품이 포함되어 있습니다. (팝업에서 개별 확인)"
+            self.ids.lbl_stock_info.text = ""
+            self.ids.lbl_main_qty.text = f"총 {tot}종의 상품 중 [color=D32F2F]{rem}[/color]종 남음"
+            self.ids.lbl_box_info.text = "상세 수량 및 박스 정보는 [다중 SKU 팝업 열기]를 눌러 확인하세요."
+            can_show_qty_btn = False
+            
+        # 💡 3. 단일 상품 (1 PLT = 1 SKU) 전용 UI 처리
         else:
-            self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
+            existing_qty = safe_int(t(self.task_data, "기존수량", 0))
+            req_qty = safe_int(t(self.task_data, "지시수량", 0))
+            remaining_qty = existing_qty - req_qty
+            
+            qty_per_box = safe_int(t(self.task_data, "박스입수량", t(self.task_data, "박스 입수량", 0)))
+            product_name = str(t(self.task_data, "상품명", t(self.task_data, "SKU명", "N/A")))
+            
+            is_invoice_only = (qty_per_box == 1) or ("(송장만부착)" in product_name) or ("송장" in product_name)
+            is_inbox = str(t(self.task_data, "인박스여부", "")).strip().upper() == "Y"
 
-        if is_invoice_only:
-            box_notice_str = f"박스입수: {qty_per_box}  [color=FF1744][b](박스 수기작성 금지 - 단품/송장전용)[/b][/color]"
-        else:
+            self.ids.lbl_product.text = f"[b]{tag_prefix}{product_name}[/b]"
+            self.ids.lbl_barcode.text = f"바코드: {get_barcode_from_task(self.task_data)}"
+            self.ids.lbl_stock_info.text = f"기존: [b]{existing_qty}[/b]\n보충후: [b][color=1E88E5]{remaining_qty}[/color][/b]"
+            
+            conf_qty_val = self.task_data.get("confirmed_quantity", t(self.task_data, "확인수량", ""))
+            active_count = safe_int(conf_qty_val, 0) if str(conf_qty_val).isdigit() else 0
+            
+            target_box_ea_calc = f"({req_qty // qty_per_box}B / {req_qty % qty_per_box}E)" if qty_per_box > 0 else f"({req_qty}E)"
+            
+            if self.is_claimed:
+                self.ids.lbl_main_qty.text = f"지시: {req_qty} / [color=D32F2F]{active_count}[/color] [color=1E88E5]{target_box_ea_calc}[/color]"
+            else:
+                self.ids.lbl_main_qty.text = f"지시: [b]{req_qty}[/b] [color=1E88E5]{target_box_ea_calc}[/color]"
+            
             box_notice_str = f"박스입수: {qty_per_box}"
+            if is_invoice_only:
+                box_notice_str += "  [color=FF1744][b](단품/송장전용)[/b][/color]"
+            if is_inbox:
+                box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
+            self.ids.lbl_box_info.text = box_notice_str
 
-        if is_inbox:
-            box_notice_str += "  [color=D32F2F][b][인박스 확인 필요][/b][/color]"
-
-        self.ids.lbl_box_info.text = box_notice_str
+            is_no_barcode_sku = product_name.strip().startswith("★")
+            has_qty_entered = str(conf_qty_val).strip().isdigit() and int(str(conf_qty_val).strip()) > 0
+            is_manual_unlocked = self.task_data.get("manual_qty_unlocked", False)
+            can_show_qty_btn = is_no_barcode_sku or has_qty_entered or is_manual_unlocked
 
         self.ids.box_check.opacity = 1
         self.ids.box_check.disabled = False
         self.ids.box_check.active = self.is_checked
 
-        # 💡 [핵심] 수량입력 버튼 동적 제어 로직
-        is_no_barcode_sku = product_name.strip().startswith("★")
-        has_qty_entered = str(conf_qty_val).strip().isdigit() and int(str(conf_qty_val).strip()) > 0
-        is_manual_unlocked = self.task_data.get("manual_qty_unlocked", False)
-
-        can_show_qty_btn = is_no_barcode_sku or has_qty_entered or is_manual_unlocked
-
+        # 💡 4. 버튼 렌더링 구역
         if self.is_claimed:
             self.ids.btn_action_box.height = dp(40)
             self.ids.btn_action_box.opacity = 1
             self.ids.btn_action_box.disabled = False
+            self.ids.btn_action_box.clear_widgets()
 
-            if can_show_qty_btn:
-                self.ids.btn_qty_input.text = "수량입력"
-                self.ids.btn_qty_input.set_bg_color(PRIMARY_BLUE)
+            btn_return = StyledButton(text="반납", size_hint_x=0.2, font_size=dp(12), bg_color=get_color_from_hex("#FF7043"))
+            btn_return.bind(on_press=lambda x: self.handle_card_btn('return'))
+            self.ids.btn_action_box.add_widget(btn_return)
+
+            # 다중 상품이 2개 이상 남아있을 때는 팝업 버튼만 노출
+            if self.task_data.get("_is_multi") and self.task_data.get("_rem_cnt", 1) > 1:
+                btn_popup = StyledButton(text="🚀 다중 SKU 팝업 열기", size_hint_x=0.8, font_size=dp(13), bold=True, bg_color=PRIMARY_BLUE)
+                btn_popup.bind(on_press=lambda x: MultiSkuInspectionPopup(self.task_data.get("_sub_tasks", []), self.card_screen).open())
+                self.ids.btn_action_box.add_widget(btn_popup)
             else:
-                self.ids.btn_qty_input.text = "스캔불가"
-                self.ids.btn_qty_input.set_bg_color(get_color_from_hex("#78909C"))
+                # 팝업 버튼 대신 기존 3가지 버튼 노출
+                btn_qty = StyledButton(text="수량입력" if can_show_qty_btn else "스캔불가", size_hint_x=0.3)
+                btn_qty.set_bg_color(PRIMARY_BLUE if can_show_qty_btn else get_color_from_hex("#78909C"))
+                btn_qty.bind(on_press=lambda x: self.handle_card_btn('qty'))
+                
+                btn_fail = StyledButton(text="실패", size_hint_x=0.2, font_size=dp(12), bg_color=get_color_from_hex("#E53935"))
+                btn_fail.bind(on_press=lambda x: self.handle_card_btn('fail'))
+                
+                btn_comp = StyledButton(text="완료", size_hint_x=0.3, font_size=dp(12), bg_color=get_color_from_hex("#43A047"))
+                btn_comp.bind(on_press=lambda x: self.handle_card_btn('complete'))
+
+                self.ids.btn_action_box.add_widget(btn_fail)
+                self.ids.btn_action_box.add_widget(btn_qty)
+                self.ids.btn_action_box.add_widget(btn_comp)
         else:
             self.ids.btn_action_box.height = 0
             self.ids.btn_action_box.opacity = 0
@@ -2836,6 +3053,10 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
                 task_list_screen.open_task_from_scan({"task_data": self.task_data})
                 return True
         return super().on_touch_down(touch)
+    
+    def switch_to_reach(self):
+        if self.card_screen and hasattr(self.card_screen, "handle_switch_to_reach"):
+            self.card_screen.handle_switch_to_reach(self.task_data)
 
 # --- 올인원 통합 보충 작업 화면 ---
 class UnifiedReplenishScreen(Screen):
@@ -3504,18 +3725,38 @@ class UnifiedReplenishScreen(Screen):
             reverse=not self.sort_asc,
         )
 
+        # 💡 [핵심] 전체 원본 데이터에서 작업ID별 총 개수를 먼저 카운트 (부분완료 추적용)
+        total_counts = {}
+        for t_item in self.raw_all_tasks:
+            m_id = t(t_item, "작업ID")
+            total_counts[m_id] = total_counts.get(m_id, 0) + 1
+
+        # 💡 필터링된 남은 작업들을 작업ID 기준으로 그룹핑
+        grouped = {}
+        for task in filtered_list:
+            m_id = t(task, "작업ID")
+            if m_id not in grouped: grouped[m_id] = []
+            grouped[m_id].append(task)
+
         rv_items = []
         is_my_mode = self.active_main_tab == "MY"
-        for task in filtered_list:
-            task_id = t(task, "작업ID")
-            rv_items.append(
-                {
-                    "task_data": task,
-                    "is_claimed": is_my_mode,
-                    "is_checked": (task_id in self.checked_task_ids),
-                    "card_screen": self,
-                }
-            )
+        for m_id, sub_tasks in grouped.items():
+            rep_task = dict(sub_tasks[0]) # 대표 카드 데이터
+            tot = total_counts.get(m_id, 1)
+            rem = len(sub_tasks)
+            
+            # 메타데이터 주입
+            rep_task["_is_multi"] = (tot > 1)
+            rep_task["_tot_cnt"] = tot
+            rep_task["_rem_cnt"] = rem
+            rep_task["_sub_tasks"] = sub_tasks # 팝업으로 넘길 하위 상품 리스트
+
+            rv_items.append({
+                "task_data": rep_task,
+                "is_claimed": is_my_mode,
+                "is_checked": (m_id in self.checked_task_ids),
+                "card_screen": self,
+            })
 
         self.rv.data = rv_items
         self.rv.refresh_from_data()
@@ -3667,15 +3908,12 @@ class UnifiedReplenishScreen(Screen):
             all_ids = sheet.col_values(task_id_col)
             cells_to_update = []
 
-            for task_id in self.checked_task_ids:
-                if task_id in all_ids:
-                    row_idx = all_ids.index(task_id) + 1
-                    cells_to_update.append(
-                        gspread.Cell(row_idx, assignee_col, "")
-                    )
-                    cells_to_update.append(
-                        gspread.Cell(row_idx, status_col, "대기")
-                    )
+            # 💡 [핵심 해결] .index()로 1개만 찾지 않고, 전체 시트를 순회하며 일치하는 다중 SKU(동일 작업ID) 전체를 묶어서 찾음!
+            for idx, val in enumerate(all_ids):
+                if val in self.checked_task_ids:
+                    row_idx = idx + 1
+                    cells_to_update.append(gspread.Cell(row_idx, assignee_col, ""))
+                    cells_to_update.append(gspread.Cell(row_idx, status_col, "대기"))
 
             if cells_to_update:
                 sheet.update_cells(cells_to_update)
@@ -3689,7 +3927,7 @@ class UnifiedReplenishScreen(Screen):
             self.checked_task_ids.clear()
 
             Clock.schedule_once(
-                lambda dt: App.get_running_app().show_toast("선택한 작업이 일괄 반납되었습니다.")
+                lambda dt: App.get_running_app().show_toast("선택한 다중/단일 작업이 일괄 반납되었습니다.")
             )
             Clock.schedule_once(lambda dt: self.apply_filters_and_render())
         except Exception as e:
@@ -3708,7 +3946,9 @@ class UnifiedReplenishScreen(Screen):
         dummy_card = type("DummyCard", (), {"task_data": task_data})()
 
         if action_name == "return":
-            task_list_screen.return_task(dummy_card)
+            # 💡 [버그 픽스] 개별 반납 누를 시 튕기는 현상 해결 (안전한 일괄 반납 큐로 넘김)
+            self.checked_task_ids.add(t(task_data, "작업ID"))
+            self.batch_return_checked_tasks(None)
         elif action_name == "qty":
             task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
         elif action_name == "fail":
@@ -3718,6 +3958,55 @@ class UnifiedReplenishScreen(Screen):
         elif action_name == "complete":
             App.get_running_app().current_list_type = "보충인원"
             task_list_screen.process_task(dummy_card)
+
+    # 💡 [신규 추가] 리치 전환 기능 로직
+    def handle_switch_to_reach(self, task_data):
+        app = App.get_running_app()
+        task_id = str(t(task_data, "작업ID"))
+        
+        def do_switch():
+            app.show_loading_popup()
+            threading.Thread(target=self._async_switch_reach, args=(task_id,), daemon=True).start()
+            
+        app.show_confirmation_popup(
+            "리치 작업으로 전환",
+            "이 작업(동일 파레트 묶음 전체)을\n[b][color=1E88E5]리치 작업[/color][/b]으로 전환하시겠습니까?",
+            on_yes=do_switch
+        )
+        
+    def _async_switch_reach(self, task_id):
+        try:
+            sheet = get_worksheet(TASK_SHEET_NAME)
+            headers = [str(h).strip() for h in sheet.row_values(1)]
+            task_id_col = headers.index("작업ID") + 1
+            equip_col = headers.index("장비") + 1
+            
+            # 💡 [추가] 상태와 담당자 열 인덱스 찾기
+            status_col = headers.index("상태") + 1
+            assignee_col = headers.index("작업 담당자") + 1 if "작업 담당자" in headers else headers.index("담당자") + 1
+            
+            all_ids = sheet.col_values(task_id_col)
+            cells_to_update = []
+            
+            # 💡 [핵심] 동일 작업ID 전체를 '리치'로 변경하면서 동시에 '대기' 상태로 반납
+            for idx, val in enumerate(all_ids):
+                if val == task_id:
+                    row_idx = idx + 1
+                    cells_to_update.append(gspread.Cell(row_idx, equip_col, "리치"))
+                    cells_to_update.append(gspread.Cell(row_idx, status_col, "대기"))
+                    cells_to_update.append(gspread.Cell(row_idx, assignee_col, ""))
+                    
+            if cells_to_update:
+                sheet.update_cells(cells_to_update)
+                
+            invalidate_cache(TASK_SHEET_NAME)
+            Clock.schedule_once(lambda dt: App.get_running_app().show_toast("✅ 리치 작업으로 전환되어 대기열로 반납되었습니다."))
+            Clock.schedule_once(lambda dt: self.fetch_data())
+            
+        except Exception as e:
+            Clock.schedule_once(lambda dt, err=str(e): App.get_running_app().show_info_popup("오류", err))
+        finally:
+            Clock.schedule_once(lambda dt: App.get_running_app().dismiss_loading_popup())
 
 # =========================================================================
 # 💡 [최종 수정] 오피킹 원복 전용 화면 (초고속 캐싱 + 입력창 UI + 최근 10건 이력)
@@ -4132,67 +4421,20 @@ class TaskListScreen(Screen):
         )()
         InspectionPopup(card=dummy_card, task_list_screen=self).open()
 
-    def _perform_update_and_log(self, card, updates, msg):
-        try:
-            sheet = get_worksheet(TASK_SHEET_NAME)
-            headers = [str(h).strip() for h in sheet.row_values(1)]
-            task_id = str(t(card.task_data, "작업ID"))
-
-            task_id_col_idx = headers.index("작업ID") + 1
-            all_task_ids = sheet.col_values(task_id_col_idx)
-
-            if task_id not in all_task_ids:
-                raise Exception(
-                    f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다."
-                )
-
-            row_idx = all_task_ids.index(task_id) + 1
-            cells = []
-
-            for key, val in updates.items():
-                if key in headers:
-                    col_idx = headers.index(key) + 1
-                    cells.append(gspread.Cell(row_idx, col_idx, str(val)))
-
-            if cells:
-                sheet.update_cells(cells)
-
-            updated_task_data = dict(card.task_data)
-            updated_task_data.update(updates)
-
-            try:
-                log_sheet = get_worksheet(LOG_SHEET_NAME)
-                log_headers = [str(h).strip() for h in log_sheet.row_values(1)]
-                log_row = [str(updated_task_data.get(h, "")) for h in log_headers]
-                log_sheet.append_row(log_row)
-            except Exception as log_err:
-                print(f"로그 시트 기록 중 경고: {log_err}")
-
-            invalidate_cache(TASK_SHEET_NAME)
-            invalidate_cache(LOG_SHEET_NAME)
-            Clock.schedule_once(lambda dt: self.on_action_success(msg))
-        except Exception as e:
-            Clock.schedule_once(
-                lambda dt, err=str(e): App.get_running_app().show_info_popup(
-                    "오류", str(err)
-                )
-            )
-        finally:
-            Clock.schedule_once(
-                lambda dt: App.get_running_app().dismiss_loading_popup()
-            )
-
     def open_quantity_popup(self, card, card_ref=None):
         initial_val = ""
 
         def on_confirm_qty(text):
             val = text.strip()
             if val.isdigit():
-                task_id = t(card.task_data, "작업ID")
+                # 💡 [핵심 1] 작업ID가 아닌 '보조작업번호'를 우선 키로 사용하여 묶음 중 정확한 행 1개를 타겟팅
+                key_col = "보조작업번호" if "보조작업번호" in card.task_data else "작업ID"
+                target_key = str(t(card.task_data, key_col))
 
                 if card_ref and hasattr(card_ref, "raw_all_tasks"):
                     for task in card_ref.raw_all_tasks:
-                        if t(task, "작업ID") == task_id:
+                        t_key = str(t(task, key_col, t(task, "작업ID")))
+                        if t_key == target_key:
                             task["confirmed_quantity"] = val
                             task["확인수량"] = val
                             break
@@ -4202,6 +4444,12 @@ class TaskListScreen(Screen):
 
                 if card_ref and hasattr(card_ref, "apply_filters_and_render"):
                     card_ref.apply_filters_and_render()
+
+                # 💡 [핵심 2] 다중 팝업창이 떠 있다면, 미니 카드들의 수량 텍스트를 즉시 갱신 (0에서 바뀌도록)
+                for child in Window.children:
+                    if type(child).__name__ == "MultiSkuInspectionPopup":
+                        child.render_cards()
+                        break
 
                 App.get_running_app().show_toast(
                     f"수량 '{val}'(이)가 임시 저장되었습니다."
@@ -4471,47 +4719,49 @@ class TaskListScreen(Screen):
             sheet = get_worksheet(TASK_SHEET_NAME)
             headers = [str(h).strip() for h in sheet.row_values(1)]
             
+            # 💡 시트에 '보조작업번호' 열이 있으면 개별 키로 사용, 없으면 '작업ID' 사용
+            key_col_name = "보조작업번호" if "보조작업번호" in headers else "작업ID"
+            target_key = str(t(card.task_data, key_col_name))
+
+            if key_col_name not in headers:
+                raise Exception(f"시트에서 '{key_col_name}' 열을 찾을 수 없습니다.")
+
+            key_col_idx = headers.index(key_col_name) + 1
+            all_keys = sheet.col_values(key_col_idx)
+
             card_task_data = getattr(card, "task_data", {})
             is_merged = card_task_data.get("is_merged", False) or getattr(card, "is_merged", False)
             merged_sources = card_task_data.get("merged_sources", []) or getattr(card, "merged_sources", [])
 
-            log_entries = []  # 💡 기록용 로그 데이터 수집 배열
+            log_entries = []
 
             # 💡 다중 선택 통합 검수 완료 시
             if is_merged and merged_sources:
-                task_id_col_idx = headers.index("작업ID") + 1
-                all_task_ids = sheet.col_values(task_id_col_idx)
-                
                 cells = []
                 for src_item in merged_sources:
                     src_task = src_item.get("task_data", {})
-                    target_id = str(t(src_task, "작업ID")).strip()
+                    src_target_key = str(t(src_task, key_col_name)).strip()
                     
-                    if target_id in all_task_ids:
-                        row_idx = all_task_ids.index(target_id) + 1
+                    if src_target_key in all_keys:
+                        row_idx = all_keys.index(src_target_key) + 1
                         for key, val in updates.items():
                             if key in headers:
                                 col_idx = headers.index(key) + 1
                                 cells.append(gspread.Cell(row_idx, col_idx, str(val)))
                     
-                    # 로그 기록을 위한 데이터 세팅
-                    merged_updated_task = dict(src_task)
-                    merged_updated_task.update(updates)
-                    log_entries.append(merged_updated_task)
+                    # 💡 [핵심 보완] 어플 메모리 데이터 원본을 갱신하여 팝업이 감지하게 만듦
+                    src_task.update(updates)
+                    log_entries.append(dict(src_task))
 
                 if cells:
                     sheet.update_cells(cells)
                     
             # 💡 단일 선택 검수 완료 시
             else:
-                task_id = str(t(card.task_data, "작업ID"))
-                task_id_col_idx = headers.index("작업ID") + 1
-                all_task_ids = sheet.col_values(task_id_col_idx)
+                if target_key not in all_keys:
+                    raise Exception(f"{key_col_name} [{target_key}]를 시트에서 찾을 수 없습니다.")
 
-                if task_id not in all_task_ids:
-                    raise Exception(f"작업ID [{task_id}]를 시트에서 찾을 수 없습니다.")
-
-                row_idx = all_task_ids.index(task_id) + 1
+                row_idx = all_keys.index(target_key) + 1
                 cells = []
 
                 for key, val in updates.items():
@@ -4522,15 +4772,10 @@ class TaskListScreen(Screen):
                 if cells:
                     sheet.update_cells(cells)
                 
-                # 로그 기록을 위한 데이터 세팅
-                single_updated_task = dict(card.task_data)
-                single_updated_task.update(updates)
-                log_entries.append(single_updated_task)
+                # 💡 [핵심 보완] 어플 메모리 데이터 원본을 갱신하여 팝업이 감지하게 만듦
+                card.task_data.update(updates)
+                log_entries.append(dict(card.task_data))
 
-            # ==========================================
-            # 💡 [조건 추가 구역] 작업완료 로그 시트 기록
-            # ==========================================
-            # 🚨 "상태"가 "최종완료"일 때만 로그 시트에 기록되도록 조건문(if) 추가
             if log_entries and updates.get("상태") == "최종완료":
                 try:
                     log_sheet = get_worksheet(LOG_SHEET_NAME)
@@ -4541,7 +4786,6 @@ class TaskListScreen(Screen):
                         row = [str(entry.get(h, "")) for h in log_headers]
                         rows_to_append.append(row)
                     
-                    # 1건이면 append_row, 다중건이면 append_rows 사용
                     if len(rows_to_append) == 1:
                         log_sheet.append_row(rows_to_append[0])
                     else:
@@ -6031,7 +6275,8 @@ Builder.load_string(
 
     BoxLayout:
         size_hint_y: None
-        height: dp(25)
+        height: dp(28)  # 버튼을 위해 높이 살짝 넉넉하게
+        spacing: dp(5)
         Label:
             id: lbl_loc
             font_name: app.FONT_NAME
@@ -6040,6 +6285,18 @@ Builder.load_string(
             markup: True
             halign: 'left'
             text_size: self.width, None
+            size_hint_x: 0.75  # 👈 너비를 75%로 줄임
+            
+        # 💡 [신규 추가] 리치 전환 버튼 (평소엔 숨김)
+        StyledButton:
+            id: btn_switch_reach
+            text: "리치전환"
+            size_hint_x: 0.25
+            font_size: dp(11)
+            bg_color: (0.22, 0.29, 0.67, 1)  # 짙은 남색 계열
+            opacity: 0
+            disabled: True
+            on_press: root.switch_to_reach()
 
     BoxLayout:
         size_hint_y: None
@@ -6067,12 +6324,12 @@ Builder.load_string(
             halign: 'left'
             text_size: self.width, None
 
-    GridLayout:
+    BoxLayout:
         id: btn_action_box
-        cols: 5
+        orientation: 'horizontal'
         size_hint_y: None
         height: dp(40)
-        spacing: dp(4)
+        spacing: dp(6)
         opacity: 0
         disabled: True
 
@@ -6970,7 +7227,6 @@ class ReturnTaskListScreen(Screen):
             all_rows = execute_with_retry(sheet.get, "A:AA")
             
             headers = [str(h).strip() for h in all_rows[0]]
-            # 💡 [헤더 반영] '작업자' 컬럼 초기화 목적
             if "작업자" not in headers:
                 raise Exception("시트에서 '작업자' 열을 찾을 수 없습니다.")
             assignee_col = headers.index("작업자") + 1
@@ -6980,9 +7236,10 @@ class ReturnTaskListScreen(Screen):
             all_ids = sheet.col_values(task_id_col)
             cells_to_update = []
 
-            for task_id in self.checked_task_ids:
-                if task_id in all_ids:
-                    row_idx = all_ids.index(task_id) + 1
+            # 💡 [핵심 해결] 동일 작업ID 모두 묶어서 반납 처리
+            for idx, val in enumerate(all_ids):
+                if val in self.checked_task_ids:
+                    row_idx = idx + 1
                     cells_to_update.append(gspread.Cell(row_idx, assignee_col, ""))
                     cells_to_update.append(gspread.Cell(row_idx, status_col, "대기"))
 
@@ -6992,7 +7249,7 @@ class ReturnTaskListScreen(Screen):
             invalidate_cache(RETURN_TASK_SHEET_NAME)
             self.checked_task_ids.clear()
 
-            Clock.schedule_once(lambda dt: App.get_running_app().show_toast("선택한 작업이 할당 해제되었습니다."))
+            Clock.schedule_once(lambda dt: App.get_running_app().show_toast("선택한 작업이 안전하게 할당 해제되었습니다."))
             Clock.schedule_once(lambda dt: self.fetch_data())
         except Exception as e:
             Clock.schedule_once(lambda dt, err=str(e): App.get_running_app().show_info_popup("오류", str(err)))
