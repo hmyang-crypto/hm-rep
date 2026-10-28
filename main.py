@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.3"
+CURRENT_VERSION = "1.9.9.4"
 
 
 def check_and_apply_update():
@@ -3759,15 +3759,21 @@ class UnifiedReplenishScreen(Screen):
             if self.only_urgent and t(task, "긴급여부") != "Y":
                 continue
 
-            # 💡 [핵심] 1층만 보기 필터 로직
+            # 💡 [핵심] 1층만 보기 필터 로직 (+ 선반렉 작업건 포함)
             if self.only_1st_floor:
+                # 1. 1층 여부 판별
+                is_1st_floor = False
                 parts = from_loc.split("-")
-                # 로케이션 포맷이 정상적(i01-01-1-01 형태)이고, 3번째 자리가 "1"이 아니면 제외
-                if len(parts) >= 3:
-                    if parts[2] != "1":
-                        continue
-                else:
-                    continue  # 형식이 맞지 않는 엉뚱한 로케이션은 제외
+                if len(parts) >= 3 and parts[2] == "1":
+                    is_1st_floor = True
+                
+                # 2. 선반렉 여부 판별
+                shelf_val = str(t(task, "선반렉 여부", t(task, "선반랙 여부", t(task, "선반렉", t(task, "선반랙", ""))))).strip().upper()
+                is_shelf_rack = (shelf_val == "Y") or ("선반" in shelf_val)
+                
+                # 1층도 아니고 선반렉도 아니면 목록에서 제외
+                if not (is_1st_floor or is_shelf_rack):
+                    continue
 
             filtered_list.append(task)
 
