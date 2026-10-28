@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.2"
+CURRENT_VERSION = "1.9.9.3"
 
 
 def check_and_apply_update():
@@ -2943,18 +2943,22 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
                 btn_popup.bind(on_press=lambda x: MultiSkuInspectionPopup(self.task_data.get("_sub_tasks", []), self.card_screen).open())
                 self.ids.btn_action_box.add_widget(btn_popup)
             else:
-                # 팝업 버튼 대신 기존 3가지 버튼 노출
-                btn_qty = StyledButton(text="수량입력" if can_show_qty_btn else "스캔불가", size_hint_x=0.3)
-                btn_qty.set_bg_color(PRIMARY_BLUE if can_show_qty_btn else get_color_from_hex("#78909C"))
-                btn_qty.bind(on_press=lambda x: self.handle_card_btn('qty'))
-                
+                # 💡 [비고 복구 완료] 단일 작업 시 기존 4가지 버튼(실패, 비고, 수량입력, 완료) 모두 노출
                 btn_fail = StyledButton(text="실패", size_hint_x=0.2, font_size=dp(12), bg_color=get_color_from_hex("#E53935"))
                 btn_fail.bind(on_press=lambda x: self.handle_card_btn('fail'))
+                
+                btn_rem = StyledButton(text="비고", size_hint_x=0.2, font_size=dp(12), bg_color=get_color_from_hex("#546E7A"))
+                btn_rem.bind(on_press=lambda x: self.handle_card_btn('remarks'))
+
+                btn_qty = StyledButton(text="수량입력" if can_show_qty_btn else "스캔불가", size_hint_x=0.3, font_size=dp(12))
+                btn_qty.set_bg_color(PRIMARY_BLUE if can_show_qty_btn else get_color_from_hex("#78909C"))
+                btn_qty.bind(on_press=lambda x: self.handle_card_btn('qty'))
                 
                 btn_comp = StyledButton(text="완료", size_hint_x=0.3, font_size=dp(12), bg_color=get_color_from_hex("#43A047"))
                 btn_comp.bind(on_press=lambda x: self.handle_card_btn('complete'))
 
                 self.ids.btn_action_box.add_widget(btn_fail)
+                self.ids.btn_action_box.add_widget(btn_rem)  # 👈 비고 추가
                 self.ids.btn_action_box.add_widget(btn_qty)
                 self.ids.btn_action_box.add_widget(btn_comp)
         else:
@@ -3037,10 +3041,10 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
                             )
                             invalidate_cache(TASK_SHEET_NAME)
                             print(
-                                f"✅ 구글 시트 비고 실시간 업데이트 완료: {updated_remarks}"
+                                f"구글 시트 비고 실시간 업데이트 완료: {updated_remarks}"
                             )
                 except Exception as e:
-                    print(f"⚠️ 비고 실시간 시트 업데이트 에러: {e}")
+                    print(f"비고 실시간 시트 업데이트 에러: {e}")
 
             threading.Thread(
                 target=_async_update_sheet_remarks, daemon=True
@@ -3075,6 +3079,7 @@ class UnifiedReplenishScreen(Screen):
         self.active_main_tab = "PENDING"
         self.active_equip_filter = "ORDERPICKER"
         self.only_urgent = False
+        self.only_1st_floor = False  # 💡 [추가] 1층 필터 변수
         self.selected_from_zones = {"전체"}
         self.selected_to_zones = {"전체"}
         self.sort_asc = True
@@ -3116,7 +3121,7 @@ class UnifiedReplenishScreen(Screen):
         btn_refresh = StyledButton(
             text="갱신", size_hint_x=0.18, font_size=dp(12)
         )
-        btn_refresh.bind(on_press=self.refresh_button_click) # 💡 전용 갱신 버튼 이벤트 바인딩
+        btn_refresh.bind(on_press=self.refresh_button_click)
 
         header.add_widget(btn_back)
         header.add_widget(lbl_title)
@@ -3125,7 +3130,7 @@ class UnifiedReplenishScreen(Screen):
         self.layout.add_widget(header)
 
         self.btn_toggle_filter = StyledButton(
-            text="🔍 필터 설정 닫기 ▲ (대기작업 / 오더피커)",
+            text="필터 설정 닫기 ▲ (대기작업 / 오더피커)",
             size_hint_y=None,
             height=dp(32),
             bg_color=get_color_from_hex("#546E7A"),
@@ -3203,49 +3208,69 @@ class UnifiedReplenishScreen(Screen):
         equip_filter_box.add_widget(self.btn_eq_all)
         self.filter_panel.add_widget(equip_filter_box)
 
+        # 💡 [핵심] 필터 툴바 비율 조정 및 1층 필터 추가
         opt_toolbar = BoxLayout(
             size_hint_y=None, height=dp(32), spacing=dp(3)
         )
 
         self.btn_from_zone = StyledButton(
-            text="보관: 전체", size_hint_x=0.30, font_size=dp(11)
+            text="보관: 전체", size_hint_x=0.24, font_size=dp(11)
         )
         self.btn_from_zone.bind(on_press=self.open_from_zone_popup)
 
         self.btn_to_zone = StyledButton(
-            text="이동: 전체", size_hint_x=0.30, font_size=dp(11)
+            text="이동: 전체", size_hint_x=0.24, font_size=dp(11)
         )
         self.btn_to_zone.bind(on_press=self.open_to_zone_popup)
 
         self.btn_sort = StyledButton(
             text="▲",
-            size_hint_x=0.12,
+            size_hint_x=0.10,
             font_size=dp(12),
             bg_color=get_color_from_hex("#546E7A"),
         )
         self.btn_sort.bind(on_press=self.toggle_sort_order)
 
-        chk_box = BoxLayout(size_hint_x=0.28, spacing=dp(2))
+        chk_urg_box = BoxLayout(size_hint_x=0.21, spacing=dp(1))
         self.chk_urgent = CheckBox(
-            active=False, size_hint_x=None, width=dp(20), color=RETURN_GREEN
+            active=False, size_hint_x=None, width=dp(20), color=PRIMARY_BLUE
         )
         self.chk_urgent.bind(active=self.on_urgent_check_change)
         lbl_urg = Label(
             text="긴급만",
             font_name=FONT_NAME,
-            font_size=dp(12),
+            font_size=dp(11),
             color=TEXT_DARK,
             halign="left",
             valign="middle",
         )
         lbl_urg.bind(size=lambda i, s: setattr(i, "text_size", s))
+        chk_urg_box.add_widget(self.chk_urgent)
+        chk_urg_box.add_widget(lbl_urg)
 
-        chk_box.add_widget(self.chk_urgent)
-        chk_box.add_widget(lbl_urg)
+        # 💡 1층만 보기 체크박스 세팅
+        chk_1f_box = BoxLayout(size_hint_x=0.21, spacing=dp(1))
+        self.chk_1f = CheckBox(
+            active=False, size_hint_x=None, width=dp(20), color=PRIMARY_BLUE
+        )
+        self.chk_1f.bind(active=self.on_1st_floor_check_change)
+        lbl_1f = Label(
+            text="1층만",
+            font_name=FONT_NAME,
+            font_size=dp(11),
+            color=TEXT_DARK,
+            halign="left",
+            valign="middle",
+        )
+        lbl_1f.bind(size=lambda i, s: setattr(i, "text_size", s))
+        chk_1f_box.add_widget(self.chk_1f)
+        chk_1f_box.add_widget(lbl_1f)
+
         opt_toolbar.add_widget(self.btn_from_zone)
         opt_toolbar.add_widget(self.btn_to_zone)
         opt_toolbar.add_widget(self.btn_sort)
-        opt_toolbar.add_widget(chk_box)
+        opt_toolbar.add_widget(chk_urg_box)
+        opt_toolbar.add_widget(chk_1f_box)
         self.filter_panel.add_widget(opt_toolbar)
 
         self.layout.add_widget(self.filter_panel)
@@ -3325,8 +3350,18 @@ class UnifiedReplenishScreen(Screen):
         self.btn_eq_reach.set_active_visual(False)
         self.only_urgent = False
         self.chk_urgent.active = False
+        # 💡 [추가] 1층 필터 초기화
+        self.only_1st_floor = False
+        if hasattr(self, 'chk_1f'):
+            self.chk_1f.active = False
+            
         self.sort_asc = True
         self.btn_sort.text = "▲"
+
+    # 💡 [신규] 1층 체크박스 이벤트 핸들러
+    def on_1st_floor_check_change(self, checkbox, value):
+        self.only_1st_floor = value
+        self.apply_filters_and_render()
 
     def open_from_zone_popup(self, instance):
         try:
@@ -3724,6 +3759,16 @@ class UnifiedReplenishScreen(Screen):
             if self.only_urgent and t(task, "긴급여부") != "Y":
                 continue
 
+            # 💡 [핵심] 1층만 보기 필터 로직
+            if self.only_1st_floor:
+                parts = from_loc.split("-")
+                # 로케이션 포맷이 정상적(i01-01-1-01 형태)이고, 3번째 자리가 "1"이 아니면 제외
+                if len(parts) >= 3:
+                    if parts[2] != "1":
+                        continue
+                else:
+                    continue  # 형식이 맞지 않는 엉뚱한 로케이션은 제외
+
             filtered_list.append(task)
 
         filtered_list.sort(
@@ -3734,13 +3779,11 @@ class UnifiedReplenishScreen(Screen):
             reverse=not self.sort_asc,
         )
 
-        # 💡 [핵심] 전체 원본 데이터에서 작업ID별 총 개수를 먼저 카운트 (부분완료 추적용)
         total_counts = {}
         for t_item in self.raw_all_tasks:
             m_id = t(t_item, "작업ID")
             total_counts[m_id] = total_counts.get(m_id, 0) + 1
 
-        # 💡 필터링된 남은 작업들을 작업ID 기준으로 그룹핑
         grouped = {}
         for task in filtered_list:
             m_id = t(task, "작업ID")
