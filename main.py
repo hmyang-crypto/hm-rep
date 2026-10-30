@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.8"
+CURRENT_VERSION = "1.9.9.9"
 
 
 def check_and_apply_update():
@@ -4539,23 +4539,21 @@ class TaskListScreen(Screen):
         def on_confirm_qty(text):
             val = text.strip()
             if val.isdigit():
-                # 💡 [핵심 1] 헤더 이름이 미세하게 달라도 모두 잡아내도록 고유 키 후보군 확대
-                sub_id_keys = ["보조작업번호", "보조주문번호", "서브작업번호", "보조작업ID"]
-                key_col = "작업ID"
-                for k in sub_id_keys:
-                    if k in card.task_data:
-                        key_col = k
-                        break
-                        
-                target_key = str(t(card.task_data, key_col)).strip()
+                # 💡 1. [작업ID]와 [보조작업번호]를 복합 고유 키로 사용합니다.
+                target_id = str(t(card.task_data, "작업ID")).strip()
+                target_sub_id = str(t(card.task_data, "보조작업번호")).strip()
 
+                # 💡 2. 메인 메모리 업데이트 (작업중인 상태 타겟팅)
                 if card_ref and hasattr(card_ref, "raw_all_tasks"):
                     for task in card_ref.raw_all_tasks:
-                        t_key = str(t(task, key_col, t(task, "작업ID"))).strip()
+                        t_id = str(t(task, "작업ID")).strip()
+                        t_sub_id = str(t(task, "보조작업번호")).strip()
                         t_status = str(t(task, "상태")).strip()
                         
-                        # 💡 [진짜 핵심] 키값이 같더라도, 이미 완료된 건(A)은 무시하고 '작업중'인 건(B)만 찾아냅니다!
-                        if t_key == target_key and t_status == "작업중":
+                        # 보조작업번호가 존재하면 둘 다 일치해야 함. (단일 건이라 없으면 작업ID만 일치)
+                        is_match = (t_id == target_id and t_sub_id == target_sub_id) if target_sub_id else (t_id == target_id)
+                        
+                        if is_match and t_status == "작업중":
                             task["confirmed_quantity"] = val
                             task["확인수량"] = val
                             break
@@ -4566,9 +4564,20 @@ class TaskListScreen(Screen):
                 if card_ref and hasattr(card_ref, "apply_filters_and_render"):
                     card_ref.apply_filters_and_render()
 
-                # 다중 팝업창이 떠 있다면, 미니 카드들의 수량 텍스트를 즉시 갱신
+                # 💡 3. [유령 데이터 해결] 화면에 떠 있는 팝업창의 서브 카드 데이터에도 동일한 키로 찾아 수량 강제 주입
                 for child in Window.children:
                     if type(child).__name__ == "MultiSkuInspectionPopup":
+                        for p_task in child.sub_tasks:
+                            p_id = str(t(p_task, "작업ID")).strip()
+                            p_sub_id = str(t(p_task, "보조작업번호")).strip()
+                            
+                            is_match = (p_id == target_id and p_sub_id == target_sub_id) if target_sub_id else (p_id == target_id)
+                            
+                            if is_match:
+                                p_task["confirmed_quantity"] = val
+                                p_task["확인수량"] = val
+                        
+                        # 수량 주입 후 팝업창 UI 즉시 새로고침
                         child.render_cards()
                         break
 
