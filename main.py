@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.5"
+CURRENT_VERSION = "1.9.9.6"
 
 
 def check_and_apply_update():
@@ -4364,7 +4364,7 @@ class OpeakingReturnScreen(Screen):
 # 💡 [신규 추가] 오피킹 원복 로그 구글 시트 전송
     def _async_log_opeaking(self, barcode, location, client, sku, remarks):
         try:
-            sheet_name = "오피킹 원복 로그"
+            sheet_name = "오피킹원복_로그"
             sheet = get_worksheet(sheet_name)
             headers_raw = execute_with_retry(sheet.row_values, 1)
             headers = [str(h).strip() for h in headers_raw]
