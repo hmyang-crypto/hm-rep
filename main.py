@@ -5112,6 +5112,22 @@ class EmergencyReplenishScreen(Screen):
         )
         threading.Thread(target=self._search_master_stock, args=(query,), daemon=True).start()
 
+    # 💡 [신규 추가] PDA 하드웨어 바코드 스캔(트리거 버튼) 글로벌 수신 메서드
+    def handle_barcode_scan(self, barcode):
+        clean_bc = str(barcode).strip().upper()
+        if not clean_bc:
+            return
+            
+        # 만약 현재 '현황' 탭을 보고 있다면 '신규 요청' 탭으로 강제 전환
+        if self.active_tab != "NEW":
+            self.switch_view("NEW")
+            
+        # 검색창에 텍스트 넣고 즉시 검색 자동 실행
+        if hasattr(self, 'search_input'):
+            self.search_input.text = clean_bc
+            
+        self._start_async_search(clean_bc)
+
     def _on_search_input_touch(self, instance, touch):
         if instance.collide_point(*touch.pos):
             def set_search_query(val):
