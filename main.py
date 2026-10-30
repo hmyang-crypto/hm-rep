@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.7"
+CURRENT_VERSION = "1.9.9.8"
 
 
 def check_and_apply_update():
@@ -4539,14 +4539,23 @@ class TaskListScreen(Screen):
         def on_confirm_qty(text):
             val = text.strip()
             if val.isdigit():
-                # 💡 [핵심 1] 작업ID가 아닌 '보조작업번호'를 우선 키로 사용하여 묶음 중 정확한 행 1개를 타겟팅
-                key_col = "보조작업번호" if "보조작업번호" in card.task_data else "작업ID"
-                target_key = str(t(card.task_data, key_col))
+                # 💡 [핵심 1] 헤더 이름이 미세하게 달라도 모두 잡아내도록 고유 키 후보군 확대
+                sub_id_keys = ["보조작업번호", "보조주문번호", "서브작업번호", "보조작업ID"]
+                key_col = "작업ID"
+                for k in sub_id_keys:
+                    if k in card.task_data:
+                        key_col = k
+                        break
+                        
+                target_key = str(t(card.task_data, key_col)).strip()
 
                 if card_ref and hasattr(card_ref, "raw_all_tasks"):
                     for task in card_ref.raw_all_tasks:
-                        t_key = str(t(task, key_col, t(task, "작업ID")))
-                        if t_key == target_key:
+                        t_key = str(t(task, key_col, t(task, "작업ID"))).strip()
+                        t_status = str(t(task, "상태")).strip()
+                        
+                        # 💡 [진짜 핵심] 키값이 같더라도, 이미 완료된 건(A)은 무시하고 '작업중'인 건(B)만 찾아냅니다!
+                        if t_key == target_key and t_status == "작업중":
                             task["confirmed_quantity"] = val
                             task["확인수량"] = val
                             break
@@ -4557,7 +4566,7 @@ class TaskListScreen(Screen):
                 if card_ref and hasattr(card_ref, "apply_filters_and_render"):
                     card_ref.apply_filters_and_render()
 
-                # 💡 [핵심 2] 다중 팝업창이 떠 있다면, 미니 카드들의 수량 텍스트를 즉시 갱신 (0에서 바뀌도록)
+                # 다중 팝업창이 떠 있다면, 미니 카드들의 수량 텍스트를 즉시 갱신
                 for child in Window.children:
                     if type(child).__name__ == "MultiSkuInspectionPopup":
                         child.render_cards()
@@ -5101,7 +5110,7 @@ class EmergencyReplenishScreen(Screen):
                 self._start_async_search(instance.text)
 
             open_native_korean_input(
-                "검색어 입력", "바코드 숫자 또는 SKU 일부 입력", instance.text, set_search_query
+                "검색어 입력", "바코드, SKU명 또는 로케이션 입력", instance.text, set_search_query
             )
             return True
         return False
@@ -5123,7 +5132,7 @@ class EmergencyReplenishScreen(Screen):
             for row in master_data:
                 loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
                 
-                # 💡 1. B2C출고 뿐만 아니라 '보관'에 있는 재고도 통과시킵니다.
+                # B2C출고 및 보관 재고 대상
                 if loc_type not in ["B2C출고", "보관"]:
                     continue
 
@@ -5138,9 +5147,17 @@ class EmergencyReplenishScreen(Screen):
 
                 bc_lower = bc.lower()
                 prod_lower = prod_name.lower()
+                loc_lower = loc.lower()
 
-                if not clean_query or (clean_query in bc_lower) or (clean_query in prod_lower):
-                    # 💡 2. 동일 바코드는 1개로 묶어줍니다. (딕셔너리 키로 활용)
+                # 💡 [확장] 바코드, SKU명뿐만 아니라 로케이션 일치 여부도 함께 판별
+                is_match = (
+                    not clean_query
+                    or (clean_query in bc_lower)
+                    or (clean_query in prod_lower)
+                    or (clean_query in loc_lower)
+                )
+
+                if is_match:
                     if bc not in grouped_by_bc:
                         grouped_by_bc[bc] = {
                             "barcode": bc,
@@ -5150,13 +5167,11 @@ class EmergencyReplenishScreen(Screen):
                             "total_b2c_qty": 0
                         }
                     
-                    # 💡 3. 'B2C출고'인 경우에만 로케이션 이름과 수량을 합산합니다.
                     if loc_type == "B2C출고":
                         if loc and loc != "-":
                             grouped_by_bc[bc]["b2c_locations"].add(loc)
                         grouped_by_bc[bc]["total_b2c_qty"] += loc_qty
 
-        # 딕셔너리를 기반으로 최종 리스트 생성
         matched_items = []
         for bc, data in grouped_by_bc.items():
             locs_list = sorted(list(data["b2c_locations"]))
@@ -5662,7 +5677,7 @@ class AdminDashboardScreen(Screen):
                 self.search_tasks()
 
             open_native_korean_input(
-                "검색어 입력", "바코드 또는 SKU 검색", "", set_query
+                "검색어 입력", "바코드, SKU명 또는 로케이션 검색", "", set_query
             )
             return True
         return False
@@ -5738,7 +5753,14 @@ class AdminDashboardScreen(Screen):
         for task in self.all_tasks:
             bc = get_barcode_from_task(task).lower()
             sku = str(t(task, "상품명", "")).strip().lower()
-            if query in bc or query in sku:
+            
+            # 💡 [추가] 기존로케이션, 보충로케이션, 원복로케이션 정보 추출
+            from_loc = str(t(task, "기존로케이션", "")).strip().lower()
+            to_loc = str(t(task, "보충로케이션", "")).strip().lower()
+            ret_loc = str(t(task, "원복로케이션", "")).strip().lower()
+
+            # 💡 [확장] 바코드, SKU, 출발지, 목적지 중 하나라도 검색어가 포함되면 결과에 추가
+            if (query in bc) or (query in sku) or (query in from_loc) or (query in to_loc) or (query in ret_loc):
                 matches.append(task)
 
         if not matches:
