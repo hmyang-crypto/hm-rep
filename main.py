@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.6"
+CURRENT_VERSION = "1.9.9.7"
 
 
 def check_and_apply_update():
@@ -166,8 +166,9 @@ USER_SHEET_NAME = "사용자_목록"
 TASK_SHEET_NAME = "보충작업_지시서"
 LOG_SHEET_NAME = "작업완료_로그"
 FCM_TOKEN_SHEET_NAME = "FCM_토큰"
-LOCATION_CAPA_SHEET_NAME = "로케이션별재고 raw"
-LOCATION_CAPA_MASTER_SHEET_NAME = "로케이션 케파"
+# 💡 [변경] 실제 시트 이름 대신, 내부 메모리 캐시를 분리하기 위한 가상의 이름 부여
+LOCATION_CAPA_SHEET_NAME = "통합RAW_재고" 
+LOCATION_CAPA_MASTER_SHEET_NAME = "통합RAW_케파"
 
 # 💡 [추가] 원복 작업 전용 상수 및 웹앱 URL
 RETURN_TASK_SHEET_NAME = "원복작업_지시서"
@@ -179,10 +180,10 @@ SHEET_RANGES = {
     TASK_SHEET_NAME: "A:AZ",
     LOG_SHEET_NAME: "A:AZ",
     FCM_TOKEN_SHEET_NAME: "A:AZ",
-    LOCATION_CAPA_SHEET_NAME: "A:J",
-    RETURN_TASK_SHEET_NAME: "A:AZ",  # 💡 필수 추가
-    RETURN_LOG_SHEET_NAME: "A:AZ",   # 💡 필수 추가
-    LOCATION_CAPA_MASTER_SHEET_NAME: "A:G"
+    RETURN_TASK_SHEET_NAME: "A:AZ",
+    RETURN_LOG_SHEET_NAME: "A:AZ",
+    LOCATION_CAPA_MASTER_SHEET_NAME: "A:G",  # 💡 통합 시트에서 A~G (케파 정보)만 쓱 잘라옵니다.
+    LOCATION_CAPA_SHEET_NAME: "I:R"          # 💡 통합 시트에서 I~R (재고 정보)만 쓱 잘라옵니다.
 }
 
 try:
@@ -839,12 +840,20 @@ def get_worksheet(worksheet_name):
         if not GSPREAD_LOADED or not g_spreadsheet:
             raise Exception(f"구글 연결 실패: {GSPREAD_ERROR_MSG}")
 
-    if worksheet_name in g_worksheet_objects:
-        return g_worksheet_objects[worksheet_name]
+    # =========================================================
+    # 💡 [핵심] 가상 시트 이름을 실제 구글 시트 탭 이름으로 묶어주기
+    # =========================================================
+    actual_sheet_name = worksheet_name
+    if worksheet_name in [LOCATION_CAPA_SHEET_NAME, LOCATION_CAPA_MASTER_SHEET_NAME]:
+        actual_sheet_name = "통합RAW"
+    # =========================================================
+
+    if actual_sheet_name in g_worksheet_objects:
+        return g_worksheet_objects[actual_sheet_name]
 
     try:
-        ws = execute_with_retry(g_spreadsheet.worksheet, worksheet_name)
-        g_worksheet_objects[worksheet_name] = ws
+        ws = execute_with_retry(g_spreadsheet.worksheet, actual_sheet_name)
+        g_worksheet_objects[actual_sheet_name] = ws
         return ws
     except Exception:
         scope = [
@@ -857,8 +866,8 @@ def get_worksheet(worksheet_name):
         client = gspread.authorize(creds)
         g_spreadsheet = client.open(SPREADSHEET_NAME)
         g_worksheet_objects.clear()
-        ws = execute_with_retry(g_spreadsheet.worksheet, worksheet_name)
-        g_worksheet_objects[worksheet_name] = ws
+        ws = execute_with_retry(g_spreadsheet.worksheet, actual_sheet_name)
+        g_worksheet_objects[actual_sheet_name] = ws
         return ws
 
 
