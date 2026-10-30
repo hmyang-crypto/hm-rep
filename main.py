@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.4"
+CURRENT_VERSION = "1.9.9.5"
 
 
 def check_and_apply_update():
@@ -4184,6 +4184,9 @@ class OpeakingReturnScreen(Screen):
         self.step = "WAIT_PRODUCT"
         self.target_barcode = ""
         self.target_location = ""
+        self.target_client = ""  # 💡 [추가] 로그용 고객사
+        self.target_sku = ""     # 💡 [추가] 로그용 SKU명
+        
         self.search_input.text = ""
         self.lbl_status.text = "[size=16dp][b][color=1976D2]1. 상품 바코드를 스캔하세요[/color][/b][/size]"
         self.lbl_info.text = "[color=757575]오피킹/남은 상품 스캔 대기 중...[/color]"
@@ -4218,9 +4221,11 @@ class OpeakingReturnScreen(Screen):
             return
 
         try:
-            # force_refresh=False로 메모리 데이터 0.01초 만에 조회!
             master_data = get_sheet_data(LOCATION_CAPA_MASTER_SHEET_NAME, force_refresh=False)
             matched_locs = []
+            
+            temp_client = ""
+            temp_sku = ""
 
             for row in master_data:
                 row_bc = str(t(row, "바코드", "")).strip().upper()
@@ -4228,6 +4233,10 @@ class OpeakingReturnScreen(Screen):
 
                 if row_bc == clean_bc and row_loc:
                     matched_locs.append(row_loc)
+                    # 💡 [추가] 로그에 남길 고객사와 SKU명 추출
+                    if not temp_client:
+                        temp_client = str(t(row, "고객사", t(row, "파트너명", ""))).strip()
+                        temp_sku = str(t(row, "SKU", t(row, "상품명", ""))).strip()
 
             matched_locs = list(set(matched_locs))
 
@@ -4247,16 +4256,18 @@ class OpeakingReturnScreen(Screen):
 
             else:
                 target_loc = matched_locs[0]
-                self.set_step2_location(clean_bc, target_loc)
+                self.set_step2_location(clean_bc, target_loc, temp_client, temp_sku)
 
         except Exception as e:
             App.get_running_app().show_info_popup("조회 오류", str(e))
             self.reset_to_step1()
 
-    def set_step2_location(self, barcode, target_loc):
+    def set_step2_location(self, barcode, target_loc, client, sku):
         self.step = "WAIT_LOCATION"
         self.target_barcode = barcode
         self.target_location = target_loc
+        self.target_client = client  # 💡 [추가]
+        self.target_sku = sku        # 💡 [추가]
 
         self.lbl_status.text = f"[color=212121]바코드:[/color] [color=1E88E5]{barcode}[/color]\n\n[size=28dp][b][color=D32F2F]{target_loc}[/color][/b][/size]"
         self.lbl_info.text = f"[size=14dp][color=2E7D32][b]2. {target_loc} 로케이션 QR을 스캔하세요[/b][/color][/size]"
@@ -4270,6 +4281,10 @@ class OpeakingReturnScreen(Screen):
     def process_location_scan(self, scanned_loc):
         if scanned_loc == self.target_location:
             self._add_to_history(self.target_barcode, self.target_location, "정상 완료")
+            
+            # 💡 [추가] 정상 완료 시 시트에 로그 기록 (비고는 빈칸)
+            threading.Thread(target=self._async_log_opeaking, args=(self.target_barcode, self.target_location, self.target_client, self.target_sku, ""), daemon=True).start()
+            
             App.get_running_app().show_toast(f"원복 완료! ({self.target_location})")
             self.reset_to_step1()
         else:
@@ -4286,6 +4301,10 @@ class OpeakingReturnScreen(Screen):
 
         def _do_force_complete():
             self._add_to_history(self.target_barcode, self.target_location, "QR없음 완료")
+            
+            # 💡 [추가] QR없음 완료 시 시트에 로그 기록 (비고에 사유 자동 기재)
+            threading.Thread(target=self._async_log_opeaking, args=(self.target_barcode, self.target_location, self.target_client, self.target_sku, "[자석로케이션 필요]"), daemon=True).start()
+            
             App.get_running_app().show_toast(f"[QR없음 적치] 완료! ({self.target_location})")
             self.reset_to_step1()
 
@@ -4341,6 +4360,35 @@ class OpeakingReturnScreen(Screen):
             lbl_item.bind(size=lambda inst, val: setattr(inst, "text_size", val))
             row.add_widget(lbl_item)
             self.history_grid.add_widget(row)
+
+# 💡 [신규 추가] 오피킹 원복 로그 구글 시트 전송
+    def _async_log_opeaking(self, barcode, location, client, sku, remarks):
+        try:
+            sheet_name = "오피킹 원복 로그"
+            sheet = get_worksheet(sheet_name)
+            headers_raw = execute_with_retry(sheet.row_values, 1)
+            headers = [str(h).strip() for h in headers_raw]
+            
+            app = App.get_running_app()
+            user_name = str(app.user_real_name).strip()
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            row_data = []
+            for h in headers:
+                if h == "일시": row_data.append(now_str)
+                elif h == "작업자": row_data.append(user_name)
+                elif h == "고객사": row_data.append(client)
+                elif h in ["SKU명", "상품명"]: row_data.append(sku)
+                elif h == "바코드": row_data.append(barcode)
+                elif h == "원복 수량": row_data.append("")  # 💡 사용자 요청: 수량 일단 비움 (확장성 유지)
+                elif h in ["원복 로케이션", "원복로케이션"]: row_data.append(location)
+                elif h == "비고": row_data.append(remarks)
+                else: row_data.append("")
+                
+            execute_with_retry(sheet.append_row, row_data)
+            invalidate_cache(sheet_name)
+        except Exception as e:
+            print(f"오피킹 원복 로그 기록 실패: {e}")
 
 # --- 검수 및 액션 처리 전용 화면 ---
 class TaskListScreen(Screen):
