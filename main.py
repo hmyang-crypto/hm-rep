@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "1.9.9.9"
+CURRENT_VERSION = "2.0.0.0"
 
 
 def check_and_apply_update():
@@ -274,7 +274,7 @@ def load_recent_history():
         if len(filtered) != len(data):
             save_recent_history()
     except Exception as e:
-        print(f"⚠️ 최근 완료 이력 불러오기 에러: {e}")
+        print(f" 최근 완료 이력 불러오기 에러: {e}")
 
 
 def save_recent_history():
@@ -287,7 +287,7 @@ def save_recent_history():
                 indent=2,
             )
     except Exception as e:
-        print(f"⚠️ 최근 완료 이력 저장 에러: {e}")
+        print(f" 최근 완료 이력 저장 에러: {e}")
 
 
 def clear_recent_history_file():
@@ -359,7 +359,7 @@ def open_native_korean_input(
             return
         except Exception as e:
             print(
-                f"⚠️ 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}"
+                f" 안드로이드 시스템 입력창 오류 (Kivy fallback 사용): {e}"
             )
 
     SingleInputPopup(
@@ -827,7 +827,7 @@ def initialize_gspread():
         g_spreadsheet = g_sheet_client.open(SPREADSHEET_NAME)
         g_worksheet_objects.clear()
         GSPREAD_LOADED = True
-        print(f"✅ 구글 시트 연결 성공: [{SPREADSHEET_NAME}]")
+        print(f" 구글 시트 연결 성공: [{SPREADSHEET_NAME}]")
     except Exception as e:
         GSPREAD_ERROR_MSG = str(e)
         GSPREAD_LOADED = False
@@ -1253,7 +1253,7 @@ class RecentCompletedPopup(Popup):
 class ScanFailureReasonPopup(Popup):
     def __init__(self, on_select_callback, **kwargs):
         super().__init__(**kwargs)
-        self.title = "스캔 실패 사유 선택 🚨"
+        self.title = "스캔 실패 사유 선택"
         self.title_font = FONT_NAME
         self.size_hint = (0.9, None)
         self.height = dp(340)
@@ -1281,7 +1281,7 @@ class ScanFailureReasonPopup(Popup):
 
         # 💡 기타 사유 (수기 직접입력) 버튼
         btn_custom = StyledButton(
-            text="✏️ 기타 사유 (직접입력)",
+            text="기타 사유 (직접입력)",
             size_hint_y=None,
             height=dp(45),
             bg_color=PRIMARY_BLUE,
@@ -1367,7 +1367,7 @@ class MultiSkuInspectionPopup(Popup):
         self.card_screen = card_screen
         self.remaining_ids = {str(t(task, "보조작업번호", t(task, "작업ID"))) for task in sub_tasks}
         
-        self.title = "📦 다중 SKU 그룹 검수 (통신 완료 시 자동 삭제)"
+        self.title = "다중 SKU 그룹 검수 (통신 완료 시 자동 삭제)"
         self.title_font = FONT_NAME
         self.size_hint = (0.98, 0.95)
         self.auto_dismiss = False
@@ -1540,7 +1540,7 @@ class MultiSkuInspectionPopup(Popup):
     def try_dismiss(self, instance):
         if len(self.remaining_ids) > 0:
             App.get_running_app().show_confirmation_popup(
-                "⚠️ 미검수 상품 경고", 
+                "미검수 상품 경고", 
                 f"아직 처리되지 않은 상품이 [color=FF5252][b]{len(self.remaining_ids)}건[/b][/color] 남아있습니다!\n파레트를 넣기 전에 모두 처리해주세요.\n\n강제로 닫으시겠습니까?", 
                 on_yes=self.dismiss
             )
@@ -2063,7 +2063,7 @@ class MainMenuScreen(Screen):
         )
 
         lbl_dash_title = Label(
-            text="📊 실시간 보충 현황 요약",
+            text="실시간 보충 현황 요약",
             font_name=FONT_NAME,
             font_size=dp(13),
             bold=True,
@@ -2271,11 +2271,11 @@ class MainMenuScreen(Screen):
         perf_card.add_widget(self.lbl_title_row)
 
         if op_pace < 30.0:
-            op_msg = f"{op_pace}개/h (목표30) [color=E65100]● 속도 UP!💪[/color]"
+            op_msg = f"{op_pace}개/h (목표30) [color=E65100]● 속도 UP![/color]"
         elif op_pace <= 34.0:
-            op_msg = f"{op_pace}개/h (목표30) [color=2E7D32]● 훌륭해요!👏[/color]"
+            op_msg = f"{op_pace}개/h (목표30) [color=2E7D32]● 훌륭해요![/color]"
         else:
-            op_msg = f"{op_pace}개/h (목표30) [color=D32F2F]★ 최고의 속도!⭐[/color]"
+            op_msg = f"{op_pace}개/h (목표30) [color=D32F2F]★ 최고의 속도![/color]"
 
         self.lbl_row1 = Label(
             text=f"   ■ 오더피커: {op_count}건 │ {op_msg}",
@@ -3473,7 +3473,7 @@ class UnifiedReplenishScreen(Screen):
             )
         )
         self.btn_toggle_filter.text = (
-            f"🔍 필터 설정 {arrow} ({tab_str} / {eq_str})"
+            f"필터 설정 {arrow} ({tab_str} / {eq_str})"
         )
 
     def on_enter(self):
@@ -4161,7 +4161,7 @@ class OpeakingReturnScreen(Screen):
 
         # 💡 5. 최근 원복 완료 내역 (최근 10건 리스트 영역)
         lbl_hist_title = Label(
-            text="📋 최근 원복 이력 (최근 10건)",
+            text="최근 원복 이력 (최근 10건)",
             font_name=FONT_NAME, font_size=dp(12), bold=True, color=TEXT_DARK,
             size_hint_y=None, height=dp(20), halign="left"
         )
@@ -4923,7 +4923,7 @@ class TaskListScreen(Screen):
                         
                     invalidate_cache(LOG_SHEET_NAME)
                 except Exception as log_err:
-                    print(f"⚠️ 로그 시트 기록 중 경고: {log_err}")
+                    print(f"로그 시트 기록 중 경고: {log_err}")
 
             invalidate_cache(TASK_SHEET_NAME)
             Clock.schedule_once(lambda dt: self.on_action_success(msg))
@@ -5990,7 +5990,7 @@ class AdminDashboardScreen(Screen):
 
         to_loc = str(t(task, "보충로케이션", "-")).strip()
         lbl_info = Label(
-            text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]  │  📦 B2C출고재고: [b][color=D32F2F]{out_stock_qty}개[/color][/b] [color=757575](정확한 수량 X / 참고용)[/color]",
+            text=f"출고 위치: [b][color=1E88E5]{to_loc}[/color][/b]  │   B2C출고재고: [b][color=D32F2F]{out_stock_qty}개[/color][/b] [color=757575](정확한 수량 X / 참고용)[/color]",
             font_name=FONT_NAME,
             font_size=dp(11),
             color=TEXT_DARK,
@@ -6301,7 +6301,7 @@ class BluetoothPrinter:
             # ------------------ 💡 [여기까지 추가!] ------------------
             return True
         except Exception as e:
-            print(f"🔴 CPCL 전송 중 에러: {e}")
+            print(f" CPCL 전송 중 에러: {e}")
             return False
         finally:
             self.disconnect()
@@ -6542,7 +6542,7 @@ class MultiLocationSelectPopup(Popup):
         
         for loc in locations:
             # 💡 [수정] 흐린 파란색으로 버튼 색상 변경 (#4FC3F7)
-            btn = StyledButton(text=f"📍 {loc}", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#4FC3F7"))
+            btn = StyledButton(text=f" {loc}", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#4FC3F7"))
             btn.bind(on_release=lambda inst, l=loc: (on_select(l), self.dismiss()))
             grid.add_widget(btn)
             
@@ -6824,7 +6824,7 @@ class ReturnInspectionPopup(Popup):
         app = App.get_running_app()
         if self.assign_type == "지정":
             if selected_loc != self.target_location:
-                app.show_info_popup("❌ 로케이션 오류", f"지정된 로케이션이 아닙니다!\n• 올바른 위치: [color=64B5F6]{self.target_location}[/color]\n• 현재 스캔: [color=FF5252]{selected_loc}[/color]")
+                app.show_info_popup("로케이션 오류", f"지정된 로케이션이 아닙니다!\n• 올바른 위치: [color=64B5F6]{self.target_location}[/color]\n• 현재 스캔: [color=FF5252]{selected_loc}[/color]")
                 return
             self._verify_qty_and_proceed(qty, selected_loc, no_qr=False)
         else:
@@ -6850,7 +6850,7 @@ class ReturnInspectionPopup(Popup):
             # 💡 4단계(카메라)로 수량, 로케이션 정보 전달
             self.task_data["확인수량"] = final_qty
             self.task_data["비고"] = self.current_remarks
-            app.show_toast(f"✅ 수량 및 위치 확인 완료\n카메라를 실행합니다.")
+            app.show_toast(f"수량 및 위치 확인 완료\n카메라를 실행합니다.")
             self.task_list_screen.open_camera(final_loc, self.task_data)
             self.dismiss()
 
