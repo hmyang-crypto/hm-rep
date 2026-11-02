@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.1"
+CURRENT_VERSION = "2.0.0.2"
 
 
 def check_and_apply_update():
@@ -4249,12 +4249,28 @@ class OpeakingReturnScreen(Screen):
 
                 if row_bc == clean_bc and row_loc:
                     matched_locs.append(row_loc)
-                    # 💡 [추가] 로그에 남길 고객사와 SKU명 추출
+                    # 혹시 케파(A~G) 구역에 헤더가 있다면 우선 추출
                     if not temp_client:
                         temp_client = str(t(row, "고객사", t(row, "파트너명", ""))).strip()
                         temp_sku = str(t(row, "SKU", t(row, "상품명", ""))).strip()
 
             matched_locs = list(set(matched_locs))
+
+            # 💡 [핵심 해결] 케파 구역에 고객사/SKU명이 없다면, 재고(I~R) 구역을 즉시 뒤져서 완벽하게 채워넣습니다!
+            if matched_locs and (not temp_client or not temp_sku):
+                try:
+                    inv_data = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=False)
+                    if inv_data:
+                        for r in inv_data:
+                            inv_bc = str(t(r, "바코드", t(r, "상품바코드", ""))).strip().upper()
+                            if inv_bc == clean_bc:
+                                if not temp_client:
+                                    temp_client = str(t(r, "고객사", t(r, "파트너명", ""))).strip()
+                                if not temp_sku:
+                                    temp_sku = str(t(r, "SKU", t(r, "상품명", ""))).strip()
+                                break
+                except Exception as e:
+                    print(f"고객사/SKU 추출 보완 실패: {e}")
 
             if len(matched_locs) >= 2:
                 App.get_running_app().show_info_popup(
@@ -4272,6 +4288,7 @@ class OpeakingReturnScreen(Screen):
 
             else:
                 target_loc = matched_locs[0]
+                # 완벽하게 수집된 고객사/SKU 데이터를 넘겨줍니다!
                 self.set_step2_location(clean_bc, target_loc, temp_client, temp_sku)
 
         except Exception as e:
