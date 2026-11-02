@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.0"
+CURRENT_VERSION = "2.0.0.1"
 
 
 def check_and_apply_update():
@@ -2857,6 +2857,13 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
 
         # 💡 1. 로케이션 정보 세팅 (다중/단일 무관하게 항상 표시)
         is_return_mode = "원복로케이션" in self.task_data
+        
+        # 💡 [초경량 최적화] 시트에서 미리 계산된 '혼적수량' 헤더 값을 즉시 읽어옵니다.
+        mixed_badge = ""
+        sku_cnt = safe_int(t(self.task_data, "혼적수량", 0))
+        if sku_cnt >= 2:
+            mixed_badge = f"  [size=13dp][color=9C27B0][b][혼적: {sku_cnt} SKU][/b][/color][/size]"
+
         if is_return_mode:
             target_loc = str(t(self.task_data, "원복로케이션", "")).strip()
             if not target_loc or target_loc in ["-", "N/A"]:
@@ -2867,11 +2874,11 @@ class UnifiedTaskCard(RecycleDataViewBehavior, BoxLayout):
             from_loc = str(t(self.task_data, "기존로케이션", "-"))
             to_loc = str(t(self.task_data, "보충로케이션", "-"))
             
-            # 💡 [요청 반영] 다중 카드일 경우 'from(보관)' 로케이션만 노출하여 심플하게 변경
+            # 혼적 뱃지(mixed_badge) 부착!
             if self.task_data.get("_is_multi"):
-                self.ids.lbl_loc.text = f"[color=212121]출발:[/color] [size=18dp][color=D32F2F][b]{from_loc}[/b][/color][/size]"
+                self.ids.lbl_loc.text = f"[color=212121]출발:[/color] [size=18dp][color=D32F2F][b]{from_loc}[/b][/color][/size]{mixed_badge}"
             else:
-                self.ids.lbl_loc.text = f"[color=D32F2F]{from_loc}[/color] ➔ [color=1E88E5]{to_loc}[/color]"
+                self.ids.lbl_loc.text = f"[color=D32F2F]{from_loc}[/color]{mixed_badge} ➔ [color=1E88E5]{to_loc}[/color]"
 
         # 💡 2. 다중 상품 (혼적 파레트) 전용 초간편 UI 처리
         if self.task_data.get("_is_multi"):
