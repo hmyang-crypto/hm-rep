@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.3"
+CURRENT_VERSION = "2.0.0.4"
 
 
 def check_and_apply_update():
@@ -4559,21 +4559,21 @@ class TaskListScreen(Screen):
         # 상단 (상태, 시간, 수량, 도착지)
         top_row = BoxLayout(size_hint_y=None, height=dp(22))
         lbl_status = Label(
-            text=f"[color=388E3C][b]✔ 검수완료[/b][/color]  [color=9E9E9E]{now_str}[/color]", 
+            text=f"[color=388E3C][b] 검수완료[/b][/color]  [color=9E9E9E]{now_str}[/color]", 
             markup=True, font_name=FONT_NAME, font_size=dp(12), halign="left", valign="middle"
         )
         lbl_status.bind(size=lambda i, s: setattr(i, "text_size", s))
         
         lbl_qty = Label(
-            text=f"[color=1E88E5][b]{qty}개[/b][/color] ➔ [b]{loc}[/b]", 
+            text=f"[color=1E88E5][b]{qty}개[/b][/color] -> [b]{loc}[/b]", 
             markup=True, font_name=FONT_NAME, font_size=dp(13), halign="right", valign="middle", color=(0.2, 0.2, 0.2, 1)
         )
         lbl_qty.bind(size=lambda i, s: setattr(i, "text_size", s))
         top_row.add_widget(lbl_status)
         top_row.add_widget(lbl_qty)
 
-        # 하단 (SKU명 및 바코드)
-        bot_row = BoxLayout(size_hint_y=None, height=dp(25))
+        # 하단 (SKU명, 바코드 및 수정/원복 버튼)
+        bot_row = BoxLayout(size_hint_y=None, height=dp(25), spacing=dp(5))
         lbl_prod = Label(
             text=f"[b]{sku_name}[/b] [size=11dp][color=757575]({barcode})[/color][/size]", 
             markup=True, font_name=FONT_NAME, font_size=dp(14), color=(0.15, 0.15, 0.15, 1), 
@@ -4581,6 +4581,22 @@ class TaskListScreen(Screen):
         )
         lbl_prod.bind(size=lambda i, s: setattr(i, "text_size", s))
         bot_row.add_widget(lbl_prod)
+
+        # 💡 [NEW] 다이렉트 수정 버튼
+        btn_modify = StyledButton(
+            text="수정", size_hint_x=None, width=dp(50), 
+            font_size=dp(11), bg_color=get_color_from_hex("#1E88E5")
+        )
+        btn_modify.bind(on_press=lambda inst: self._open_modify_popup(task_data, box))
+        bot_row.add_widget(btn_modify)
+
+        # 💡 [NEW] 대기열 원복 버튼
+        btn_undo = StyledButton(
+            text="원복", size_hint_x=None, width=dp(50), 
+            font_size=dp(11), bg_color=get_color_from_hex("#E53935")
+        )
+        btn_undo.bind(on_press=lambda inst: self._prompt_undo_task(task_data, box))
+        bot_row.add_widget(btn_undo)
 
         box.add_widget(top_row)
         box.add_widget(Widget(size_hint_y=None, height=dp(2)))
@@ -5037,6 +5053,9 @@ class TaskListScreen(Screen):
                     print(f"로그 시트 기록 중 경고: {log_err}")
 
             invalidate_cache(TASK_SHEET_NAME)
+            if hasattr(card, "history_widget") and card.history_widget and card.history_widget.parent:
+                old_widget = card.history_widget
+                Clock.schedule_once(lambda dt: old_widget.parent.remove_widget(old_widget))
             Clock.schedule_once(lambda dt: self.on_action_success(msg, card.task_data))
 
         except Exception as e:
@@ -5147,6 +5166,85 @@ class TaskListScreen(Screen):
         )
         btn_close.bind(on_press=popup.dismiss)
         popup.open()
+
+# 💡 [NEW] 실행 취소 팝업 띄우기
+    def _prompt_undo_task(self, task_data, card_widget):
+        app = App.get_running_app()
+        sku_name = str(t(task_data, "상품명", "")).strip()
+        
+        def _do_undo():
+            app.show_loading_popup()
+            threading.Thread(target=self._async_undo_task, args=(task_data, card_widget), daemon=True).start()
+
+        app.show_confirmation_popup(
+            title="검수 실행 취소",
+            message=f"[{sku_name[:15]}]\n\n방금 완료한 검수 처리를 취소하고\n다시 [color=FF8A80][b]'적치대기'[/b][/color] 상태로 되돌리겠습니까?",
+            on_yes=_do_undo
+        )
+
+    # 💡 [NEW] 구글 시트 데이터 원복 및 화면 새로고침
+    def _async_undo_task(self, task_data, card_widget):
+        app = App.get_running_app()
+        try:
+            sheet = get_worksheet(TASK_SHEET_NAME)
+            headers = [str(h).strip() for h in sheet.row_values(1)]
+            
+            # 고유 키(작업ID 또는 보조작업번호)로 시트에서 타겟 행 찾기
+            key_col_name = "보조작업번호" if "보조작업번호" in headers else "작업ID"
+            target_key = str(t(task_data, key_col_name))
+
+            if key_col_name not in headers:
+                raise Exception(f"시트에서 '{key_col_name}' 열을 찾을 수 없습니다.")
+
+            key_col_idx = headers.index(key_col_name) + 1
+            all_keys = sheet.col_values(key_col_idx)
+
+            if target_key not in all_keys:
+                raise Exception("해당 작업을 시트에서 찾을 수 없거나 이미 변경되었습니다.")
+
+            row_idx = all_keys.index(target_key) + 1
+            
+            # 💡 [핵심] 검수하기 이전 상태로 완벽하게 초기화
+            updates = {
+                "상태": "적치대기",        # 다시 검수 대기(적치대기) 상태로 변경
+                "검수담당자": "",          # 담당자 이름 삭제
+                "최종완료일시": "",        # 완료 시간 삭제
+                "최종적치위치": "",        # 찍었던 최종위치 삭제
+                "확인수량": "",            # 입력했던 수량 삭제
+            }
+
+            cells = []
+            for key, val in updates.items():
+                if key in headers:
+                    col_idx = headers.index(key) + 1
+                    cells.append(gspread.Cell(row_idx, col_idx, str(val)))
+
+            if cells:
+                sheet.update_cells(cells)
+            
+            invalidate_cache(TASK_SHEET_NAME)
+
+            # 성공 시 처리: 팝업 닫고, 초록색 카드 지우고, 대시보드 새로고침
+            def _on_undo_success(dt):
+                if card_widget and card_widget.parent:
+                    card_widget.parent.remove_widget(card_widget)
+                app.dismiss_loading_popup()
+                app.show_toast("실행이 취소되어 남은 검수 목록으로 복구되었습니다.")
+                self.refresh_list(force_refresh=True)
+
+            Clock.schedule_once(_on_undo_success)
+
+        except Exception as e:
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"실행 취소 실패: {err}"))
+            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
+
+# 💡 [NEW] 다이렉트 수정(재검수) 팝업 열기
+    def _open_modify_popup(self, task_data, card_widget):
+        app = App.get_running_app()
+        # 기존 검수창(InspectionPopup)을 그대로 띄우되, 구버전 UI 카드(history_widget) 정보를 몰래 쥐어줍니다.
+        dummy_card = type("DummyCard", (), {"task_data": task_data, "history_widget": card_widget})()
+        InspectionPopup(card=dummy_card, task_list_screen=self).open()
+        app.show_toast("수정 모드입니다.\n올바른 수량과 위치를 다시 입력해 주세요.")
 
 # --- 💡 라인 보충 긴급 요청 및 소통 전용 독립 화면 (Screen) ---
 # --- 💡 라인 보충 긴급 요청 및 소통 전용 독립 화면 (속도 최적화 적용) ---
@@ -5804,6 +5902,8 @@ class EmergencyReplenishScreen(Screen):
             message=f"[{sku_name[:18]}]\n\n기존 요청건({req_id})의 상태를\n'요청중'으로 최신화하여 재전송하시겠습니까?",
             on_yes=lambda: threading.Thread(target=_async_re_send, daemon=True).start()
         )
+
+
 
 class AdminDashboardScreen(Screen):
 
