@@ -5178,7 +5178,7 @@ class TaskListScreen(Screen):
                 
             save_offline_queue()
             Clock.schedule_once(
-                lambda dt: App.get_running_app().show_toast("📡 통신 불안정!\n기기에 임시 저장 후 복구 시 자동 전송됩니다.", duration=3)
+                lambda dt: App.get_running_app().show_toast("통신 불안정!\n기기에 임시 저장 후 복구 시 자동 전송됩니다.", duration=3)
             )
         finally:
             Clock.schedule_once(
