@@ -2396,7 +2396,7 @@ class MainMenuScreen(Screen):
             with urllib.request.urlopen(req, timeout=3, context=ssl_context) as response:
                 server_version = response.read().decode("utf-8").strip()
                 if server_version > CURRENT_VERSION:
-                    msg = f"[color=D32F2F][b]🚨 최신 업데이트(v{server_version})가 있습니다. 앱을 껐다 켜주세요![/b][/color]"
+                    msg = f"[color=D32F2F][b] 최신 업데이트(v{server_version})가 있습니다. 앱을 껐다 켜주세요![/b][/color]"
                     Clock.schedule_once(lambda dt: setattr(self.lbl_update_notice, 'text', msg))
         except:
             pass
