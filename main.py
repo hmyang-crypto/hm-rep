@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.4"
+CURRENT_VERSION = "2.0.0.5"
 
 
 def check_and_apply_update():
@@ -232,6 +232,65 @@ def get_barcode_from_task(task_dict):
 
 
 HISTORY_FILE_PATH = "recent_history.json"
+
+# 💡 [NEW] 오프라인 액션 큐 저장 및 로드 함수
+OFFLINE_QUEUE_FILE = "offline_queue.json"
+g_offline_queue = []
+
+def load_offline_queue():
+    global g_offline_queue
+    if os.path.exists(OFFLINE_QUEUE_FILE):
+        try:
+            with open(OFFLINE_QUEUE_FILE, "r", encoding="utf-8") as f:
+                g_offline_queue = json.load(f)
+        except:
+            g_offline_queue = []
+
+def save_offline_queue():
+    try:
+        with open(OFFLINE_QUEUE_FILE, "w", encoding="utf-8") as f:
+            json.dump(g_offline_queue, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+def process_offline_queue(*args):
+    global g_offline_queue
+    if not g_offline_queue:
+        return
+    
+    def _worker():
+        global g_offline_queue
+        success_indices = []
+        for idx, task in enumerate(g_offline_queue):
+            try:
+                sheet = get_worksheet(task["sheet_name"])
+                headers = [str(h).strip() for h in sheet.row_values(1)]
+                key_col = task["key_col"]
+                target_key = task["target_key"]
+                updates = task["updates"]
+                
+                if key_col in headers:
+                    key_idx = headers.index(key_col) + 1
+                    all_keys = sheet.col_values(key_idx)
+                    if target_key in all_keys:
+                        row_idx = all_keys.index(target_key) + 1
+                        cells = []
+                        for k, v in updates.items():
+                            if k in headers:
+                                c_idx = headers.index(k) + 1
+                                cells.append(gspread.Cell(row_idx, c_idx, str(v)))
+                        if cells:
+                            sheet.update_cells(cells)
+                success_indices.append(idx)
+            except Exception as e:
+                print(f"오프라인 큐 처리 보류 (재시도 대기): {e}")
+        
+        if success_indices:
+            g_offline_queue = [q for i, q in enumerate(g_offline_queue) if i not in success_indices]
+            save_offline_queue()
+            invalidate_cache(TASK_SHEET_NAME)
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def get_current_4am_cutoff():
@@ -2355,6 +2414,43 @@ class MainMenuScreen(Screen):
         menu_grid.add_widget(btn_recent)          # 금일 완료 이력
 
         self.layout.add_widget(menu_grid)
+
+        self.layout.add_widget(menu_grid)
+
+        # 💡 [NEW] 메뉴와 버튼 사이 여백 및 업데이트 안내 문구 공간
+        self.lbl_update_notice = Label(
+            text="", font_name=FONT_NAME, font_size=dp(13), markup=True,
+            size_hint_y=None, height=dp(30), halign="center", valign="middle"
+        )
+        self.lbl_update_notice.bind(size=lambda i, s: setattr(i, "text_size", s))
+        self.layout.add_widget(self.lbl_update_notice)
+        self.layout.add_widget(Widget()) # 여백 밀어내기
+
+        # 4. 하단 우측 작업자 이름 변경 버튼...
+        # ... (중략) ...
+        bottom_box.add_widget(change_btn)
+        self.layout.add_widget(bottom_box)
+
+        # 백그라운드 데이터 로드
+        threading.Thread(
+            target=self._fetch_summary_counts, daemon=True
+        ).start()
+        
+        # 💡 [NEW] 구글 서버와 버전을 비교하여 업데이트 문구 띄우기
+        threading.Thread(target=self._check_app_update, daemon=True).start()
+
+    # 💡 [NEW] 업데이트 체크 함수를 on_enter 바로 아래에 추가합니다.
+    def _check_app_update(self):
+        try:
+            ssl_context = ssl._create_unverified_context()
+            req = urllib.request.Request(UPDATE_CHECK_URL, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3, context=ssl_context) as response:
+                server_version = response.read().decode("utf-8").strip()
+                if server_version > CURRENT_VERSION:
+                    msg = f"[color=D32F2F][b]최신 업데이트(v{server_version})가 있습니다. 앱을 껐다 켜주세요![/b][/color]"
+                    Clock.schedule_once(lambda dt: setattr(self.lbl_update_notice, 'text', msg))
+        except:
+            pass
 
         # 💡 버튼들과 하단 이름 변경 버튼 사이의 유격 확보
         self.layout.add_widget(Widget())
@@ -8165,8 +8261,13 @@ class MainApp(App):
     def on_start(self):
         threading.Thread(target=initialize_gspread, daemon=True).start()
         Clock.schedule_interval(self.check_for_new_tasks, 60)
+        
+        # 💡 [NEW] 오프라인 큐 데이터를 불러오고 20초마다 자동 전송 시도
+        load_offline_queue()
+        Clock.schedule_interval(process_offline_queue, 20)
 
         if platform == "android":
+# ... (이하 기존 코드 유지) ...
             try:
                 # =======================================================
                 # 💡 [여기가 핵심!] 안드로이드 카메라 보안(FileUriExposedException) 우회
