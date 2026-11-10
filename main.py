@@ -2415,8 +2415,6 @@ class MainMenuScreen(Screen):
 
         self.layout.add_widget(menu_grid)
 
-        self.layout.add_widget(menu_grid)
-
         # 💡 [NEW] 메뉴와 버튼 사이 여백 및 업데이트 안내 문구 공간
         self.lbl_update_notice = Label(
             text="", font_name=FONT_NAME, font_size=dp(13), markup=True,
@@ -5154,11 +5152,33 @@ class TaskListScreen(Screen):
                 Clock.schedule_once(lambda dt: old_widget.parent.remove_widget(old_widget))
             Clock.schedule_once(lambda dt: self.on_action_success(msg, card.task_data))
 
+        # 👇 여기서부터 덮어씌웁니다 👇
         except Exception as e:
+            print(f"네트워크 오류로 오프라인 큐에 저장: {e}")
+            global g_offline_queue
+            
+            # 다중/혼적 건일 경우 각각 쪼개서 큐에 담기
+            if is_merged and merged_sources:
+                for src_item in merged_sources:
+                    src_task = src_item.get("task_data", {})
+                    src_target_key = str(t(src_task, key_col_name)).strip()
+                    g_offline_queue.append({
+                        "sheet_name": TASK_SHEET_NAME,
+                        "key_col": key_col_name,
+                        "target_key": src_target_key,
+                        "updates": updates
+                    })
+            else:
+                g_offline_queue.append({
+                    "sheet_name": TASK_SHEET_NAME,
+                    "key_col": key_col_name,
+                    "target_key": target_key,
+                    "updates": updates
+                })
+                
+            save_offline_queue()
             Clock.schedule_once(
-                lambda dt, err=str(e): App.get_running_app().show_info_popup(
-                    "오류", str(err)
-                )
+                lambda dt: App.get_running_app().show_toast("📡 통신 불안정!\n기기에 임시 저장 후 복구 시 자동 전송됩니다.", duration=3)
             )
         finally:
             Clock.schedule_once(
