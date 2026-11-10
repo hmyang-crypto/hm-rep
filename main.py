@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.6"
+CURRENT_VERSION = "2.0.0.7"
 
 
 def check_and_apply_update():
@@ -2018,7 +2018,7 @@ class MainMenuScreen(Screen):
         )
         welcome_box.add_widget(
             Label(
-                text="오늘도 안전 작업하세요!",
+                text="오늘도 안전하게 작업하세요!",
                 font_name=FONT_NAME,
                 font_size=dp(13),
                 color=TEXT_MUTED,
