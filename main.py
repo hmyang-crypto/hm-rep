@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.4"
+CURRENT_VERSION = "2.0.1.5"
 
 
 def check_and_apply_update():
@@ -6148,7 +6148,6 @@ class EmergencyReplenishScreen(Screen):
             inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
 
             if not inventory:
-                # 💡 안전 딜레이 적용
                 Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
                 Clock.schedule_once(lambda dt: app.show_info_popup("안내", "현재 전산 데이터를 최신화 중입니다.\n잠시 후 다시 시도해 주세요."), 0.2)
                 return
@@ -6173,18 +6172,17 @@ class EmergencyReplenishScreen(Screen):
             )
 
             best_loc = str(t(valid_stock[0], "로케이션", "N/A")).strip()
+            # 💡 고객사 정보 추출
             client_name = str(t(valid_stock[0], "고객사", t(valid_stock[0], "파트너명", ""))).strip()
 
-            # 💡 1. 로딩 팝업을 먼저 안전하게 닫습니다.
             Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
 
-            # 💡 2. 로딩 팝업이 닫힐 시간을 0.2초 기다린 후 확인 팝업을 띄웁니다.
             def ask_confirm(dt):
                 msg = f"[color=FFE082][b]{sku}[/b][/color] 을(를)\n[color=81C784][b]{dest}[/b][/color](으)로 1PLT 요청하시겠습니까?"
                 app.show_confirmation_popup(
                     title="부자재 보충 요청",
                     message=msg,
-                    # 💡 '예'를 눌렀을 때도 확인 팝업이 닫힐 시간을 0.2초 줍니다.
+                    # 💡 [핵심] 5개의 변수를 넘겨줍니다.
                     on_yes=lambda: Clock.schedule_once(lambda dt2: self._trigger_bujajae_send(sku, barcode, dest, best_loc, client_name), 0.2)
                 )
 
@@ -6194,79 +6192,13 @@ class EmergencyReplenishScreen(Screen):
             Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
             Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"재고 확인 실패: {err}"), 0.2)
 
+    # 💡 [핵심] 받는 쪽(trigger)도 정확히 5개를 받도록 선언합니다.
     def _trigger_bujajae_send(self, sku, barcode, dest, from_loc, client_name):
         App.get_running_app().show_loading_popup()
         threading.Thread(target=self._async_send_bujajae, args=(sku, barcode, dest, from_loc, client_name), daemon=True).start()
 
+    # 💡 [핵심] 실제 시트 전송 함수도 정확히 5개를 받도록 선언합니다.
     def _async_send_bujajae(self, sku, barcode, dest, from_loc, client_name):
-        app = App.get_running_app()
-        try:
-            task_sheet = get_worksheet(TASK_SHEET_NAME)
-            move_sheet = get_worksheet("재고이동필요건") 
-
-            now_ts = datetime.now()
-            ts_str = now_ts.strftime("%Y-%m-%d %H:%M:%S")
-            task_id = f"DIR-BUJA-{now_ts.strftime('%m%d-%H%M%S')}"
-            user_name = str(app.user_real_name).strip()
-
-            # Track A: 현장용 지시서 생성
-            t_headers_raw = execute_with_retry(task_sheet.row_values, 1)
-            t_headers = [str(h).strip() for h in t_headers_raw]
-
-            t_row = []
-            for h in t_headers:
-                if h == "작업ID": t_row.append(task_id)
-                elif h == "상태": t_row.append("대기")
-                elif h == "고객사": t_row.append(client_name)  # 💡 [해결 2] 고객사 정상 매핑
-                elif h == "상품명": t_row.append(f"[부자재] {sku}")
-                elif h == "상품바코드": t_row.append(barcode)
-                elif h == "기존로케이션": t_row.append(from_loc)
-                elif h == "보충로케이션": t_row.append(dest)
-                elif h == "지시수량": t_row.append("1")
-                elif h == "긴급여부": t_row.append("Y")
-                elif h == "장비": t_row.append("리치")
-                elif h == "작업지시자": t_row.append(user_name)
-                else: t_row.append("")
-
-            # Track B: 데스크 전산용 이동요청 생성
-            m_headers_raw = execute_with_retry(move_sheet.row_values, 1)
-            m_headers = [str(h).strip() for h in m_headers_raw]
-
-            m_row = []
-            for h in m_headers:
-                if h == "요청일시": m_row.append(ts_str)
-                elif h == "요청구분": m_row.append("현장어플_부자재")
-                elif h == "작업ID": m_row.append(task_id)
-                elif h == "고객사": m_row.append(client_name)  # 💡 [해결 2] 고객사 정상 매핑
-                elif h == "상품명": m_row.append(sku)
-                elif h == "바코드": m_row.append(barcode)
-                elif h == "출발로케이션": m_row.append(from_loc)
-                elif h == "도착로케이션": m_row.append(dest)
-                elif h == "이동수량": m_row.append("1")
-                elif h == "현장작업상태": m_row.append("")
-                elif h == "전산처리상태": m_row.append("재고이동필요")
-                else: m_row.append("")
-
-            # 두 시트에 동시에 입력
-            execute_with_retry(task_sheet.append_row, t_row)
-            execute_with_retry(move_sheet.append_row, m_row)
-
-            invalidate_cache(TASK_SHEET_NAME)
-            invalidate_cache("재고이동필요건")
-
-            Clock.schedule_once(lambda dt: app.show_toast("[완료] 부자재 보충 지시가 대기열에 생성되었습니다."))
-            Clock.schedule_once(lambda dt: self.fetch_status_data(force_refresh=True))
-
-        except Exception as e:
-            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"지시 생성 실패: {err}"))
-        finally:
-            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
-
-    def _trigger_bujajae_send(self, sku, barcode, dest, from_loc):
-        App.get_running_app().show_loading_popup()
-        threading.Thread(target=self._async_send_bujajae, args=(sku, barcode, dest, from_loc), daemon=True).start()
-
-    def _async_send_bujajae(self, sku, barcode, dest, from_loc):
         app = App.get_running_app()
         try:
             task_sheet = get_worksheet(TASK_SHEET_NAME)
@@ -6285,6 +6217,7 @@ class EmergencyReplenishScreen(Screen):
             for h in t_headers:
                 if h == "작업ID": t_row.append(task_id)
                 elif h == "상태": t_row.append("대기")
+                elif h == "고객사": t_row.append(client_name)
                 elif h == "상품명": t_row.append(f"[부자재] {sku}")
                 elif h == "상품바코드": t_row.append(barcode)
                 elif h == "기존로케이션": t_row.append(from_loc)
@@ -6304,18 +6237,24 @@ class EmergencyReplenishScreen(Screen):
                 if h == "요청일시": m_row.append(ts_str)
                 elif h == "요청구분": m_row.append("현장어플_부자재")
                 elif h == "작업ID": m_row.append(task_id)
+                elif h == "고객사": m_row.append(client_name)
                 elif h == "상품명": m_row.append(sku)
                 elif h == "바코드": m_row.append(barcode)
                 elif h == "출발로케이션": m_row.append(from_loc)
                 elif h == "도착로케이션": m_row.append(dest)
                 elif h == "이동수량": m_row.append("1")
-                elif h == "현장작업상태": m_row.append("대기")
+                elif h == "현장작업상태": m_row.append("")
                 elif h == "전산처리상태": m_row.append("재고이동필요")
                 else: m_row.append("")
 
-            # 두 시트에 동시에 입력
+            # 현장용 지시서 입력
             execute_with_retry(task_sheet.append_row, t_row)
-            execute_with_retry(move_sheet.append_row, m_row)
+
+            # 데스크 전산용 시트: A열(요청일시) 기준 마지막 행 다음 줄 계산 후 입력
+            col_a_vals = execute_with_retry(move_sheet.col_values, 1)
+            next_row = max(2, len(col_a_vals) + 1)
+            m_cells = [gspread.Cell(next_row, i + 1, str(val)) for i, val in enumerate(m_row)]
+            execute_with_retry(move_sheet.update_cells, m_cells, value_input_option="USER_ENTERED")
 
             invalidate_cache(TASK_SHEET_NAME)
             invalidate_cache(STOCK_MOVE_SHEET_NAME)
@@ -6324,7 +6263,7 @@ class EmergencyReplenishScreen(Screen):
             Clock.schedule_once(lambda dt: self.fetch_status_data(force_refresh=True))
 
         except Exception as e:
-            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("[오류]", f"지시 생성 실패: {err}"))
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"지시 생성 실패: {err}"))
         finally:
             Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
 
