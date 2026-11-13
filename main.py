@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.9"
+CURRENT_VERSION = "2.0.1.0"
 
 
 def check_and_apply_update():
@@ -6333,7 +6333,7 @@ class AdminDashboardScreen(Screen):
         # 💡 [NEW] 상태가 '대기'가 아니고 담당자 이름이 존재할 때만 아이콘과 이름 텍스트 생성
         assignee_tag = ""
         if status != "대기" and assignee:
-            assignee_tag = f" [color=424242]{assignee}[/color] "
+            assignee_tag = f" [color=424242]작업자:{assignee}[/color] "
 
         # 💡 [수정] 상태, 작업자(assignee_tag), 긴급여부 순으로 텍스트 조합
         lbl_status = Label(
