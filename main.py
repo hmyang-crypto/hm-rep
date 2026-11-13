@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.0"
+CURRENT_VERSION = "2.0.1.1"
 
 
 def check_and_apply_update():
@@ -175,6 +175,9 @@ RETURN_TASK_SHEET_NAME = "원복작업_지시서"
 RETURN_LOG_SHEET_NAME = "원복작업_로그"
 GAS_PHOTO_UPLOAD_URL = "https://script.google.com/macros/s/AKfycbx1T2mf5sb6vigWo_8YdAR2djY7QlfE-VsJGfOFAkbM42CJEstnkSuAHE0RQ0PPp1Cx/exec"
 
+# [수정] 신규 시트 이름 변수 추가
+STOCK_MOVE_SHEET_NAME = "재고이동필요건"
+
 SHEET_RANGES = {
     USER_SHEET_NAME: "A:AZ",
     TASK_SHEET_NAME: "A:AZ",
@@ -182,9 +185,37 @@ SHEET_RANGES = {
     FCM_TOKEN_SHEET_NAME: "A:AZ",
     RETURN_TASK_SHEET_NAME: "A:AZ",
     RETURN_LOG_SHEET_NAME: "A:AZ",
-    LOCATION_CAPA_MASTER_SHEET_NAME: "A:G",  # 💡 통합 시트에서 A~G (케파 정보)만 쓱 잘라옵니다.
-    LOCATION_CAPA_SHEET_NAME: "I:R"          # 💡 통합 시트에서 I~R (재고 정보)만 쓱 잘라옵니다.
+    LOCATION_CAPA_MASTER_SHEET_NAME: "A:G",
+    LOCATION_CAPA_SHEET_NAME: "I:R",
+    STOCK_MOVE_SHEET_NAME: "A:AZ",
 }
+
+# [신규 추가] 부자재 목록 23종 정의
+BUJAJAE_LIST = [
+    {"sku": "A5용지_(1PLT)", "barcode": "8821003862219"},
+    {"sku": "N배송-OPP테이프(48mm*50M)", "barcode": "N배송-테이프"},
+    {"sku": "N배송A1(BOX)", "barcode": "N배송-A1"},
+    {"sku": "N배송A2(BOX)", "barcode": "N배송-A2"},
+    {"sku": "N배송B1(BOX)", "barcode": "N배송-B1"},
+    {"sku": "N배송B2(BOX)", "barcode": "N배송-B2"},
+    {"sku": "N배송C1(BOX)", "barcode": "N배송-C1"},
+    {"sku": "N배송C2(BOX)", "barcode": "N배송-C2"},
+    {"sku": "N배송C3(BOX)", "barcode": "N배송-C3"},
+    {"sku": "N배송D1(BOX)", "barcode": "N배송-D1"},
+    {"sku": "N배송D2(BOX)", "barcode": "NBOXD2"},
+    {"sku": "N배송D3(BOX)", "barcode": "N배송-D3"},
+    {"sku": "N배송E2(BOX)", "barcode": "N배송-E2"},
+    {"sku": "N배송F1(BOX)", "barcode": "NBOXF1"},
+    {"sku": "PDA용 감열지(7.5*7.5)", "barcode": "8821007825456"},
+    {"sku": "S1 박스(자동화)", "barcode": "8821006957882"},
+    {"sku": "S2 박스(자동화)", "barcode": "8821006957899"},
+    {"sku": "고강도 에어셀(대)", "barcode": "8821007993704"},
+    {"sku": "고강도 에어셀(소)", "barcode": "8821007993711"},
+    {"sku": "버블페이퍼(XS 보급형 390mm*250M)", "barcode": "버블페이퍼-01"},
+    {"sku": "스트레치랩 (아신) 500mmX350M", "barcode": "스트레치랩-01"},
+    {"sku": "종이테이프(50mmX40M)", "barcode": "종이테이프-01"},
+    {"sku": "한진-송장", "barcode": "한진-송장"}
+]
 
 try:
     LabelBase.register(name="Nanum", fn_regular="NanumSquareRoundEB.ttf")
@@ -1586,6 +1617,70 @@ class MultiSkuInspectionPopup(Popup):
             )
         else:
             self.dismiss()
+
+# [신규 추가] 부자재 품목 선택 팝업
+class BujajaeSelectPopup(Popup):
+    def __init__(self, on_select, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "[안내] 보충할 부자재를 선택하세요"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.9, 0.8)
+        self.auto_dismiss = True
+
+        layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(10))
+        scroll = ScrollView(size_hint=(1, 1))
+        grid = GridLayout(cols=1, spacing=dp(8), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter("height"))
+
+        for item in BUJAJAE_LIST:
+            btn = StyledButton(
+                text=item["sku"],
+                size_hint_y=None,
+                height=dp(50),
+                bg_color=get_color_from_hex("#3949AB"),
+                font_size=dp(14)
+            )
+            btn.bind(on_release=lambda inst, i=item: (self.dismiss(), on_select(i["sku"], i["barcode"])))
+            grid.add_widget(btn)
+
+        scroll.add_widget(grid)
+        layout.add_widget(scroll)
+
+        btn_cancel = StyledButton(text="취소", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#757575"))
+        btn_cancel.bind(on_press=self.dismiss)
+        layout.add_widget(btn_cancel)
+
+        self.content = layout
+
+# [신규 추가] 부자재 목적지 선택 팝업
+class BujajaeDestSelectPopup(Popup):
+    def __init__(self, sku, barcode, on_select, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "[안내] 부자재 도착지 선택"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.85, 0.4)
+        self.auto_dismiss = False
+
+        layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(15))
+        layout.add_widget(Label(
+            text=f"[b]{sku}[/b]\n이동할 목적지를 선택하세요.",
+            font_name=FONT_NAME, font_size=dp(15), markup=True, halign="center"
+        ))
+
+        btn_mezzanine = StyledButton(text="메자닌 위", size_hint_y=None, height=dp(55), bg_color=get_color_from_hex("#00897B"))
+        btn_mezzanine.bind(on_release=lambda inst: (self.dismiss(), on_select(sku, barcode, "메자닌 위")))
+
+        btn_ef_zone = StyledButton(text="E/F존", size_hint_y=None, height=dp(55), bg_color=get_color_from_hex("#F4511E"))
+        btn_ef_zone.bind(on_release=lambda inst: (self.dismiss(), on_select(sku, barcode, "E/F존")))
+
+        layout.add_widget(btn_mezzanine)
+        layout.add_widget(btn_ef_zone)
+
+        btn_cancel = StyledButton(text="취소", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#757575"))
+        btn_cancel.bind(on_press=self.dismiss)
+        layout.add_widget(btn_cancel)
+
+        self.content = layout
 
 
 class InspectionPopup(Popup):
@@ -5364,7 +5459,7 @@ class EmergencyReplenishScreen(Screen):
         self.active_tab = "NEW"
         self.status_filter = "ALL"
         self.hidden_req_ids = set()
-        self.raw_requests_cache = []  # 💡 [핵심] 시트 데이터 메모리 캐시 변수
+        self.raw_requests_cache = []  
 
         self.layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
 
@@ -5396,18 +5491,26 @@ class EmergencyReplenishScreen(Screen):
         top_bar.add_widget(btn_refresh)
         self.layout.add_widget(top_bar)
 
+        # [수정] 탭을 3개로 확장
         tab_box = BoxLayout(orientation="horizontal", spacing=dp(6), size_hint_y=None, height=dp(40))
+        
         self.btn_tab_new = StyledToggleButton(
-            text="긴급 보충 요청", state="down", font_size=dp(13)
+            text="상품 요청", state="down", font_size=dp(12)
         )
         self.btn_tab_new.bind(on_release=lambda x: self.switch_view("NEW"))
 
+        self.btn_tab_bujajae = StyledToggleButton(
+            text="부자재 보충(다이렉트)", state="normal", font_size=dp(11)
+        )
+        self.btn_tab_bujajae.bind(on_release=lambda x: self.switch_view("BUJAJAE"))
+
         self.btn_tab_status = StyledToggleButton(
-            text="요청 현황 & 데스크 회신", state="normal", font_size=dp(13)
+            text="요청 현황 & 회신", state="normal", font_size=dp(12)
         )
         self.btn_tab_status.bind(on_release=lambda x: self.switch_view("STATUS"))
 
         tab_box.add_widget(self.btn_tab_new)
+        tab_box.add_widget(self.btn_tab_bujajae)
         tab_box.add_widget(self.btn_tab_status)
         self.layout.add_widget(tab_box)
 
@@ -5420,19 +5523,19 @@ class EmergencyReplenishScreen(Screen):
         self.fetch_status_data(force_refresh=False)
         self.switch_view(self.active_tab)
 
-    # 💡 [핵심] 현황 탭 클릭/이동 시 시트 최신화 자동 수집
     def switch_view(self, view_mode):
         self.active_tab = view_mode
         self.content_area.clear_widgets()
 
+        self.btn_tab_new.set_active_visual(view_mode == "NEW")
+        self.btn_tab_bujajae.set_active_visual(view_mode == "BUJAJAE")
+        self.btn_tab_status.set_active_visual(view_mode == "STATUS")
+
         if view_mode == "NEW":
-            self.btn_tab_new.set_active_visual(True)
-            self.btn_tab_status.set_active_visual(False)
             self._render_new_request_view()
+        elif view_mode == "BUJAJAE":
+            self._render_bujajae_view()
         else:
-            self.btn_tab_new.set_active_visual(False)
-            self.btn_tab_status.set_active_visual(True)
-            # 💡 현황 탭으로 넘어올 때 강제 갱신 트리거
             self.fetch_status_data(force_refresh=True)
             self._render_status_view()
 
@@ -5451,7 +5554,6 @@ class EmergencyReplenishScreen(Screen):
                             my_reqs.append(r)
                 self.raw_requests_cache = my_reqs
                 
-                # 요청 현황 탭을 보는 중이면 메인 UI 스레드에서 안전하게 화면 즉시 새로고침
                 if self.active_tab == "STATUS":
                     Clock.schedule_once(lambda dt: self._render_status_view())
             except Exception as e:
@@ -5459,7 +5561,6 @@ class EmergencyReplenishScreen(Screen):
 
         threading.Thread(target=_async_fetch, daemon=True).start()
 
-    # 1. 신규 보충 요청 뷰
     def _render_new_request_view(self):
         layout = BoxLayout(orientation="vertical", spacing=dp(8))
 
@@ -5509,17 +5610,14 @@ class EmergencyReplenishScreen(Screen):
         )
         threading.Thread(target=self._search_master_stock, args=(query,), daemon=True).start()
 
-    # 💡 [신규 추가] PDA 하드웨어 바코드 스캔(트리거 버튼) 글로벌 수신 메서드
     def handle_barcode_scan(self, barcode):
         clean_bc = str(barcode).strip().upper()
         if not clean_bc:
             return
             
-        # 만약 현재 '현황' 탭을 보고 있다면 '신규 요청' 탭으로 강제 전환
         if self.active_tab != "NEW":
             self.switch_view("NEW")
             
-        # 검색창에 텍스트 넣고 즉시 검색 자동 실행
         if hasattr(self, 'search_input'):
             self.search_input.text = clean_bc
             
@@ -5537,9 +5635,6 @@ class EmergencyReplenishScreen(Screen):
             return True
         return False
 
-    # =================================================================================
-    # 💡 [개선] B2C출고 외에 보관 재고도 검색 허용 + 중복 1개로 병합 + 출고위치 동적 생략
-    # =================================================================================
     def _search_master_stock(self, query):
         master_data = []
         try:
@@ -5554,7 +5649,6 @@ class EmergencyReplenishScreen(Screen):
             for row in master_data:
                 loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
                 
-                # B2C출고 및 보관 재고 대상
                 if loc_type not in ["B2C출고", "보관"]:
                     continue
 
@@ -5571,7 +5665,6 @@ class EmergencyReplenishScreen(Screen):
                 prod_lower = prod_name.lower()
                 loc_lower = loc.lower()
 
-                # 💡 [확장] 바코드, SKU명뿐만 아니라 로케이션 일치 여부도 함께 판별
                 is_match = (
                     not clean_query
                     or (clean_query in bc_lower)
@@ -5666,7 +5759,6 @@ class EmergencyReplenishScreen(Screen):
             lbl_partner.bind(size=lambda i, s: setattr(i, "text_size", s))
             card.add_widget(lbl_partner)
 
-            # 💡 4. 출고위치가 없는 경우 '출고위치' 글씨 자체를 생략하고 재고만 0개로 표시
             if data['location']:
                 info_text = f"• 출고위치: [b]{data['location']}[/b]  |  B2C재고: [b][color=D32F2F]{data['loc_qty']}개[/color][/b]"
             else:
@@ -5699,7 +5791,6 @@ class EmergencyReplenishScreen(Screen):
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 req_id = f"REQ-{datetime.now().strftime('%M%S')}"
                 
-                # 💡 구글 시트에 기록할 때, 출고 위치가 비어있으면 데스크 인원들이 알 수 있도록 '위치없음(B2C)'로 기록
                 record_loc = data["location"] if data["location"] else "위치없음(B2C)"
                 
                 row_data = [
@@ -5721,18 +5812,17 @@ class EmergencyReplenishScreen(Screen):
                 time.sleep(0.5)
                 self.fetch_status_data(force_refresh=True)
 
-                Clock.schedule_once(lambda dt: app.show_toast("데스크로 보충 요청이 전송되었습니다!"))
+                Clock.schedule_once(lambda dt: app.show_toast("[성공] 데스크로 보충 요청이 전송되었습니다!"))
                 Clock.schedule_once(lambda dt: self.switch_view("STATUS"))
             except Exception as e:
-                Clock.schedule_once(lambda dt: app.show_info_popup("오류", f"보충 요청 전송 실패: {e}"))
+                Clock.schedule_once(lambda dt: app.show_info_popup("[오류]", f"보충 요청 전송 실패: {e}"))
 
         app.show_confirmation_popup(
-            title="긴급 보충 요청",
+            title="[확인] 긴급 보충 요청",
             message=f"[{data['barcode']}]\n{data['product_name'][:18]}\n\n데스크로 긴급 보충 요청을 전송하시겠습니까?",
             on_yes=lambda: threading.Thread(target=_async_send, daemon=True).start()
         )
 
-    # 💡 [속도 보완] 메모리 데이터(`self.raw_requests_cache`)를 사용하여 초고속 화면 렌더링
     def _render_status_view(self):
         self.content_area.clear_widgets()
 
@@ -5946,11 +6036,11 @@ class EmergencyReplenishScreen(Screen):
         def _do_local_delete():
             if req_id:
                 self.hidden_req_ids.add(req_id)
-            app.show_toast("어플 화면에서 삭제되었습니다. (시트 데이터 변경 없음)")
+            app.show_toast("[안내] 어플 화면에서 삭제되었습니다. (시트 데이터 변경 없음)")
             self._render_status_view()
 
         app.show_confirmation_popup(
-            title="보충 요청 삭제",
+            title="[확인] 보충 요청 삭제",
             message=f"[{sku_name[:18]}]\n\n이 요청 항목을 어플 목록에서 지우시겠습니까?\n(구글 시트에는 영향을 주지 않습니다)",
             on_yes=_do_local_delete
         )
@@ -5960,7 +6050,6 @@ class EmergencyReplenishScreen(Screen):
         req_id = str(t(req_data, "요청 ID", t(req_data, "요청ID", ""))).strip()
         sku_name = str(t(req_data, "SKU명", t(req_data, "상품명", ""))).strip()
 
-        # 기존 기록 데이터 추출
         old_reason = str(t(req_data, "요청사유", "")).strip()
         old_reply = str(t(req_data, "회신 메세지", t(req_data, "회신메시지", ""))).strip()
 
@@ -5976,8 +6065,6 @@ class EmergencyReplenishScreen(Screen):
                     row_idx = all_ids.index(req_id) + 1
                     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                    # 💡 기존 이력 보존하여 요청사유 업데이트
-                    # (기존 사유/회신 메시지가 있으면 뒤에 누적 기록)
                     history_text = ""
                     if old_reply:
                         history_text = f" (이전회신: {old_reply})"
@@ -5988,12 +6075,11 @@ class EmergencyReplenishScreen(Screen):
                     else:
                         updated_reason = new_reason
 
-                    # 💡 기존 행의 지정된 컬럼만 최신화 (상태: '요청중', 회신 메세지: 초기화)
                     cells = [
                         gspread.Cell(row_idx, headers.index("요청시각") + 1, now_ts),
                         gspread.Cell(row_idx, headers.index("요청사유") + 1, updated_reason),
                         gspread.Cell(row_idx, headers.index("처리상태") + 1, "요청중"),
-                        gspread.Cell(row_idx, headers.index("회신 메세지") + 1, "")  # 회신란은 초기화하여 새 회신 대기
+                        gspread.Cell(row_idx, headers.index("회신 메세지") + 1, "")  
                     ]
                     
                     sheet.update_cells(cells)
@@ -6002,16 +6088,235 @@ class EmergencyReplenishScreen(Screen):
                     time.sleep(0.5)
                     self.fetch_status_data(force_refresh=True)
 
-                    Clock.schedule_once(lambda dt: app.show_toast("데스크로 재요청이 전송되었습니다!"))
+                    Clock.schedule_once(lambda dt: app.show_toast("[성공] 데스크로 재요청이 전송되었습니다!"))
             except Exception as e:
-                Clock.schedule_once(lambda dt: app.show_info_popup("오류", f"재요청 전송 실패: {e}"))
+                Clock.schedule_once(lambda dt: app.show_info_popup("[오류]", f"재요청 전송 실패: {e}"))
 
         app.show_confirmation_popup(
-            title="보충 재요청",
+            title="[확인] 보충 재요청",
             message=f"[{sku_name[:18]}]\n\n기존 요청건({req_id})의 상태를\n'요청중'으로 최신화하여 재전송하시겠습니까?",
             on_yes=lambda: threading.Thread(target=_async_re_send, daemon=True).start()
         )
 
+    # =========================================================================
+    # [NEW] 부자재 다이렉트 보충 전용 화면 및 백그라운드 로직
+    # =========================================================================
+    def _render_bujajae_view(self):
+        layout = BoxLayout(orientation="vertical", spacing=dp(15), padding=dp(20))
+        
+        lbl_info = Label(
+            text="[b][color=3949AB]부자재 다이렉트 보충 (1PLT)[/color][/b]\n\n부자재는 수량 입력 없이 [가장 오래된 1파레트(FIFO)]를\n즉시 리치 장비의 대기열로 할당(생성)합니다.\n\n[color=757575]※ 2파레트가 필요하다면 요청을 2번 진행해 주세요.[/color]",
+            font_name=FONT_NAME, font_size=dp(14), color=TEXT_DARK, markup=True, halign="center"
+        )
+        lbl_info.bind(size=lambda i, s: setattr(i, "text_size", s))
+        layout.add_widget(lbl_info)
+
+        btn_req = StyledButton(
+            text="부자재 목록 열기 (터치)", 
+            size_hint_y=None, height=dp(60), 
+            bg_color=get_color_from_hex("#8E24AA"), font_size=dp(16), bold=True
+        )
+        btn_req.bind(on_press=self.open_bujajae_popup)
+        layout.add_widget(btn_req)
+        
+        layout.add_widget(Widget()) 
+        self.content_area.add_widget(layout)
+
+    def open_bujajae_popup(self, instance):
+        BujajaeSelectPopup(on_select=self._on_bujajae_selected).open()
+
+    def _on_bujajae_selected(self, sku, barcode):
+        BujajaeDestSelectPopup(sku, barcode, on_select=self._on_bujajae_dest_selected).open()
+
+    def _on_bujajae_dest_selected(self, sku, barcode, dest):
+        app = App.get_running_app()
+        app.show_loading_popup()
+        threading.Thread(target=self._async_validate_bujajae, args=(sku, barcode, dest), daemon=True).start()
+
+    def _async_validate_bujajae(self, sku, barcode, dest):
+        app = App.get_running_app()
+        try:
+            inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
+
+            if not inventory:
+                Clock.schedule_once(lambda dt: app.show_info_popup("[안내]", "현재 전산 데이터를 최신화 중입니다.\n잠시 후 다시 시도해 주세요."))
+                return
+
+            valid_stock = []
+            for row in inventory:
+                bc = str(t(row, "바코드", t(row, "상품바코드", ""))).strip().upper()
+                loc_type = str(t(row, "로케이션 유형", t(row, "로케이션유형", ""))).strip()
+                if bc == str(barcode).strip().upper() and "보관" in loc_type:
+                    valid_stock.append(row)
+
+            if not valid_stock:
+                Clock.schedule_once(lambda dt: app.show_info_popup("[안내]", "해당 부자재의 보관 재고가 전산에 없습니다.\n데스크에 문의해 주세요."))
+                return
+
+            valid_stock.sort(
+                key=lambda x: (
+                    str(t(x, "소비기한", "")).strip(),
+                    safe_int(t(x, "로케이션 수량", t(x, "로케이션수량", 0)))
+                )
+            )
+
+            best_loc = str(t(valid_stock[0], "로케이션", "N/A")).strip()
+            
+            # [추가] 1순위 재고에서 고객사(파트너명) 정보 추출
+            client_name = str(t(valid_stock[0], "고객사", t(valid_stock[0], "파트너명", ""))).strip()
+
+            def ask_confirm(dt):
+                msg = f"[{sku}] 을(를)\n[{dest}](으)로 1PLT 보충 요청하시겠습니까?"
+                app.show_confirmation_popup(
+                    title="[확인] 부자재 보충 요청",
+                    message=msg,
+                    # [추가] 추출한 고객사 정보를 다음 함수로 전달
+                    on_yes=lambda: self._trigger_bujajae_send(sku, barcode, dest, best_loc, client_name)
+                )
+
+            Clock.schedule_once(ask_confirm)
+
+        except Exception as e:
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("[오류]", f"재고 확인 실패: {err}"))
+        finally:
+            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
+
+    def _trigger_bujajae_send(self, sku, barcode, dest, from_loc, client_name):
+        App.get_running_app().show_loading_popup()
+        # [추가] 백그라운드 전송 함수로 고객사 정보 전달
+        threading.Thread(target=self._async_send_bujajae, args=(sku, barcode, dest, from_loc, client_name), daemon=True).start()
+
+    def _async_send_bujajae(self, sku, barcode, dest, from_loc, client_name):
+        app = App.get_running_app()
+        try:
+            task_sheet = get_worksheet(TASK_SHEET_NAME)
+            move_sheet = get_worksheet(STOCK_MOVE_SHEET_NAME)
+
+            now_ts = datetime.now()
+            ts_str = now_ts.strftime("%Y-%m-%d %H:%M:%S")
+            task_id = f"DIR-BUJA-{now_ts.strftime('%m%d-%H%M%S')}"
+            user_name = str(app.user_real_name).strip()
+
+            # Track A: 현장용 지시서 생성
+            t_headers_raw = execute_with_retry(task_sheet.row_values, 1)
+            t_headers = [str(h).strip() for h in t_headers_raw]
+
+            t_row = []
+            for h in t_headers:
+                if h == "작업ID": t_row.append(task_id)
+                elif h == "상태": t_row.append("대기")
+                # [추가] 현장용 시트 고객사 열에 데이터 입력
+                elif h == "고객사": t_row.append(client_name)
+                elif h == "상품명": t_row.append(f"[부자재] {sku}")
+                elif h == "상품바코드": t_row.append(barcode)
+                elif h == "기존로케이션": t_row.append(from_loc)
+                elif h == "보충로케이션": t_row.append(dest)
+                elif h == "지시수량": t_row.append("1")
+                elif h == "긴급여부": t_row.append("Y")
+                elif h == "장비": t_row.append("리치")
+                elif h == "작업지시자": t_row.append(user_name)
+                else: t_row.append("")
+
+            # Track B: 데스크 전산용 이동요청 생성
+            m_headers_raw = execute_with_retry(move_sheet.row_values, 1)
+            m_headers = [str(h).strip() for h in m_headers_raw]
+
+            m_row = []
+            for h in m_headers:
+                if h == "요청일시": m_row.append(ts_str)
+                elif h == "요청구분": m_row.append("현장어플_부자재")
+                elif h == "작업ID": m_row.append(task_id)
+                # [추가] 데스크용 시트 고객사 열에 데이터 입력
+                elif h == "고객사": m_row.append(client_name)
+                elif h == "상품명": m_row.append(sku)
+                elif h == "바코드": m_row.append(barcode)
+                elif h == "출발로케이션": m_row.append(from_loc)
+                elif h == "도착로케이션": m_row.append(dest)
+                elif h == "이동수량": m_row.append("1")
+                elif h == "현장작업상태": m_row.append("")
+                elif h == "전산처리상태": m_row.append("재고이동필요")
+                else: m_row.append("")
+
+            # 두 시트에 동시에 입력
+            execute_with_retry(task_sheet.append_row, t_row)
+            execute_with_retry(move_sheet.append_row, m_row)
+
+            invalidate_cache(TASK_SHEET_NAME)
+            invalidate_cache(STOCK_MOVE_SHEET_NAME)
+
+            Clock.schedule_once(lambda dt: app.show_toast("[완료] 부자재 보충 지시가 대기열에 생성되었습니다."))
+            Clock.schedule_once(lambda dt: self.fetch_data())
+
+        except Exception as e:
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("[오류]", f"지시 생성 실패: {err}"))
+        finally:
+            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
+
+    def _trigger_bujajae_send(self, sku, barcode, dest, from_loc):
+        App.get_running_app().show_loading_popup()
+        threading.Thread(target=self._async_send_bujajae, args=(sku, barcode, dest, from_loc), daemon=True).start()
+
+    def _async_send_bujajae(self, sku, barcode, dest, from_loc):
+        app = App.get_running_app()
+        try:
+            task_sheet = get_worksheet(TASK_SHEET_NAME)
+            move_sheet = get_worksheet(STOCK_MOVE_SHEET_NAME)
+
+            now_ts = datetime.now()
+            ts_str = now_ts.strftime("%Y-%m-%d %H:%M:%S")
+            task_id = f"DIR-BUJA-{now_ts.strftime('%m%d-%H%M%S')}"
+            user_name = str(app.user_real_name).strip()
+
+            # Track A: 현장용 지시서 생성
+            t_headers_raw = execute_with_retry(task_sheet.row_values, 1)
+            t_headers = [str(h).strip() for h in t_headers_raw]
+
+            t_row = []
+            for h in t_headers:
+                if h == "작업ID": t_row.append(task_id)
+                elif h == "상태": t_row.append("대기")
+                elif h == "상품명": t_row.append(f"[부자재] {sku}")
+                elif h == "상품바코드": t_row.append(barcode)
+                elif h == "기존로케이션": t_row.append(from_loc)
+                elif h == "보충로케이션": t_row.append(dest)
+                elif h == "지시수량": t_row.append("1")
+                elif h == "긴급여부": t_row.append("Y")
+                elif h == "장비": t_row.append("리치")
+                elif h == "작업지시자": t_row.append(user_name)
+                else: t_row.append("")
+
+            # Track B: 데스크 전산용 이동요청 생성
+            m_headers_raw = execute_with_retry(move_sheet.row_values, 1)
+            m_headers = [str(h).strip() for h in m_headers_raw]
+
+            m_row = []
+            for h in m_headers:
+                if h == "요청일시": m_row.append(ts_str)
+                elif h == "요청구분": m_row.append("현장어플_부자재")
+                elif h == "작업ID": m_row.append(task_id)
+                elif h == "상품명": m_row.append(sku)
+                elif h == "바코드": m_row.append(barcode)
+                elif h == "출발로케이션": m_row.append(from_loc)
+                elif h == "도착로케이션": m_row.append(dest)
+                elif h == "이동수량": m_row.append("1")
+                elif h == "현장작업상태": m_row.append("대기")
+                elif h == "전산처리상태": m_row.append("재고이동필요")
+                else: m_row.append("")
+
+            # 두 시트에 동시에 입력
+            execute_with_retry(task_sheet.append_row, t_row)
+            execute_with_retry(move_sheet.append_row, m_row)
+
+            invalidate_cache(TASK_SHEET_NAME)
+            invalidate_cache(STOCK_MOVE_SHEET_NAME)
+
+            Clock.schedule_once(lambda dt: app.show_toast("[완료] 부자재 보충 지시가 대기열에 생성되었습니다."))
+            Clock.schedule_once(lambda dt: self.fetch_status_data(force_refresh=True))
+
+        except Exception as e:
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("[오류]", f"지시 생성 실패: {err}"))
+        finally:
+            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
 
 
 class AdminDashboardScreen(Screen):
