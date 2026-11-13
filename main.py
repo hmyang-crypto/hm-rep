@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.1"
+CURRENT_VERSION = "2.0.1.2"
 
 
 def check_and_apply_update():
@@ -1656,22 +1656,27 @@ class BujajaeSelectPopup(Popup):
 class BujajaeDestSelectPopup(Popup):
     def __init__(self, sku, barcode, on_select, **kwargs):
         super().__init__(**kwargs)
-        self.title = "[안내] 부자재 도착지 선택"
+        self.title = "부자재 도착지 선택"
         self.title_font = FONT_NAME
-        self.size_hint = (0.85, 0.4)
+        self.size_hint = (0.85, None)
+        self.height = dp(280)  # 💡 [해결1] 팝업 높이를 고정하여 글씨 겹침 완벽 방지
         self.auto_dismiss = False
 
-        layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(15))
-        layout.add_widget(Label(
-            text=f"[b]{sku}[/b]\n이동할 목적지를 선택하세요.",
-            font_name=FONT_NAME, font_size=dp(15), markup=True, halign="center"
-        ))
+        layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10))
+        
+        lbl_desc = Label(
+            text=f"[b][color=1976D2]{sku}[/color][/b]\n이동할 목적지를 선택하세요.",
+            font_name=FONT_NAME, font_size=dp(15), markup=True, halign="center",
+            size_hint_y=None, height=dp(50)  # 💡 라벨 높이 확보
+        )
+        layout.add_widget(lbl_desc)
 
         btn_mezzanine = StyledButton(text="메자닌 위", size_hint_y=None, height=dp(55), bg_color=get_color_from_hex("#00897B"))
-        btn_mezzanine.bind(on_release=lambda inst: (self.dismiss(), on_select(sku, barcode, "메자닌 위")))
+        # 💡 [해결2] 팝업이 닫힌 후 0.15초 뒤에 다음 로직을 실행하여 화면 충돌(튕김) 방지
+        btn_mezzanine.bind(on_release=lambda inst: self._on_btn_click(on_select, sku, barcode, "메자닌 위"))
 
         btn_ef_zone = StyledButton(text="E/F존", size_hint_y=None, height=dp(55), bg_color=get_color_from_hex("#F4511E"))
-        btn_ef_zone.bind(on_release=lambda inst: (self.dismiss(), on_select(sku, barcode, "E/F존")))
+        btn_ef_zone.bind(on_release=lambda inst: self._on_btn_click(on_select, sku, barcode, "E/F존"))
 
         layout.add_widget(btn_mezzanine)
         layout.add_widget(btn_ef_zone)
@@ -1679,8 +1684,13 @@ class BujajaeDestSelectPopup(Popup):
         btn_cancel = StyledButton(text="취소", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#757575"))
         btn_cancel.bind(on_press=self.dismiss)
         layout.add_widget(btn_cancel)
-
+        
         self.content = layout
+
+    def _on_btn_click(self, on_select, sku, barcode, dest):
+        self.dismiss()
+        # 팝업이 완전히 닫힐 시간을 주고 다음 로딩 팝업을 띄웁니다
+        Clock.schedule_once(lambda dt: on_select(sku, barcode, dest), 0.15)
 
 
 class InspectionPopup(Popup):
@@ -6139,7 +6149,7 @@ class EmergencyReplenishScreen(Screen):
             inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
 
             if not inventory:
-                Clock.schedule_once(lambda dt: app.show_info_popup("[안내]", "현재 전산 데이터를 최신화 중입니다.\n잠시 후 다시 시도해 주세요."))
+                Clock.schedule_once(lambda dt: app.show_info_popup("안내", "현재 전산 데이터를 최신화 중입니다.\n잠시 후 다시 시도해 주세요."))
                 return
 
             valid_stock = []
@@ -6150,7 +6160,7 @@ class EmergencyReplenishScreen(Screen):
                     valid_stock.append(row)
 
             if not valid_stock:
-                Clock.schedule_once(lambda dt: app.show_info_popup("[안내]", "해당 부자재의 보관 재고가 전산에 없습니다.\n데스크에 문의해 주세요."))
+                Clock.schedule_once(lambda dt: app.show_info_popup("안내", "해당 부자재의 보관 재고가 전산에 없습니다.\n데스크에 문의해 주세요."))
                 return
 
             valid_stock.sort(
@@ -6161,36 +6171,34 @@ class EmergencyReplenishScreen(Screen):
             )
 
             best_loc = str(t(valid_stock[0], "로케이션", "N/A")).strip()
-            
-            # [추가] 1순위 재고에서 고객사(파트너명) 정보 추출
+            # 💡 [복구] 지난번에 추가했던 1순위 재고에서 고객사(파트너명) 정보 추출 로직
             client_name = str(t(valid_stock[0], "고객사", t(valid_stock[0], "파트너명", ""))).strip()
 
             def ask_confirm(dt):
-                msg = f"[{sku}] 을(를)\n[{dest}](으)로 1PLT 보충 요청하시겠습니까?"
+                msg = f"[color=FFE082][b]{sku}[/b][/color] 을(를)\n[color=81C784][b]{dest}[/b][/color](으)로 1PLT 요청하시겠습니까?"
                 app.show_confirmation_popup(
-                    title="[확인] 부자재 보충 요청",
+                    title="부자재 보충 요청",
                     message=msg,
-                    # [추가] 추출한 고객사 정보를 다음 함수로 전달
                     on_yes=lambda: self._trigger_bujajae_send(sku, barcode, dest, best_loc, client_name)
                 )
 
             Clock.schedule_once(ask_confirm)
 
         except Exception as e:
-            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("[오류]", f"재고 확인 실패: {err}"))
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"재고 확인 실패: {err}"))
         finally:
             Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
 
     def _trigger_bujajae_send(self, sku, barcode, dest, from_loc, client_name):
         App.get_running_app().show_loading_popup()
-        # [추가] 백그라운드 전송 함수로 고객사 정보 전달
         threading.Thread(target=self._async_send_bujajae, args=(sku, barcode, dest, from_loc, client_name), daemon=True).start()
 
     def _async_send_bujajae(self, sku, barcode, dest, from_loc, client_name):
         app = App.get_running_app()
         try:
             task_sheet = get_worksheet(TASK_SHEET_NAME)
-            move_sheet = get_worksheet(STOCK_MOVE_SHEET_NAME)
+            # 💡 [해결3] 혹시 모를 변수 누락 에러(크래시)를 원천 차단하기 위해 시트 이름 직접 텍스트로 지정
+            move_sheet = get_worksheet("재고이동필요건") 
 
             now_ts = datetime.now()
             ts_str = now_ts.strftime("%Y-%m-%d %H:%M:%S")
@@ -6205,7 +6213,6 @@ class EmergencyReplenishScreen(Screen):
             for h in t_headers:
                 if h == "작업ID": t_row.append(task_id)
                 elif h == "상태": t_row.append("대기")
-                # [추가] 현장용 시트 고객사 열에 데이터 입력
                 elif h == "고객사": t_row.append(client_name)
                 elif h == "상품명": t_row.append(f"[부자재] {sku}")
                 elif h == "상품바코드": t_row.append(barcode)
@@ -6226,7 +6233,6 @@ class EmergencyReplenishScreen(Screen):
                 if h == "요청일시": m_row.append(ts_str)
                 elif h == "요청구분": m_row.append("현장어플_부자재")
                 elif h == "작업ID": m_row.append(task_id)
-                # [추가] 데스크용 시트 고객사 열에 데이터 입력
                 elif h == "고객사": m_row.append(client_name)
                 elif h == "상품명": m_row.append(sku)
                 elif h == "바코드": m_row.append(barcode)
@@ -6242,13 +6248,13 @@ class EmergencyReplenishScreen(Screen):
             execute_with_retry(move_sheet.append_row, m_row)
 
             invalidate_cache(TASK_SHEET_NAME)
-            invalidate_cache(STOCK_MOVE_SHEET_NAME)
+            invalidate_cache("재고이동필요건")
 
-            Clock.schedule_once(lambda dt: app.show_toast("[완료] 부자재 보충 지시가 대기열에 생성되었습니다."))
-            Clock.schedule_once(lambda dt: self.fetch_data())
+            Clock.schedule_once(lambda dt: app.show_toast("부자재 보충 지시가 대기열에 생성되었습니다."))
+            Clock.schedule_once(lambda dt: self.fetch_status_data(force_refresh=True))
 
         except Exception as e:
-            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("[오류]", f"지시 생성 실패: {err}"))
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"지시 생성 실패: {err}"))
         finally:
             Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
 
