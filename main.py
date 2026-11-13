@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.3"
+CURRENT_VERSION = "2.0.1.4"
 
 
 def check_and_apply_update():
@@ -6195,7 +6195,6 @@ class EmergencyReplenishScreen(Screen):
             Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"재고 확인 실패: {err}"), 0.2)
 
     def _trigger_bujajae_send(self, sku, barcode, dest, from_loc, client_name):
-        # 이제 여기서 안전하게 로딩창을 띄우고 데이터 전송을 시작합니다.
         App.get_running_app().show_loading_popup()
         threading.Thread(target=self._async_send_bujajae, args=(sku, barcode, dest, from_loc, client_name), daemon=True).start()
 
@@ -6203,7 +6202,6 @@ class EmergencyReplenishScreen(Screen):
         app = App.get_running_app()
         try:
             task_sheet = get_worksheet(TASK_SHEET_NAME)
-            # 💡 [해결3] 혹시 모를 변수 누락 에러(크래시)를 원천 차단하기 위해 시트 이름 직접 텍스트로 지정
             move_sheet = get_worksheet("재고이동필요건") 
 
             now_ts = datetime.now()
@@ -6219,7 +6217,7 @@ class EmergencyReplenishScreen(Screen):
             for h in t_headers:
                 if h == "작업ID": t_row.append(task_id)
                 elif h == "상태": t_row.append("대기")
-                elif h == "고객사": t_row.append(client_name)
+                elif h == "고객사": t_row.append(client_name)  # 💡 [해결 2] 고객사 정상 매핑
                 elif h == "상품명": t_row.append(f"[부자재] {sku}")
                 elif h == "상품바코드": t_row.append(barcode)
                 elif h == "기존로케이션": t_row.append(from_loc)
@@ -6239,7 +6237,7 @@ class EmergencyReplenishScreen(Screen):
                 if h == "요청일시": m_row.append(ts_str)
                 elif h == "요청구분": m_row.append("현장어플_부자재")
                 elif h == "작업ID": m_row.append(task_id)
-                elif h == "고객사": m_row.append(client_name)
+                elif h == "고객사": m_row.append(client_name)  # 💡 [해결 2] 고객사 정상 매핑
                 elif h == "상품명": m_row.append(sku)
                 elif h == "바코드": m_row.append(barcode)
                 elif h == "출발로케이션": m_row.append(from_loc)
@@ -6256,7 +6254,7 @@ class EmergencyReplenishScreen(Screen):
             invalidate_cache(TASK_SHEET_NAME)
             invalidate_cache("재고이동필요건")
 
-            Clock.schedule_once(lambda dt: app.show_toast("부자재 보충 지시가 대기열에 생성되었습니다."))
+            Clock.schedule_once(lambda dt: app.show_toast("[완료] 부자재 보충 지시가 대기열에 생성되었습니다."))
             Clock.schedule_once(lambda dt: self.fetch_status_data(force_refresh=True))
 
         except Exception as e:
