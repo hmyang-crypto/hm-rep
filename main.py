@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.2"
+CURRENT_VERSION = "2.0.1.3"
 
 
 def check_and_apply_update():
@@ -1652,27 +1652,28 @@ class BujajaeSelectPopup(Popup):
 
         self.content = layout
 
-# [신규 추가] 부자재 목적지 선택 팝업
+# [수정] 부자재 목적지 선택 팝업 (글씨 겹침 해결)
 class BujajaeDestSelectPopup(Popup):
     def __init__(self, sku, barcode, on_select, **kwargs):
         super().__init__(**kwargs)
         self.title = "부자재 도착지 선택"
         self.title_font = FONT_NAME
         self.size_hint = (0.85, None)
-        self.height = dp(280)  # 💡 [해결1] 팝업 높이를 고정하여 글씨 겹침 완벽 방지
+        self.height = dp(340)  # 💡 팝업 높이를 대폭 늘려 겹침 완벽 방지
         self.auto_dismiss = False
 
-        layout = BoxLayout(orientation="vertical", padding=dp(15), spacing=dp(10))
+        layout = BoxLayout(orientation="vertical", padding=dp(20), spacing=dp(15))
         
         lbl_desc = Label(
             text=f"[b][color=1976D2]{sku}[/color][/b]\n이동할 목적지를 선택하세요.",
-            font_name=FONT_NAME, font_size=dp(15), markup=True, halign="center",
-            size_hint_y=None, height=dp(50)  # 💡 라벨 높이 확보
+            font_name=FONT_NAME, font_size=dp(15), markup=True, 
+            halign="center", valign="middle"
         )
+        lbl_desc.bind(size=lbl_desc.setter('text_size'))
         layout.add_widget(lbl_desc)
 
         btn_mezzanine = StyledButton(text="메자닌 위", size_hint_y=None, height=dp(55), bg_color=get_color_from_hex("#00897B"))
-        # 💡 [해결2] 팝업이 닫힌 후 0.15초 뒤에 다음 로직을 실행하여 화면 충돌(튕김) 방지
+        # 💡 팝업 닫힘 애니메이션 시간을 벌어주어 충돌 방지
         btn_mezzanine.bind(on_release=lambda inst: self._on_btn_click(on_select, sku, barcode, "메자닌 위"))
 
         btn_ef_zone = StyledButton(text="E/F존", size_hint_y=None, height=dp(55), bg_color=get_color_from_hex("#F4511E"))
@@ -1689,9 +1690,7 @@ class BujajaeDestSelectPopup(Popup):
 
     def _on_btn_click(self, on_select, sku, barcode, dest):
         self.dismiss()
-        # 팝업이 완전히 닫힐 시간을 주고 다음 로딩 팝업을 띄웁니다
-        Clock.schedule_once(lambda dt: on_select(sku, barcode, dest), 0.15)
-
+        Clock.schedule_once(lambda dt: on_select(sku, barcode, dest), 0.2)
 
 class InspectionPopup(Popup):
 
@@ -6149,7 +6148,9 @@ class EmergencyReplenishScreen(Screen):
             inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
 
             if not inventory:
-                Clock.schedule_once(lambda dt: app.show_info_popup("안내", "현재 전산 데이터를 최신화 중입니다.\n잠시 후 다시 시도해 주세요."))
+                # 💡 안전 딜레이 적용
+                Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
+                Clock.schedule_once(lambda dt: app.show_info_popup("안내", "현재 전산 데이터를 최신화 중입니다.\n잠시 후 다시 시도해 주세요."), 0.2)
                 return
 
             valid_stock = []
@@ -6160,7 +6161,8 @@ class EmergencyReplenishScreen(Screen):
                     valid_stock.append(row)
 
             if not valid_stock:
-                Clock.schedule_once(lambda dt: app.show_info_popup("안내", "해당 부자재의 보관 재고가 전산에 없습니다.\n데스크에 문의해 주세요."))
+                Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
+                Clock.schedule_once(lambda dt: app.show_info_popup("안내", "해당 부자재의 보관 재고가 전산에 없습니다.\n데스크에 문의해 주세요."), 0.2)
                 return
 
             valid_stock.sort(
@@ -6171,25 +6173,29 @@ class EmergencyReplenishScreen(Screen):
             )
 
             best_loc = str(t(valid_stock[0], "로케이션", "N/A")).strip()
-            # 💡 [복구] 지난번에 추가했던 1순위 재고에서 고객사(파트너명) 정보 추출 로직
             client_name = str(t(valid_stock[0], "고객사", t(valid_stock[0], "파트너명", ""))).strip()
 
+            # 💡 1. 로딩 팝업을 먼저 안전하게 닫습니다.
+            Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
+
+            # 💡 2. 로딩 팝업이 닫힐 시간을 0.2초 기다린 후 확인 팝업을 띄웁니다.
             def ask_confirm(dt):
                 msg = f"[color=FFE082][b]{sku}[/b][/color] 을(를)\n[color=81C784][b]{dest}[/b][/color](으)로 1PLT 요청하시겠습니까?"
                 app.show_confirmation_popup(
                     title="부자재 보충 요청",
                     message=msg,
-                    on_yes=lambda: self._trigger_bujajae_send(sku, barcode, dest, best_loc, client_name)
+                    # 💡 '예'를 눌렀을 때도 확인 팝업이 닫힐 시간을 0.2초 줍니다.
+                    on_yes=lambda: Clock.schedule_once(lambda dt2: self._trigger_bujajae_send(sku, barcode, dest, best_loc, client_name), 0.2)
                 )
 
-            Clock.schedule_once(ask_confirm)
+            Clock.schedule_once(ask_confirm, 0.2)
 
         except Exception as e:
-            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"재고 확인 실패: {err}"))
-        finally:
-            Clock.schedule_once(lambda dt: app.dismiss_loading_popup())
+            Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
+            Clock.schedule_once(lambda dt, err=str(e): app.show_info_popup("오류", f"재고 확인 실패: {err}"), 0.2)
 
     def _trigger_bujajae_send(self, sku, barcode, dest, from_loc, client_name):
+        # 이제 여기서 안전하게 로딩창을 띄우고 데이터 전송을 시작합니다.
         App.get_running_app().show_loading_popup()
         threading.Thread(target=self._async_send_bujajae, args=(sku, barcode, dest, from_loc, client_name), daemon=True).start()
 
