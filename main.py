@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.5"
+CURRENT_VERSION = "2.0.1.6"
 
 
 def check_and_apply_update():
@@ -6216,6 +6216,7 @@ class EmergencyReplenishScreen(Screen):
             t_row = []
             for h in t_headers:
                 if h == "작업ID": t_row.append(task_id)
+                elif h in ["보조작업번호", "보조주문번호"]: t_row.append(task_id)
                 elif h == "상태": t_row.append("대기")
                 elif h == "고객사": t_row.append(client_name)
                 elif h == "상품명": t_row.append(f"[부자재] {sku}")
