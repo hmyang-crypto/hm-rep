@@ -3679,7 +3679,7 @@ class UnifiedReplenishScreen(Screen):
         self.reset_filters()
 
         if tab_mode == "MY":
-            self.btn_main_action.text = "↩ 선택 항목 일괄 반납 (0)"
+            self.btn_main_action.text = "선택 항목 일괄 반납 (0)"
             self.btn_main_action.set_bg_color(get_color_from_hex("#FF7043"))
         else:
             self.btn_main_action.text = "+ 선택 항목 할당받기 (0)"
@@ -5267,7 +5267,7 @@ class TaskListScreen(Screen):
         popup_layout.add_widget(btn_close)
 
         popup = Popup(
-            title=f"📍 {line_code} 라인 잔여 작업 ({len(tasks_for_line)}건) - 스캔하여 처리",
+            title=f" {line_code} 라인 잔여 작업 ({len(tasks_for_line)}건) - 스캔하여 처리",
             title_font=FONT_NAME,
             content=popup_layout,
             size_hint=(0.9, 0.7),
@@ -8397,7 +8397,7 @@ class MainApp(App):
                         if not getattr(self, last_reply_key, False):
                             setattr(self, last_reply_key, True)
                             sku_name = str(t(req, "SKU명", "")).strip()[:12]
-                            msg = f"💬 [데스크 회신 도착] [{sku_name}]\n내용: {reply if reply else status}"
+                            msg = f" [데스크 회신 도착] [{sku_name}]\n내용: {reply if reply else status}"
                             
                             Clock.schedule_once(
                                 lambda dt, m=msg: self.show_desk_reply_banner(m)
