@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.8"
+CURRENT_VERSION = "2.0.0.9"
 
 
 def check_and_apply_update():
@@ -551,11 +551,13 @@ class NotificationBanner(ButtonBehavior, BoxLayout):
         self.bind(pos=self._update_rect, size=self._update_rect)
 
         icon_label = Label(
-            text="🔔",
+            text="[알림]",
             font_name=FONT_NAME,
-            font_size=dp(20),
+            font_size=dp(14),  # 텍스트에 맞게 크기 조정
+            bold=True,
+            color=get_color_from_hex("#FFD54F"),  # 알림 글씨에 노란색/주황색 포인트를 주면 좋습니다
             size_hint_x=None,
-            width=dp(30),
+            width=dp(45),      # 글자가 다 들어가도록 너비 살짝 넓힘
         )
         self.add_widget(icon_label)
 
