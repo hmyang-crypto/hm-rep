@@ -6216,7 +6216,7 @@ class EmergencyReplenishScreen(Screen):
             t_row = []
             for h in t_headers:
                 if h == "작업ID": t_row.append(task_id)
-                elif h in ["보조작업번호", "보조주문번호"]: t_row.append(task_id)
+                elif h in ["보조작업번호", "보조주문번호"]: t_row.append(f"{task_id}-001")
                 elif h == "상태": t_row.append("대기")
                 elif h == "고객사": t_row.append(client_name)
                 elif h == "상품명": t_row.append(f"[부자재] {sku}")
