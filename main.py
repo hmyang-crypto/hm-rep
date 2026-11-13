@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.0.7"
+CURRENT_VERSION = "2.0.0.8"
 
 
 def check_and_apply_update():
@@ -1354,6 +1354,45 @@ class MultipleSkuSelectPopup(Popup):
 
         scroll.add_widget(grid)
         layout.add_widget(scroll)
+        self.content = layout
+
+# 💡 [NEW] 혼적 파레트 주의 경고 팝업 클래스
+class MixedPalletWarningPopup(Popup):
+    def __init__(self, proceed_callback, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "혼적 PLT 작업 주의"
+        self.title_font = FONT_NAME
+        self.size_hint = (0.9, 0.5)
+        self.auto_dismiss = False
+
+        layout = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
+        
+        # 💡 "혼적 PLT"를 매우 크고 빨갛게 강조
+        lbl_warn = Label(
+            text="[size=38dp][color=FF1744][b]혼적 PLT[/b][/color][/size]\n\n[b]해당 파레트에는 여러 상품이 섞여 있습니다![/b]\n\n[color=FFB300]보충 시 다른 상품을 잘못 픽업하지 않도록\n상품명과 바코드를 다시 한번 확인하세요![/color]",
+            font_name=FONT_NAME,
+            markup=True,
+            halign="center",
+            valign="middle"
+        )
+        lbl_warn.bind(size=lbl_warn.setter("text_size"))
+        layout.add_widget(lbl_warn)
+
+        # 💡 작업자가 명확하게 인지하고 눌러야만 넘어가는 빨간 버튼
+        btn_ok = StyledButton(
+            text="확인했습니다 (작업 계속)", 
+            size_hint_y=None, 
+            height=dp(55), 
+            bg_color=get_color_from_hex("#D32F2F"), 
+            font_size=dp(15), 
+            bold=True
+        )
+        def on_ok(inst):
+            self.dismiss()
+            proceed_callback()
+        btn_ok.bind(on_press=on_ok)
+        
+        layout.add_widget(btn_ok)
         self.content = layout
 
 
@@ -3552,12 +3591,7 @@ class UnifiedReplenishScreen(Screen):
 
             # 💡 [핵심 해결 1] 매칭된 항목이 1개일 때
             if len(my_matches) == 1:
-                target_task = my_matches[0]
-                target_task["manual_qty_unlocked"] = True
-                
-                task_list_screen = self.manager.get_screen("task_list")
-                dummy_card = type("DummyCard", (), {"task_data": target_task})()
-                task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
+                self._check_mixed_and_open_qty(my_matches[0])
             
             # 💡 [핵심 해결 2] 같은 로케이션/바코드 작업이 여러 개일 때 (중복 팝업 오프닝)
             else:
@@ -3566,10 +3600,7 @@ class UnifiedReplenishScreen(Screen):
 
                 def _on_select_task(selected_item):
                     sel_task = selected_item["task_data"]
-                    sel_task["manual_qty_unlocked"] = True
-                    task_list_screen = self.manager.get_screen("task_list")
-                    dummy_card = type("DummyCard", (), {"task_data": sel_task})()
-                    task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
+                    self._check_mixed_and_open_qty(sel_task)
 
                 MultipleSkuSelectPopup(
                     matches=formatted_matches, on_select=_on_select_task
@@ -3596,6 +3627,23 @@ class UnifiedReplenishScreen(Screen):
                     "스캔 오류",
                     f"스캔한 바코드 [{clean_bc}] 에 해당하는 작업을 찾을 수 없습니다.",
                 )
+
+    # 💡 [NEW] 혼적수량이 2개 이상일 경우 경고 팝업을 먼저 띄워주는 핵심 함수
+    def _check_mixed_and_open_qty(self, target_task):
+        sku_cnt = safe_int(t(target_task, "혼적수량", 0))
+        
+        # 팝업의 '확인했습니다'를 눌렀을 때(또는 혼적이 아닐 때) 실행할 진짜 액션
+        def proceed():
+            target_task["manual_qty_unlocked"] = True
+            task_list_screen = self.manager.get_screen("task_list")
+            dummy_card = type("DummyCard", (), {"task_data": target_task})()
+            task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
+            
+        # 혼적수량이 2 이상이면 무조건 빨간 경고창부터 띄웁니다!
+        if sku_cnt >= 2:
+            MixedPalletWarningPopup(proceed_callback=proceed).open()
+        else:
+            proceed()
 
     # 💡 [v1.8.9.3] 갱신 버튼 전용 안전 갱신 메서드
     def refresh_button_click(self, instance=None):
@@ -4031,7 +4079,8 @@ class UnifiedReplenishScreen(Screen):
             self.checked_task_ids.add(t(task_data, "작업ID"))
             self.batch_return_checked_tasks(None)
         elif action_name == "qty":
-            task_list_screen.open_quantity_popup(dummy_card, card_ref=self)
+            # 💡 [핵심 수정] 수량입력(수기입력) 버튼을 눌렀을 때도 바로 열지 않고 혼적 여부를 먼저 검사합니다!
+            self._check_mixed_and_open_qty(task_data)
         elif action_name == "fail":
             task_list_screen.process_failure(dummy_card)
         elif action_name == "remarks":
@@ -4039,6 +4088,8 @@ class UnifiedReplenishScreen(Screen):
         elif action_name == "complete":
             App.get_running_app().current_list_type = "보충인원"
             task_list_screen.process_task(dummy_card)
+    
+    # (참고: 바로 밑에 있는 def _check_mixed_and_open_qty 함수는 그대로 두시면 됩니다.)
 
     # 💡 [신규 추가] 리치 전환 기능 로직
     def handle_switch_to_reach(self, task_data):
@@ -4668,12 +4719,25 @@ class TaskListScreen(Screen):
             )
             return
 
+        # 💡 [수정] 스캔 후 바로 검수 팝업을 열지 않고, 혼적 여부 검사 함수로 보냅니다!
         if len(matches) == 1:
-            self.open_task_from_scan(matches[0])
+            self._check_mixed_and_inspect(matches[0])
         else:
             MultipleSkuSelectPopup(
-                matches=matches, on_select=self.open_task_from_scan
+                matches=matches, on_select=self._check_mixed_and_inspect
             ).open()
+
+    # 💡 [NEW] 혼적수량이 2개 이상일 경우 경고 팝업을 띄우는 함수 (검수용)
+    def _check_mixed_and_inspect(self, item_data):
+        sku_cnt = safe_int(t(item_data["task_data"], "혼적수량", 0))
+        
+        def proceed():
+            self.open_task_from_scan(item_data)
+            
+        if sku_cnt >= 2:
+            MixedPalletWarningPopup(proceed_callback=proceed).open()
+        else:
+            proceed()
 
     def open_task_from_scan(self, item_data):
         dummy_card = type(
@@ -6218,6 +6282,9 @@ class AdminDashboardScreen(Screen):
         status = str(t(task, "상태", "대기")).strip()
         is_urgent = t(task, "긴급여부") == "Y"
         barcode_val = get_barcode_from_task(task)
+        
+        # 💡 [NEW] 시트에서 '작업 담당자' 값을 가져옵니다.
+        assignee = str(t(task, "작업 담당자", t(task, "담당자", ""))).strip()
 
         out_stock_qty = 0
         if barcode_val != "N/A" and self.raw_inventory:
@@ -6253,16 +6320,22 @@ class AdminDashboardScreen(Screen):
             if status == "작업중"
             else (
                 "[color=00897B]"
-                if status in ["적치대기", "최종완료"]
+                if status in ["적치대기", "최종완료", "완료"]
                 else (
                     "[color=E65100]" if status == "보충실패" else "[color=757575]"
                 )
             )
         )
         urg_tag = "[color=D32F2F][긴급][/color] " if is_urgent else ""
+        
+        # 💡 [NEW] 상태가 '대기'가 아니고 담당자 이름이 존재할 때만 아이콘과 이름 텍스트 생성
+        assignee_tag = ""
+        if status != "대기" and assignee:
+            assignee_tag = f" [color=424242]{assignee}[/color] "
 
+        # 💡 [수정] 상태, 작업자(assignee_tag), 긴급여부 순으로 텍스트 조합
         lbl_status = Label(
-            text=f"{st_color}[b][{status}][/b][/color] {urg_tag}",
+            text=f"{st_color}[b][{status}][/b][/color]{assignee_tag}{urg_tag}",
             font_name=FONT_NAME,
             font_size=dp(13),
             markup=True,
