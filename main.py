@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.6"
+CURRENT_VERSION = "2.0.1.7"
 
 
 def check_and_apply_update():
@@ -2507,6 +2507,33 @@ class MainMenuScreen(Screen):
         )
         self.lbl_update_notice.bind(size=lambda i, s: setattr(i, "text_size", s))
         self.layout.add_widget(self.lbl_update_notice)
+        # [신규 추가] 업데이트 공지 현황 카드
+        notice_card = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(70), padding=dp(10), spacing=dp(4))
+        with notice_card.canvas.before:
+            Color(0.9, 0.95, 1, 1)  # 옅은 파란색 배경
+            self.notice_rect = RoundedRectangle(pos=notice_card.pos, size=notice_card.size, radius=[dp(8)])
+        notice_card.bind(
+            pos=lambda i, p: setattr(self.notice_rect, "pos", p), 
+            size=lambda i, s: setattr(self.notice_rect, "size", s)
+        )
+        
+        lbl_notice_title = Label(
+            text="[공지] 최신 업데이트 안내", font_name=FONT_NAME, font_size=dp(12), 
+            color=get_color_from_hex("#1565C0"), bold=True, halign="left", size_hint_y=None, height=dp(16)
+        )
+        lbl_notice_title.bind(size=lambda i, s: setattr(i, "text_size", s))
+        
+        lbl_notice_content = Label(
+            text="1. 라벨 인쇄 시 상단 [보충자 이름] 및 하단 [완료시간] 추가\n2. 부자재 다이렉트 요청 팝업 시 앱 멈춤(튕김) 현상 해결", 
+            font_name=FONT_NAME, font_size=dp(11), color=TEXT_DARK, halign="left", valign="top"
+        )
+        lbl_notice_content.bind(size=lambda i, s: setattr(i, "text_size", s))
+        
+        notice_card.add_widget(lbl_notice_title)
+        notice_card.add_widget(lbl_notice_content)
+        
+        self.layout.add_widget(notice_card)
+        self.layout.add_widget(Widget(size_hint_y=None, height=dp(5))) # 하단 버튼과의 여백
         self.layout.add_widget(Widget()) # 여백 밀어내기
 
         # 4. 하단 우측 작업자 이름 변경 버튼 (기존 위치 및 여백 유지)
@@ -4812,7 +4839,7 @@ class TaskListScreen(Screen):
                 child.process_location_scan(clean_bc)
                 return
 
-        # 💡 [수정] 바코드의 일부만 맞거나, '상품명'에 검색어가 포함되어 있어도 모두 찾아오도록 변경 (in 키워드 사용)
+        # 💡 바코드의 일부만 맞거나, '상품명'에 검색어가 포함되어 있어도 모두 찾아오도록 변경
         matches = [
             item for item in self.all_tasks_data
             if clean_bc in get_barcode_from_task(item["task_data"]).upper() or \
@@ -4825,25 +4852,15 @@ class TaskListScreen(Screen):
             )
             return
 
-        # 💡 [수정] 스캔 후 바로 검수 팝업을 열지 않고, 혼적 여부 검사 함수로 보냅니다!
+        # 💡 [핵심 수정] 검수 시에는 혼적 경고 팝업을 띄우지 않고 곧바로 검수창 오픈!
         if len(matches) == 1:
-            self._check_mixed_and_inspect(matches[0])
+            self.open_task_from_scan(matches[0])
         else:
             MultipleSkuSelectPopup(
-                matches=matches, on_select=self._check_mixed_and_inspect
+                matches=matches, on_select=self.open_task_from_scan
             ).open()
 
-    # 💡 [NEW] 혼적수량이 2개 이상일 경우 경고 팝업을 띄우는 함수 (검수용)
-    def _check_mixed_and_inspect(self, item_data):
-        sku_cnt = safe_int(t(item_data["task_data"], "혼적수량", 0))
-        
-        def proceed():
-            self.open_task_from_scan(item_data)
-            
-        if sku_cnt >= 2:
-            MixedPalletWarningPopup(proceed_callback=proceed).open()
-        else:
-            proceed()
+    # 🚨 기존에 있던 _check_mixed_and_inspect 함수는 지워주시거나 무시하셔도 됩니다.
 
     def open_task_from_scan(self, item_data):
         dummy_card = type(
@@ -5024,9 +5041,13 @@ class TaskListScreen(Screen):
             prod_name = str(t(card_data, "상품명", ""))
             is_invoice_only = qty_per_box == 1 or "송장" in prod_name
 
-            # 💡 [수정] 확인수량 기반 인쇄 데이터 세팅
+            # 확인수량 기반 인쇄 데이터 세팅
             conf_qty_val = card_data.get("confirmed_quantity", t(card_data, "확인수량", t(card_data, "지시수량", 0)))
             printed_qty = safe_int(conf_qty_val)
+
+            # 💡 [추가] 보충자 이름 및 현재(보충완료) 시간 생성
+            user_name = str(app.user_real_name).strip()
+            comp_time = datetime.now().strftime("%m-%d %H:%M")
 
             label_info = {
                 "바코드": get_barcode_from_task(card_data),
@@ -5036,6 +5057,8 @@ class TaskListScreen(Screen):
                 "송장전용": is_invoice_only,
                 "확인수량": printed_qty,
                 "박스입수량": qty_per_box,
+                "작업자": user_name,    # 👈 프린터로 넘겨줄 보충자 데이터
+                "완료시간": comp_time,  # 👈 프린터로 넘겨줄 시간 데이터
             }
             threading.Thread(
                 target=self._print_thread,
@@ -6893,7 +6916,6 @@ class BluetoothPrinter:
         self.stream = None
         self.socket = None
 
-    # 💡 [보정] 하단 수량 잘림 방지 (구분선 위치 바짝 올림 & 폰트 크기/좌표 축소)
     def print_outbound_label_cpcl(self, label_info: dict, quantity: int):
         if not self.stream:
             return False
@@ -6919,6 +6941,10 @@ class BluetoothPrinter:
             if is_invoice_only:
                 tag_str += "[송장만]"
 
+            # 💡 [추가] 라벨로 넘어온 작업자(보충자) 이름과 시간 추출
+            worker = label_info.get("작업자", "")
+            comp_time = label_info.get("완료시간", "")
+
             # 박스 / 낱개 계산 수식 문자열 생성
             if box_size > 1:
                 b_cnt = conf_qty // box_size
@@ -6928,7 +6954,10 @@ class BluetoothPrinter:
                 qty_str = f"수량 : {conf_qty} ({conf_qty} EA)"
 
             # CPCL 인쇄 명령 구성
-            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 [보관] {from_loc}\r\n"
+            # 💡 [요청반영 1] 상단 보관 로케이션 옆에 [ 보충자 ] 추가
+            top_str = f"[보관] {from_loc} [{worker}]" if worker else f"[보관] {from_loc}"
+            
+            cmd = f"! 0 200 200 800 {quantity}\r\nLEFT\r\nSETMAG 1 1\r\nTEXT 4 1 20 35 {top_str}\r\n"
             cmd += f"SETMAG 2 2\r\nTEXT 4 1 20 75 {barcode_suffix}\r\n"
             if tag_str:
                 cmd += f"RIGHT\r\nSETMAG 2 2\r\nTEXT 4 1 500 75 {tag_str}\r\nLEFT\r\n"
@@ -6936,21 +6965,27 @@ class BluetoothPrinter:
             # 1. 상단 구분선 및 중앙 출고 로케이션 영역
             cmd += f"LINE 20 165 556 165 4\r\nCENTER\r\nSETMAG 4 4\r\nTEXT 4 1 0 210 {loc1}\r\nSETMAG 3 3\r\nTEXT 4 1 0 380 {loc2}\r\n"
 
-            # 💡 2. 하단 구분선 위치를 Y=500으로 바짝 올림 (기존 540에서 위로 40px 이동)
+            # 2. 하단 구분선 위치
             cmd += f"LINE 20 500 556 500 3\r\nLEFT\r\n"
 
-            # 💡 3. 수량 폰트 크기를 SETMAG 1 2 로 축소 (가로 비율 줄임) 및 Y=520 위치에 출력 (잘림 완전 방지)
-            cmd += f"SETMAG 1 2\r\nTEXT 4 1 20 520 {qty_str}\r\nSETMAG 1 1\r\nFORM\r\nPRINT\r\n"
+            # 3. 수량 폰트 출력
+            cmd += f"SETMAG 1 2\r\nTEXT 4 1 20 520 {qty_str}\r\n"
+            
+            # 💡 [요청반영 2] 수량 문자열 우측 끝(RIGHT 정렬)에 보충 완료 시각(comp_time) 배치
+            if comp_time:
+                cmd += f"RIGHT\r\nSETMAG 1 1\r\nTEXT 4 1 556 525 {comp_time}\r\nLEFT\r\n"
+
+            cmd += "SETMAG 1 1\r\nFORM\r\nPRINT\r\n"
 
             self.stream.write(cmd.encode("cp949"))
             self.stream.flush()
             time.sleep(0.2)
-            # ------------------ 💡 [여기서부터 추가!] ------------------
+            
+            # (이하 단품/송장 팝업 체크 로직 유지)
             box_size = safe_int(label_info.get("박스입수량", 1))
             sku_name = str(label_info.get("상품명", label_info.get("SKU명", "")))
             is_invoice_only = label_info.get("송장전용", False)
 
-            # 💡 입수량이 1이거나 SKU명/상품명에 '(송장만부착)'이 들어있으면 팝업 노출
             if (box_size == 1) or ("(송장만부착)" in sku_name) or is_invoice_only:
                 Clock.schedule_once(
                     lambda dt: App.get_running_app().show_info_popup(
@@ -6961,7 +6996,6 @@ class BluetoothPrinter:
                         "※ 박스 훼손 시 반품 사유가 됩니다.",
                     )
                 )
-            # ------------------ 💡 [여기까지 추가!] ------------------
             return True
         except Exception as e:
             print(f" CPCL 전송 중 에러: {e}")
