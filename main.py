@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.7"
+CURRENT_VERSION = "2.0.1.8"
 
 
 def check_and_apply_update():
@@ -5330,6 +5330,7 @@ class TaskListScreen(Screen):
         Clock.schedule_once(_safe_refresh_ui, 0.5)
 
         # 💡 [NEW] 특정 라인을 눌렀을 때 남은 작업 건을 모아서 팝업으로 보여주는 함수
+    # 💡 [NEW] 특정 라인을 눌렀을 때 남은 작업 건을 모아서 팝업으로 보여주는 함수
     def show_line_tasks_popup(self, line_code):
         # 1. 해당 라인의 작업만 필터링
         tasks_for_line = []
@@ -5340,17 +5341,29 @@ class TaskListScreen(Screen):
             loc = str(t(task, "보충로케이션", "")).strip().upper()
             
             if line_code == '기타':
-                # 💡 [수정] 값이 비어있거나, 메인 라인(A~O)에 속하지 않는 모든 구역(H, J, Z, 숫자 등)을 '기타'에 넣습니다!
                 if not loc or loc[0] not in valid_lines:
                     tasks_for_line.append(task)
             else:
-                # 일반 A~O 라인은 기존과 동일
                 if loc.startswith(line_code):
                     tasks_for_line.append(task)
 
         if not tasks_for_line:
             App.get_running_app().show_toast(f"{line_code} 라인에 남은 검수 건이 없습니다.")
             return
+
+        # 💡 [핵심 추가 1] 카드를 눌렀을 때 이 팝업을 닫기 위해 팝업 객체를 먼저 선언합니다.
+        popup = Popup(
+            title=f" {line_code} 라인 잔여 작업 ({len(tasks_for_line)}건) - 터치하여 검수",
+            title_font=FONT_NAME,
+            size_hint=(0.9, 0.7),
+            auto_dismiss=True
+        )
+
+        # 💡 [핵심 추가 2] 카드를 터치했을 때 실행할 동작 (팝업 닫기 -> 검수창 열기)
+        def _on_card_tap(task_data):
+            popup.dismiss()
+            # 혼적 경고창이 필요한 경우 띄우고 아니면 바로 검수창 오픈
+            self._check_mixed_and_inspect({"task_data": task_data})
 
         # 2. 팝업 UI 구성
         popup_layout = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
@@ -5365,8 +5378,12 @@ class TaskListScreen(Screen):
             barcode = get_barcode_from_task(task)
             req_qty = str(t(task, "지시수량", "0"))
             
-            # 정보 표시용 얇고 세련된 카드
-            card = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(60), padding=dp(8))
+            # 💡 [수정] 단순 BoxLayout -> 터치가 가능한 TouchableBox 로 변경
+            card = TouchableBox(orientation='vertical', size_hint_y=None, height=dp(60), padding=dp(8))
+            
+            # 💡 터치 이벤트(on_release) 바인딩
+            card.bind(on_release=lambda inst, t_data=task: _on_card_tap(t_data))
+            
             with card.canvas.before:
                 Color(0.96, 0.97, 0.98, 1)  # 옅은 배경색
                 bg_rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(6)])
@@ -5391,16 +5408,11 @@ class TaskListScreen(Screen):
         popup_layout.add_widget(scroll)
 
         btn_close = StyledButton(text="닫기", size_hint_y=None, height=dp(45), bg_color=get_color_from_hex("#78909C"))
+        btn_close.bind(on_press=popup.dismiss)
         popup_layout.add_widget(btn_close)
 
-        popup = Popup(
-            title=f" {line_code} 라인 잔여 작업 ({len(tasks_for_line)}건) - 스캔하여 처리",
-            title_font=FONT_NAME,
-            content=popup_layout,
-            size_hint=(0.9, 0.7),
-            auto_dismiss=True
-        )
-        btn_close.bind(on_press=popup.dismiss)
+        # 껍데기에 내용물 넣고 팝업 열기
+        popup.content = popup_layout
         popup.open()
 
 # 💡 [NEW] 실행 취소 팝업 띄우기
