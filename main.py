@@ -16,7 +16,7 @@ from functools import partial
 # 💡 GitHub Raw 주소
 UPDATE_CHECK_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/version.txt"
 UPDATE_CODE_URL = "https://raw.githubusercontent.com/hmyang-crypto/hm-rep/refs/heads/main/main.py"
-CURRENT_VERSION = "2.0.1.9"
+CURRENT_VERSION = "2.0.2.0"
 
 
 def check_and_apply_update():
@@ -2524,7 +2524,7 @@ class MainMenuScreen(Screen):
         lbl_notice_title.bind(size=lambda i, s: setattr(i, "text_size", s))
         
         lbl_notice_content = Label(
-            text="1. 라벨 인쇄 시 상단 [보충자 이름] 및 하단 [완료시간] 추가\n2. 부자재 다이렉트 요청 팝업 시 앱 멈춤(튕김) 현상 해결", 
+            text="1. 라벨 인쇄 시 상단 [보충자 이름] 및 하단 [완료시간] 추가\n2. 부자재 요청시 중복방지 로직 추가", 
             font_name=FONT_NAME, font_size=dp(11), color=TEXT_DARK, halign="left", valign="top"
         )
         lbl_notice_content.bind(size=lambda i, s: setattr(i, "text_size", s))
@@ -6174,6 +6174,7 @@ class EmergencyReplenishScreen(Screen):
     def _async_validate_bujajae(self, sku, barcode, dest):
         app = App.get_running_app()
         try:
+            # 1. 재고 마스터에서 보관 재고 존재 유무 확인
             inventory = get_sheet_data(LOCATION_CAPA_SHEET_NAME, force_refresh=True)
 
             if not inventory:
@@ -6201,17 +6202,61 @@ class EmergencyReplenishScreen(Screen):
             )
 
             best_loc = str(t(valid_stock[0], "로케이션", "N/A")).strip()
-            # 💡 고객사 정보 추출
             client_name = str(t(valid_stock[0], "고객사", t(valid_stock[0], "파트너명", ""))).strip()
+
+            # 💡 2. [신규 추가] 30분 이내 동일 부자재 중복 요청 검사
+            tasks = get_sheet_data(TASK_SHEET_NAME, force_refresh=True)
+            now = datetime.now()
+            recent_requester = None
+            
+            for task in tasks:
+                prod = str(t(task, "상품명", "")).strip()
+                tid = str(t(task, "작업ID", "")).strip()
+                
+                # '부자재' 요청이면서 동일한 상품인 경우
+                if prod == f"[부자재] {sku}" and tid.startswith("DIR-BUJA-"):
+                    try:
+                        # DIR-BUJA-1120-153000 형태의 ID에서 시간 역추산
+                        parts = tid.split('-')
+                        if len(parts) >= 4:
+                            mmdd = parts[2]
+                            hhmmss = parts[3]
+                            req_time_str = f"{now.year}{mmdd}{hhmmss}"
+                            req_time = datetime.strptime(req_time_str, "%Y%m%d%H%M%S")
+                            
+                            # 연도 전환(12월 -> 1월) 방어 코드
+                            if req_time > now + timedelta(days=1):
+                                req_time = req_time.replace(year=now.year - 1)
+                                
+                            diff = (now - req_time).total_seconds()
+                            if 0 <= diff <= 1800:  # 💡 30분(1800초) 이내 발견 시!
+                                recent_requester = str(t(task, "작업지시자", t(task, "작업자", "알수없음"))).strip()
+                                if not recent_requester:
+                                    recent_requester = "알수없음"
+                                break
+                    except Exception as e:
+                        pass # 파싱 실패 건은 무시하고 넘어감
 
             Clock.schedule_once(lambda dt: app.dismiss_loading_popup(), 0)
 
+            # 💡 3. 중복 여부에 따라 동적으로 팝업 텍스트 변경
             def ask_confirm(dt):
-                msg = f"[color=FFE082][b]{sku}[/b][/color] 을(를)\n[color=81C784][b]{dest}[/b][/color](으)로 1PLT 요청하시겠습니까?"
+                if recent_requester:
+                    msg = (
+                        f"[color=FFB300]최근 30분 이내로 [b]{recent_requester}[/b]님이\n"
+                        f"동일한 부자재를 요청한 내역이 확인됩니다.[/color]\n\n"
+                        f"[color=FFE082][b]{sku}[/b][/color] 1PLT를\n"
+                        f"[color=81C784][b]{dest}[/b][/color](으)로 [color=FF5252][b]추가 보충[/b][/color] 진행하시겠습니까?"
+                    )
+                else:
+                    msg = (
+                        f"[color=FFE082][b]{sku}[/b][/color] 을(를)\n"
+                        f"[color=81C784][b]{dest}[/b][/color](으)로 1PLT 요청하시겠습니까?"
+                    )
+                    
                 app.show_confirmation_popup(
-                    title="부자재 보충 요청",
+                    title="부자재 보충 요청 확인",
                     message=msg,
-                    # 💡 [핵심] 5개의 변수를 넘겨줍니다.
                     on_yes=lambda: Clock.schedule_once(lambda dt2: self._trigger_bujajae_send(sku, barcode, dest, best_loc, client_name), 0.2)
                 )
 
